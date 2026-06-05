@@ -375,7 +375,7 @@ def run_extraction(args: argparse.Namespace) -> None:
     conn = connect_db()
     try:
         # Phase 1: Apply existing unapplied extractions (runs independently of extraction)
-        if args.apply and not args.no_write:
+        if (args.apply or args.apply_only) and not args.no_write:
             print("=== 应用已有未应用的抽取结果 ===")
             exts = conn.execute(
                 "SELECT * FROM metadata_extractions WHERE applied = 0"
@@ -388,8 +388,11 @@ def run_extraction(args: argparse.Namespace) -> None:
                 print("没有未应用的抽取结果。")
             print()
 
-        # Phase 2: Extract new metadata
-        works = get_works_to_process(conn, args.limit, args.work_id, force=args.force)
+        # Phase 2: Extract new metadata (skip if --apply-only or no works to process)
+        if args.apply_only:
+            works = []
+        else:
+            works = get_works_to_process(conn, args.limit, args.work_id, force=args.force)
         if not works:
             print("没有需要处理的文献。")
             return
@@ -502,8 +505,8 @@ def run_extraction(args: argparse.Namespace) -> None:
             })
             print()
 
-        # Phase 3: Apply newly extracted results
-        if args.apply and not args.no_write and results:
+        # Phase 3: Apply newly extracted results (not needed for --apply-only)
+        if args.apply and not args.no_write and not args.apply_only and results:
             new_exts = conn.execute(
                 "SELECT * FROM metadata_extractions WHERE applied = 0"
             ).fetchall()
@@ -542,8 +545,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="最多处理 N 篇")
     parser.add_argument("--work-id", type=str, default=None, help="只处理指定 work ID")
     parser.add_argument("--no-write", action="store_true", help="调用模型但不写 DB（仍消耗 Ollama 资源）")
-    parser.add_argument("--apply", action="store_true", help="将高置信字段写入 works 表")
-    parser.add_argument("--overwrite", action="store_true", help="配合 --apply 使用，覆盖已有字段（默认只填空字段）")
+    parser.add_argument("--apply", action="store_true", help="将高置信字段写入 works 表（可与抽取同时运行）")
+    parser.add_argument("--apply-only", action="store_true", help="只应用已有未应用的抽取结果，不调用模型")
+    parser.add_argument("--overwrite", action="store_true", help="配合 --apply/--apply-only 使用，覆盖已有字段（默认只填空字段）")
     parser.add_argument("--force", action="store_true", help="跳过 7 天去重检查，强制重新抽取")
     parser.add_argument("--output", type=str, default=None, help="输出 JSON 路径")
     parser.add_argument("--url", type=str, default=DEFAULT_URL, help="Ollama URL")
