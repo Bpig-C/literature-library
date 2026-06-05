@@ -147,7 +147,7 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 - P1.1：分析运行。围绕一个明确角度阅读单篇文献，并把结构化结果保存为 AnalysisRun。
 - P1.2：综述矩阵。把多篇文献在同一批角度下的分析结果横向排成表，用于综述写作。
 
-#### P1.0：基于 MinerU content.md 的元数据增强
+#### P1.0：基于 MinerU content.md 的元数据增强 ✅ 已完成
 
 原则：不直接把 PDF 交给模型，也不重新做 PDF 前几页解析。当前项目已经通过 MinerU 生成了 `content.md`，后续抽取应以 `literature_parse_runs.content_md_path` 指向的 Markdown 为唯一文本入口。
 
@@ -227,10 +227,12 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 
 P1.0 验收标准：
 
-- 能对至少 10 篇文献生成结构化元数据 JSON。
-- 每条结果包含证据片段和字段级置信度。
-- 高置信的年份、作者、单位能安全写入 DB。
-- 没有找到的信息明确标记为 `missing`，不编造。
+- ✅ 能对至少 10 篇文献生成结构化元数据 JSON。
+- ✅ 每条结果包含证据片段和字段级置信度。
+- ✅ 高置信的年份、作者、单位能安全写入 DB。
+- ✅ 没有找到的信息明确标记为 `missing`，不编造。
+
+**P1.0 交付物**：`scripts/literature_metadata_extract.py`，Schema migration（metadata_extractions 表 + works 扩展字段），healthcheck 覆盖率检查，WorkDetail 新字段展示。使用本地 Ollama qwen3:4b 模型，/no_think 模式，key-author 提取（最多 5 个 + et al.）。
 
 #### P1.1：分析运行
 
