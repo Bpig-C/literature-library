@@ -58,6 +58,9 @@
         </div>
         <div>arXiv</div><div>{{ work.arxiv_id || '' }}</div>
         <div>DOI</div><div>{{ work.doi || '' }}</div>
+        <div>中文标题</div><div>{{ work.title_zh || '' }}</div>
+        <div>发表场所</div><div>{{ work.venue || '' }}</div>
+        <div>链接</div><div><a v-if="work.url" :href="work.url" target="_blank">{{ work.url }}</a><span v-else></span></div>
         <div>解析状态</div><div :class="'status-' + work.parse_status">{{ work.parse_status }}</div>
         <div>阅读状态</div><div>
           <select v-if="editing" v-model="editForm.read_status">
@@ -67,6 +70,11 @@
           <span v-else>{{ work.read_status }}</span>
         </div>
       </div>
+    </div>
+
+    <div class="section" v-if="work.abstract">
+      <h3>摘要</h3>
+      <p class="abstract-text">{{ work.abstract }}</p>
     </div>
 
     <div class="section" v-if="work.source_files?.length">
@@ -258,5 +266,6 @@ button.del { font-size: 12px; color: var(--bad); border: none; background: none;
 .content-preview { font-size: 12px; font-family: Consolas, monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .status-succeeded { color: var(--ok); font-weight: 600; }
 .status-failed { color: var(--bad); font-weight: 600; }
+.abstract-text { font-size: 13px; line-height: 1.6; color: #374151; margin: 0; }
 .empty { padding: 28px; text-align: center; color: var(--muted); }
 </style>

@@ -35,6 +35,7 @@ def check_db_tables(conn: sqlite3.Connection) -> dict[str, Any]:
         "works", "source_files", "parse_artifacts", "literature_parse_runs",
         "duplicate_groups", "duplicate_candidates", "work_relations",
         "work_codes", "migration_meta", "library_migration_files", "inventory_meta",
+        "metadata_extractions",
     }
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -324,6 +325,27 @@ def check_source_file_id_orphans(conn: sqlite3.Connection) -> list[dict]:
     return issues
 
 
+def check_metadata_extractions(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Check metadata extraction status."""
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM metadata_extractions").fetchone()[0]
+        applied = conn.execute("SELECT COUNT(*) FROM metadata_extractions WHERE applied = 1").fetchone()[0]
+        works_with_ext = conn.execute("SELECT COUNT(DISTINCT work_id) FROM metadata_extractions").fetchone()[0]
+        works_total = conn.execute("SELECT COUNT(*) FROM works").fetchone()[0]
+    except sqlite3.OperationalError:
+        return {"ok": False, "error": "metadata_extractions table not found"}
+
+    return {
+        "ok": True,
+        "total_extractions": total,
+        "applied": applied,
+        "unapplied": total - applied,
+        "works_with_extractions": works_with_ext,
+        "works_total": works_total,
+        "coverage": f"{works_with_ext}/{works_total}",
+    }
+
+
 def run_all_checks() -> dict[str, Any]:
     """Run all health checks and return structured results."""
     conn = connect_db()
@@ -341,6 +363,7 @@ def run_all_checks() -> dict[str, Any]:
         orphan_artifacts = check_orphan_artifacts(conn)
         orphan_codes = check_work_codes_orphan(conn)
         orphan_source_refs = check_source_file_id_orphans(conn)
+        metadata_ext = check_metadata_extractions(conn)
     finally:
         conn.close()
 
@@ -365,6 +388,7 @@ def run_all_checks() -> dict[str, Any]:
         "orphan_artifacts": orphan_artifacts,
         "orphan_codes": orphan_codes,
         "orphan_source_file_refs": orphan_source_refs,
+        "metadata_extractions": metadata_ext,
         "total_issues": len(all_issues),
         "healthy": len(all_issues) == 0 and db["ok"],
     }
@@ -515,6 +539,17 @@ def format_markdown(result: dict[str, Any]) -> str:
         for item in result["orphan_source_file_refs"]:
             lines.append(f"- {item['table']}.{item['row_id']}：引用不存在的 source_file {item['source_file_id']}")
         lines.append("")
+
+    # Metadata extractions
+    me = result["metadata_extractions"]
+    lines.append("## 元数据抽取")
+    lines.append("")
+    if me.get("ok"):
+        lines.append(f"- 抽取记录：{me['total_extractions']} 条（已应用 {me['applied']}，未应用 {me['unapplied']}）")
+        lines.append(f"- 覆盖文献：{me['coverage']}")
+    else:
+        lines.append(f"错误：{me.get('error', 'unknown')}")
+    lines.append("")
 
     return "\n".join(lines)
 
