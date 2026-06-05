@@ -15,7 +15,7 @@ _inbox/
 _duplicates/
 _quarantine/
 _archive/
-views/
+/views/
 
 # Database & JSON data
 literature.sqlite

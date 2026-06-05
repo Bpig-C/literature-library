@@ -111,6 +111,12 @@ def list_works(
                 "SELECT COUNT(*) FROM source_files WHERE work_id = ?", (d["id"],)
             ).fetchone()
             d["source_count"] = sc[0]
+            # Unique source count (distinct SHA256)
+            uc = conn.execute(
+                "SELECT COUNT(DISTINCT content_sha256) FROM source_files WHERE work_id = ?",
+                (d["id"],),
+            ).fetchone()
+            d["unique_source_count"] = uc[0]
             works.append(d)
 
         return {

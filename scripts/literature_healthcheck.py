@@ -162,17 +162,30 @@ def check_inbox() -> dict[str, Any]:
 
 
 def check_quarantine() -> dict[str, Any]:
-    """Check _quarantine contents."""
+    """Check _quarantine contents.
+
+    Separates category directories (like bad_source/) from actual work directories.
+    Work directories follow the pattern W-* or match a work_id.
+    """
     qdir = LIBRARY_ROOT / "_quarantine"
     if not qdir.exists():
-        return {"ok": True, "count": 0, "works": []}
+        return {"ok": True, "count": 0, "works": [], "categories": []}
 
-    # Count work directories in quarantine
-    work_dirs = [d for d in qdir.iterdir() if d.is_dir()]
+    work_dirs = []
+    category_dirs = []
+    for d in qdir.iterdir():
+        if not d.is_dir():
+            continue
+        if d.name.startswith("W-"):
+            work_dirs.append(d.name)
+        else:
+            category_dirs.append(d.name)
+
     return {
         "ok": True,
         "count": len(work_dirs),
-        "works": [d.name for d in work_dirs],
+        "works": work_dirs,
+        "categories": category_dirs,
     }
 
 
@@ -391,6 +404,8 @@ def format_markdown(result: dict[str, Any]) -> str:
     q = result["quarantine"]
     lines.append("## 隔离区")
     lines.append("")
+    if q["categories"]:
+        lines.append(f"分类目录：{', '.join(q['categories'])}")
     lines.append(f"共 {q['count']} 个作品在隔离区")
     if q["works"]:
         for w in q["works"]:

@@ -50,6 +50,14 @@ class TestWorksList(unittest.TestCase):
         data = resp.json()
         self.assertLessEqual(len(data["works"]), 5)
 
+    def test_list_works_has_unique_source_count(self):
+        resp = client.get("/api/works?per_page=3")
+        data = resp.json()
+        for w in data["works"]:
+            self.assertIn("unique_source_count", w)
+            self.assertGreaterEqual(w["unique_source_count"], 1)
+            self.assertLessEqual(w["unique_source_count"], w["source_count"])
+
 
 class TestWorkDetail(unittest.TestCase):
     def _get_first_work_id(self):
@@ -83,6 +91,38 @@ class TestFileContent(unittest.TestCase):
         self.assertIn(resp.status_code, [200, 404])
 
 
+class TestQuarantineRestore(unittest.TestCase):
+    def test_quarantine_and_restore_roundtrip(self):
+        """Test quarantine then restore on a work (safe: restores original state)."""
+        # Find an unread work
+        resp = client.get("/api/works?status=unread&per_page=1")
+        works = resp.json()["works"]
+        self.assertTrue(len(works) > 0, "No unread works found")
+        wid = works[0]["id"]
+
+        # Quarantine
+        resp = client.post(f"/api/works/{wid}/quarantine", json={"reason": "test quarantine"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        # Verify quarantined
+        resp = client.get(f"/api/works/{wid}")
+        self.assertEqual(resp.json()["read_status"], "quarantined")
+
+        # Restore
+        resp = client.post(f"/api/works/{wid}/restore")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        # Verify restored
+        resp = client.get(f"/api/works/{wid}")
+        self.assertEqual(resp.json()["read_status"], "unread")
+
+    def test_quarantine_not_found(self):
+        resp = client.post("/api/works/W-nonexistent-999/quarantine", json={})
+        self.assertEqual(resp.status_code, 404)
+
+
 class TestDuplicates(unittest.TestCase):
     def test_list_duplicates(self):
         resp = client.get("/api/duplicates")
@@ -98,6 +138,24 @@ class TestDuplicates(unittest.TestCase):
         for g in data["groups"]:
             self.assertIn("candidates", g)
             self.assertIsInstance(g["candidates"], list)
+
+    def test_review_endpoint_returns_actions(self):
+        """Test review endpoint structure by re-reviewing an already-reviewed group."""
+        resp = client.get("/api/duplicates")
+        groups = resp.json()["groups"]
+        # Find an already-reviewed exact_sha256 group
+        reviewed = [g for g in groups if g["auto_confirmed"] and g["candidates"][0].get("reviewed")]
+        self.assertTrue(len(reviewed) > 0, "No reviewed groups found")
+        gid = reviewed[0]["id"]
+        # Re-review with same_work (should be idempotent)
+        resp = client.post(f"/api/duplicates/{gid}/review", json={
+            "decision": "same_work",
+            "note": "test re-review",
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertIn("actions", data)
 
 
 class TestRelations(unittest.TestCase):
