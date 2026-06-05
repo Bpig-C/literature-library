@@ -70,12 +70,22 @@
     </div>
 
     <div class="section" v-if="work.source_files?.length">
-      <h3>源文件 <span class="muted" style="font-weight:normal;text-transform:none">({{ uniqueShaCount }} 个有效 / {{ work.source_files.length }} 个原始)</span></h3>
+      <h3>源文件 <span class="muted" style="font-weight:normal;text-transform:none">({{ uniqueShaCount }} 个有效 / {{ work.source_files.length }} 个当前)</span></h3>
       <div v-for="s in work.source_files" :key="s.id" class="file-item">
         <span class="file-name">{{ s.original_name || s.id }}</span>
         <span class="muted tiny">{{ (s.file_size / 1024).toFixed(0) }} KB</span>
         <span class="chip tiny" v-if="isDuplicateSha(s)">重复</span>
         <a :href="pdfUrl(work.id)" target="_blank" v-if="s.file_ext === '.pdf'">查看 PDF</a>
+      </div>
+    </div>
+
+    <div class="section" v-if="work.archived_source_files?.length">
+      <h3>已归档源文件 <span class="muted" style="font-weight:normal;text-transform:none">({{ work.archived_source_files.length }} 个)</span></h3>
+      <div v-for="s in work.archived_source_files" :key="s.id" class="file-item archived">
+        <span class="file-name">{{ s.original_name || s.id }}</span>
+        <span class="muted tiny">{{ (s.file_size / 1024).toFixed(0) }} KB</span>
+        <span class="chip tiny archived-chip">已归档</span>
+        <span class="muted tiny" v-if="s.archive_reason">{{ s.archive_reason }}</span>
       </div>
     </div>
 
@@ -239,7 +249,9 @@ button.restore-btn { color: var(--ok); border-color: var(--ok); }
 button.del { font-size: 12px; color: var(--bad); border: none; background: none; padding: 0 4px; }
 .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; margin-left: 6px; }
 .file-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.file-item.archived { opacity: 0.6; }
 .file-name { font-weight: 600; }
+.archived-chip { background: #f3f4f6; color: #6b7280; }
 .rel-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .add-rel { display: flex; gap: 8px; align-items: center; }
 .add-rel input, .add-rel select { height: 32px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; font: inherit; }

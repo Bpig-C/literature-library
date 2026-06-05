@@ -137,9 +137,102 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 
 建议顺序：最先做。它会让后面的分析、上传、自动解析更稳。
 
-### P1：分析运行与综述矩阵
+### P1：元数据增强、分析运行与综述矩阵
 
-目标：兑现外部规划中的 Phase 5，让已有 140 篇全文开始产出综述材料。
+目标：先把每篇文献的基础书目信息补齐，再让已有 140 篇全文开始产出综述材料。
+
+这一阶段拆成三个连续小步：
+
+- P1.0：元数据增强。给每篇文献补齐“身份证”：年份、作者、单位、标题、摘要、DOI/arXiv、venue、URL 等。
+- P1.1：分析运行。围绕一个明确角度阅读单篇文献，并把结构化结果保存为 AnalysisRun。
+- P1.2：综述矩阵。把多篇文献在同一批角度下的分析结果横向排成表，用于综述写作。
+
+#### P1.0：基于 MinerU content.md 的元数据增强
+
+原则：不直接把 PDF 交给模型，也不重新做 PDF 前几页解析。当前项目已经通过 MinerU 生成了 `content.md`，后续抽取应以 `literature_parse_runs.content_md_path` 指向的 Markdown 为唯一文本入口。
+
+输入策略：
+
+- 从数据库读取每个 work 的最新成功 `content_md_path`。
+- 读取 `content.md` 的前部片段，默认控制在约前五页对应的信息范围内。
+- “前五页”在 Markdown 中不是天然分页，因此第一版建议采用稳妥近似：从文档开头截取固定字符/token 预算，例如 12k-16k token 内，覆盖标题、作者、单位、摘要、引言开头。
+- 如果 MinerU 输出中有页码、标题层级或 page 标记，后续再升级为真正的前五页切片。
+- 若前部片段找不到作者/单位/年份，默认标记低置信或未提及，不强行让模型从全文后部猜测。
+
+本地模型配置参考：
+
+- 参考脚本：`D:\06_tools\zh-asr-offline\local_model\batch_meeting_docs.py`
+- Ollama URL：`http://localhost:11435`
+- 默认模型：`qwen3:4b-instruct-2507-q4_K_M`
+- 建议 `num_ctx=16384`
+- 建议 `temperature=0.2`
+- 输出要求：只输出 JSON，不输出解释性正文。
+
+建议抽取字段：
+
+```json
+{
+  "title": "",
+  "title_zh": "",
+  "year": null,
+  "authors": [
+    {
+      "name": "",
+      "affiliations": [""],
+      "email": ""
+    }
+  ],
+  "institutions": [
+    {
+      "name": "",
+      "country_or_region": "",
+      "type": "university/company/government/lab/unknown"
+    }
+  ],
+  "doi": "",
+  "arxiv_id": "",
+  "venue": "",
+  "url": "",
+  "abstract": "",
+  "evidence": {
+    "title": "",
+    "year": "",
+    "authors": "",
+    "institutions": "",
+    "abstract": ""
+  },
+  "confidence": {
+    "title": "high/medium/low",
+    "year": "high/medium/low",
+    "authors": "high/medium/low",
+    "institutions": "high/medium/low",
+    "abstract": "high/medium/low"
+  },
+  "missing": []
+}
+```
+
+建议数据落点：
+
+- 新增 `metadata_extractions` 表，保存每次模型抽取的原始 JSON、模型名、输入范围、置信度、是否已应用。
+- 扩展 `works` 字段：`title_zh`、`venue`、`url`、`abstract`。
+- 作者/单位第一版可以继续写入 `works.authors` JSON；更稳的长期结构是新增 `work_authors` 和 `work_institutions`。
+- 高置信字段可自动更新 `works`，中低置信字段进入 `needs_review`。
+
+建议命令行工具：
+
+- `scripts/literature_metadata_extract.py`
+- 支持 `--limit`、`--work-id`、`--dry-run`、`--apply-high-confidence`、`--output views/metadata_extractions.json`
+- 默认只抽取，不覆盖；需要显式参数才应用到 DB。
+
+P1.0 验收标准：
+
+- 能对至少 10 篇文献生成结构化元数据 JSON。
+- 每条结果包含证据片段和字段级置信度。
+- 高置信的年份、作者、单位能安全写入 DB。
+- 没有找到的信息明确标记为 `missing`，不编造。
+
+#### P1.1：分析运行
 
 交付物：
 
@@ -160,6 +253,17 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 - 分析结果同时存在于 SQLite 和 `works/{id}/analyses/`。
 
 建议顺序：P0 后优先做。当前全文已经齐备，这是最能转化为论文/综述价值的一步。
+
+#### P1.2：综述矩阵
+
+P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而是把已经保存的 AnalysisRun 按文献、年份、机构、主题、角度重新组织成 Markdown/CSV 表格。
+
+第一版矩阵建议至少支持：
+
+- 按年份排序。
+- 按 doc_type、language、collection、机构筛选。
+- 选择多个 angle 作为列。
+- 导出 Markdown 和 CSV。
 
 ### P2：Collections/标签/主题体系
 
@@ -225,14 +329,14 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 - 去重决策刷新页面后仍保留在数据库。
 - 阅读笔记保存为文件并能在详情页重新加载。
 
-### P5：元数据增强与引用导出
+### P5：外部元数据补全与引用导出
 
 目标：提高文献库的可引用性和综述写作效率。
 
 交付物：
 
-- 扩展 `works` 字段：`title_zh`、`venue`、`url`、`abstract`。
-- 引入 arXiv/CrossRef/PubMed 元数据补全脚本。
+- 在 P1.0 本地模型抽取的基础上，引入 arXiv/CrossRef/PubMed 元数据补全脚本。
+- 对 DOI/arXiv/venue/url/abstract 等字段做外部校验和补强。
 - 新增 BibTeX/RIS/CSV 导出脚本和 API。
 - 前端支持按 metadata_status 过滤并批量标记 `verified`。
 
@@ -247,15 +351,17 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 如果没有更强的近期需求，建议顺序如下：
 
 1. P0 状态基线与质量护栏。
-2. P1 分析运行与综述矩阵。
-3. P2 Collections/标签/主题体系。
-4. P3 摄入后解析自动化。
-5. P4 前端上传与操作闭环。
-6. P5 元数据增强与引用导出。
+2. P1.0 基于 MinerU `content.md` 的元数据增强。
+3. P1.1 分析运行。
+4. P1.2 综述矩阵。
+5. P2 Collections/标签/主题体系。
+6. P3 摄入后解析自动化。
+7. P4 前端上传与操作闭环。
+8. P5 引用导出与外部元数据补全。
 
 如果近期会大量新增 PDF，则把 P3 提前到 P0 之后。
 
-如果近期目标是写综述，则 P1 应保持最高优先级，先用命令行跑通分析和矩阵，再补前端体验。
+如果近期目标是写综述，则 P1 应保持最高优先级，但先做 P1.0。基础元数据干净以后，再用命令行跑通分析和矩阵，最后补前端体验。
 
 ## 5. 外部规划文档的保留方式
 
@@ -266,4 +372,3 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 - 为 AnalysisRun、nature-skills 集成、综述矩阵提供设计蓝图。
 
 当前项目内部以后以本文件和 `README.md` 作为实际状态入口；外部规划文档作为上位设计和历史记录引用。
-

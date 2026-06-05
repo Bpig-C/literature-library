@@ -269,6 +269,61 @@ def check_work_codes_orphan(conn: sqlite3.Connection) -> list[dict]:
     return issues
 
 
+def check_source_file_id_orphans(conn: sqlite3.Connection) -> list[dict]:
+    """Find references to non-existent source_files in duplicate_candidates, parse_artifacts, parse_runs."""
+    issues = []
+
+    # duplicate_candidates referencing non-existent source_files
+    rows = conn.execute("""
+        SELECT dc.id, dc.source_file_id, dc.work_id, dc.group_id
+        FROM duplicate_candidates dc
+        WHERE dc.source_file_id IS NOT NULL AND dc.source_file_id != ''
+        AND NOT EXISTS (SELECT 1 FROM source_files sf WHERE sf.id = dc.source_file_id)
+    """).fetchall()
+    for r in rows:
+        issues.append({
+            "type": "orphan_source_file_ref",
+            "table": "duplicate_candidates",
+            "row_id": r["id"],
+            "source_file_id": r["source_file_id"],
+            "work_id": r["work_id"],
+        })
+
+    # parse_artifacts referencing non-existent source_files
+    rows = conn.execute("""
+        SELECT pa.id, pa.source_file_id, pa.work_id
+        FROM parse_artifacts pa
+        WHERE pa.source_file_id IS NOT NULL AND pa.source_file_id != ''
+        AND NOT EXISTS (SELECT 1 FROM source_files sf WHERE sf.id = pa.source_file_id)
+    """).fetchall()
+    for r in rows:
+        issues.append({
+            "type": "orphan_source_file_ref",
+            "table": "parse_artifacts",
+            "row_id": r["id"],
+            "source_file_id": r["source_file_id"],
+            "work_id": r["work_id"],
+        })
+
+    # literature_parse_runs referencing non-existent source_files
+    rows = conn.execute("""
+        SELECT lr.id, lr.source_file_id, lr.work_id
+        FROM literature_parse_runs lr
+        WHERE lr.source_file_id IS NOT NULL AND lr.source_file_id != ''
+        AND NOT EXISTS (SELECT 1 FROM source_files sf WHERE sf.id = lr.source_file_id)
+    """).fetchall()
+    for r in rows:
+        issues.append({
+            "type": "orphan_source_file_ref",
+            "table": "literature_parse_runs",
+            "row_id": r["id"],
+            "source_file_id": r["source_file_id"],
+            "work_id": r["work_id"],
+        })
+
+    return issues
+
+
 def run_all_checks() -> dict[str, Any]:
     """Run all health checks and return structured results."""
     conn = connect_db()
@@ -285,12 +340,13 @@ def run_all_checks() -> dict[str, Any]:
         dup_review = check_duplicate_review(conn)
         orphan_artifacts = check_orphan_artifacts(conn)
         orphan_codes = check_work_codes_orphan(conn)
+        orphan_source_refs = check_source_file_id_orphans(conn)
     finally:
         conn.close()
 
     all_issues = (
         works_source + missing_pdfs + missing_content
-        + quarantine_db + orphan_artifacts + orphan_codes
+        + quarantine_db + orphan_artifacts + orphan_codes + orphan_source_refs
     )
 
     return {
@@ -308,6 +364,7 @@ def run_all_checks() -> dict[str, Any]:
         "duplicate_review": dup_review,
         "orphan_artifacts": orphan_artifacts,
         "orphan_codes": orphan_codes,
+        "orphan_source_file_refs": orphan_source_refs,
         "total_issues": len(all_issues),
         "healthy": len(all_issues) == 0 and db["ok"],
     }
@@ -449,6 +506,14 @@ def format_markdown(result: dict[str, Any]) -> str:
         lines.append("")
         for item in result["orphan_codes"]:
             lines.append(f"- {item['work_id']}：{item['code']}")
+        lines.append("")
+
+    # Orphan source_file_id references
+    if result["orphan_source_file_refs"]:
+        lines.append("## 孤儿源文件引用")
+        lines.append("")
+        for item in result["orphan_source_file_refs"]:
+            lines.append(f"- {item['table']}.{item['row_id']}：引用不存在的 source_file {item['source_file_id']}")
         lines.append("")
 
     return "\n".join(lines)

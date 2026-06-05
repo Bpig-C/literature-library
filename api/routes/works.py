@@ -106,17 +106,22 @@ def list_works(
         for row in rows:
             d = dict(row)
             d["authors"] = _safe_json(d.get("authors"), [])
-            # Source count
+            # Source count (active only)
             sc = conn.execute(
-                "SELECT COUNT(*) FROM source_files WHERE work_id = ?", (d["id"],)
+                "SELECT COUNT(*) FROM source_files WHERE work_id = ? AND status = 'active'", (d["id"],)
             ).fetchone()
             d["source_count"] = sc[0]
-            # Unique source count (distinct SHA256)
+            # Unique source count (distinct SHA256 among active)
             uc = conn.execute(
-                "SELECT COUNT(DISTINCT content_sha256) FROM source_files WHERE work_id = ?",
+                "SELECT COUNT(DISTINCT content_sha256) FROM source_files WHERE work_id = ? AND status = 'active'",
                 (d["id"],),
             ).fetchone()
             d["unique_source_count"] = uc[0]
+            # Total source count (including archived)
+            tc = conn.execute(
+                "SELECT COUNT(*) FROM source_files WHERE work_id = ?", (d["id"],)
+            ).fetchone()
+            d["total_source_count"] = tc[0]
             works.append(d)
 
         return {
@@ -148,11 +153,17 @@ def get_work(work_id: str):
         work = dict(row)
         work["authors"] = _safe_json(work.get("authors"), [])
 
-        # Source files
+        # Source files (active and archived separately)
         sources = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM source_files WHERE work_id = ?", (work_id,)
+                "SELECT * FROM source_files WHERE work_id = ? AND status = 'active'", (work_id,)
+            ).fetchall()
+        ]
+        archived_sources = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM source_files WHERE work_id = ? AND status = 'archived'", (work_id,)
             ).fetchall()
         ]
 
@@ -202,6 +213,7 @@ def get_work(work_id: str):
             ]
 
         work["source_files"] = sources
+        work["archived_source_files"] = archived_sources
         work["relations"] = relations
         work["codes"] = codes
         work["duplicates"] = duplicates

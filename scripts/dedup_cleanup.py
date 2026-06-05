@@ -13,6 +13,14 @@ from __future__ import annotations
 import argparse
 import shutil
 import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import sqlite3
 from pathlib import Path
 
 
@@ -148,6 +156,7 @@ def archive_duplicate_sources(conn: sqlite3.Connection, dry_run: bool) -> int:
 
         for f in files[1:]:
             src_path = Path(f["source_path"])
+            archive_path = None
             if src_path.exists():
                 dest = archive_dir / work_id / src_path.name
                 if dry_run:
@@ -155,9 +164,18 @@ def archive_duplicate_sources(conn: sqlite3.Connection, dry_run: bool) -> int:
                 else:
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(src_path), str(dest))
+                    archive_path = str(dest)
 
             if not dry_run:
-                conn.execute("DELETE FROM source_files WHERE id = ?", (f["id"],))
+                conn.execute(
+                    "UPDATE source_files SET status = 'archived', archived_at = ?, archive_path = ?, archive_reason = ? WHERE id = ?",
+                    (
+                        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        archive_path,
+                        f"dedup cleanup: same SHA256 as {keep['id']}",
+                        f["id"],
+                    ),
+                )
             removed += 1
 
     if not dry_run and removed:

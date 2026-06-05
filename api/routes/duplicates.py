@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..db import get_conn, LIBRARY_ROOT
 from ..models import DuplicateReview
@@ -69,9 +69,9 @@ def list_duplicates():
 
 
 def _cleanup_same_work_sources(conn, group_id: str) -> int:
-    """For exact_sha256 same_work: remove duplicate source_files, keep one per SHA256 per work.
+    """For exact_sha256 same_work: archive duplicate source_files, keep one active per SHA256 per work.
 
-    Returns the number of source_files removed.
+    Returns the number of source_files archived.
     """
     # Get all source_files referenced by this group's candidates
     cands = conn.execute(
@@ -94,44 +94,56 @@ def _cleanup_same_work_sources(conn, group_id: str) -> int:
         sha = src["content_sha256"]
         work_sha_files.setdefault(wid, {}).setdefault(sha, []).append(dict(src))
 
-    removed = 0
+    from datetime import datetime, timezone
+    archived = 0
     archive_dir = LIBRARY_ROOT / "_archive" / "dedup"
     for wid, sha_map in work_sha_files.items():
         for sha, files in sha_map.items():
             if len(files) <= 1:
                 continue
             # Keep the first file (prefer the one with the more descriptive name), archive the rest
-            # Sort by original_name length descending to prefer descriptive names
             files.sort(key=lambda f: len(f.get("original_name") or ""), reverse=True)
             keep = files[0]
             for f in files[1:]:
                 src_path = Path(f["source_path"])
+                archive_path = None
                 if src_path.exists():
-                    # Move to _archive/dedup/{work_id}/
                     rel = src_path.name
                     dest = archive_dir / f["work_id"] / rel
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(src_path), str(dest))
-                # Delete the source_files record
-                conn.execute("DELETE FROM source_files WHERE id = ?", (f["id"],))
-                removed += 1
+                    archive_path = str(dest)
+                # Mark as archived instead of deleting
+                conn.execute(
+                    "UPDATE source_files SET status = 'archived', archived_at = ?, archive_path = ?, archive_reason = ? WHERE id = ?",
+                    (
+                        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        archive_path,
+                        f"dedup cleanup: same SHA256 as {keep['id']}",
+                        f["id"],
+                    ),
+                )
+                archived += 1
 
-    return removed
+    return archived
 
 
-def _create_relation(conn, work_id_a: str, work_id_b: str, relation_type: str, note: str):
-    """Insert a work_relation, avoiding duplicates."""
+def _create_relation(conn, work_id_a: str, work_id_b: str, relation_type: str, note: str) -> bool:
+    """Insert a work_relation, avoiding duplicates. Returns True if a new row was inserted."""
+    if work_id_a == work_id_b:
+        return False
     if relation_type in ("same_work", "not_duplicate", "version_of", "translation_of"):
         a, b = sorted([work_id_a, work_id_b])
     else:
         a, b = work_id_a, work_id_b
     try:
-        conn.execute(
+        cur = conn.execute(
             "INSERT OR IGNORE INTO work_relations (work_id_a, work_id_b, relation_type, confirmed, note) VALUES (?, ?, ?, 1, ?)",
             (a, b, relation_type, note),
         )
+        return cur.rowcount > 0
     except Exception:
-        pass
+        return False
 
 
 def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
@@ -169,16 +181,18 @@ def review_duplicate(group_id: str, body: DuplicateReview):
 
     conn = get_conn()
     try:
+        # Check group exists
+        group = conn.execute(
+            "SELECT * FROM duplicate_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not group:
+            raise HTTPException(status_code=404, detail="Duplicate group not found")
+
         # 1. Mark candidates as reviewed
         conn.execute(
             "UPDATE duplicate_candidates SET reviewed = 1 WHERE group_id = ?",
             (group_id,),
         )
-
-        # Get group info
-        group = conn.execute(
-            "SELECT * FROM duplicate_groups WHERE id = ?", (group_id,)
-        ).fetchone()
 
         actions = {"relations_created": 0, "sources_removed": 0, "files_moved": []}
 
@@ -192,21 +206,22 @@ def review_duplicate(group_id: str, body: DuplicateReview):
 
             # For same_work on exact_sha256: all candidates share the same work_id,
             # so no inter-work relation is needed. The relation is implicit.
-            if body.decision == "same_work" and group and group["duplicate_type"] == "exact_sha256":
+            if body.decision == "same_work" and group["duplicate_type"] == "exact_sha256":
                 pass  # Same work, no relation to create
             else:
                 # Create pairwise relations between all work_ids in the group
                 for i in range(len(work_ids)):
                     for j in range(i + 1, len(work_ids)):
-                        _create_relation(
+                        created = _create_relation(
                             conn, work_ids[i], work_ids[j],
                             body.decision,
                             body.note or f"dedup review {group_id}",
                         )
-                        actions["relations_created"] += 1
+                        if created:
+                            actions["relations_created"] += 1
 
         # 3. Clean up duplicate source_files for same_work on exact_sha256
-        if body.decision == "same_work" and group and group["duplicate_type"] == "exact_sha256":
+        if body.decision == "same_work" and group["duplicate_type"] == "exact_sha256":
             actions["sources_removed"] = _cleanup_same_work_sources(conn, group_id)
 
         # 4. Handle quarantine: move files to _quarantine/

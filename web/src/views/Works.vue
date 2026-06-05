@@ -47,7 +47,10 @@
             <td>{{ w.doc_type || '' }}</td>
             <td>{{ w.language || '' }}</td>
             <td>
-              <span v-if="w.source_count !== w.unique_source_count" :title="'原始 ' + w.source_count + ' 个文件，去重后 ' + w.unique_source_count + ' 个'">
+              <span v-if="w.total_source_count > w.source_count" :title="w.source_count + ' 个有效 / ' + (w.total_source_count - w.source_count) + ' 个已归档'">
+                {{ w.unique_source_count }}<span class="muted">/{{ w.source_count }}</span>
+              </span>
+              <span v-else-if="w.source_count !== w.unique_source_count" :title="'去重后 ' + w.unique_source_count + ' 个'">
                 {{ w.unique_source_count }}<span class="muted">/{{ w.source_count }}</span>
               </span>
               <span v-else>{{ w.source_count }}</span>
