@@ -8,6 +8,7 @@ Run with: uv run python -m pytest tests/test_api.py -v
 from __future__ import annotations
 
 import shutil
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +17,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from api.db import DB_PATH, get_conn
+from api.db import DB_PATH
 from api.main import app
 
 # Create a temporary copy of the real DB for testing
@@ -32,10 +33,14 @@ def _test_get_conn():
     return conn
 
 
-import sqlite3
-
-# Override the dependency so all API routes use the temp DB
-app.dependency_overrides[get_conn] = _test_get_conn
+# Patch get_conn in all route modules so routes use the temp DB
+@pytest.fixture(autouse=True, scope="session")
+def _patch_get_conn():
+    with patch("api.routes.works.get_conn", _test_get_conn), \
+         patch("api.routes.relations.get_conn", _test_get_conn), \
+         patch("api.routes.duplicates.get_conn", _test_get_conn), \
+         patch("api.routes.files.get_conn", _test_get_conn):
+        yield
 
 
 @pytest.fixture(autouse=True, scope="session")

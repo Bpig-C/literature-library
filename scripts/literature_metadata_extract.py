@@ -5,16 +5,16 @@ and saves structured metadata (title, authors, year, abstract, etc.) with
 field-level confidence scores.
 
 Usage:
-    python scripts/literature_metadata_extract.py --limit 3 --dry-run
+    python scripts/literature_metadata_extract.py --limit 3 --no-write
     python scripts/literature_metadata_extract.py --limit 10
     python scripts/literature_metadata_extract.py --limit 10 --apply
-    python scripts/literature_metadata_extract.py --work-id W-arxiv-2512.01166
+    python scripts/literature_metadata_extract.py --limit 10 --apply --overwrite
+    python scripts/literature_metadata_extract.py --work-id W-arxiv-2512.01166 --force
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 import json
 import re
 import sqlite3
@@ -96,7 +96,7 @@ def connect_db() -> sqlite3.Connection:
 
 
 def get_works_to_process(conn: sqlite3.Connection, limit: int | None,
-                          work_id: str | None) -> list[dict]:
+                          work_id: str | None, force: bool = False) -> list[dict]:
     """Find works that need metadata extraction."""
     rows = conn.execute("""
         SELECT w.id, w.title, w.authors, w.year, w.arxiv_id, w.doi,
@@ -115,13 +115,14 @@ def get_works_to_process(conn: sqlite3.Connection, limit: int | None,
     if work_id:
         works = [w for w in works if w["id"] == work_id]
 
-    # Skip works that already have a recent extraction (within 7 days)
-    recent = conn.execute("""
-        SELECT work_id FROM metadata_extractions
-        WHERE created_at > datetime('now', '-7 days')
-    """).fetchall()
-    recent_ids = {r["work_id"] for r in recent}
-    works = [w for w in works if w["id"] not in recent_ids]
+    # Skip works that already have a recent extraction (within 7 days) unless --force
+    if not force:
+        recent = conn.execute("""
+            SELECT work_id FROM metadata_extractions
+            WHERE created_at > datetime('now', '-7 days')
+        """).fetchall()
+        recent_ids = {r["work_id"] for r in recent}
+        works = [w for w in works if w["id"] not in recent_ids]
 
     if limit:
         works = works[:limit]
@@ -204,6 +205,84 @@ def parse_llm_json(raw: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Schema validation
+# ---------------------------------------------------------------------------
+
+CURRENT_YEAR = datetime.now().year
+
+
+def validate_extraction(data: dict) -> tuple[dict, list[str]]:
+    """Validate extracted metadata. Returns (cleaned_data, list_of_warnings).
+
+    Invalid fields are set to None; warnings explain what was wrong.
+    """
+    warnings = []
+
+    # year: must be integer in reasonable range
+    year = data.get("year")
+    if year is not None:
+        try:
+            year = int(year)
+            if year < 1900 or year > CURRENT_YEAR + 1:
+                warnings.append(f"year={year} out of range, set to null")
+                year = None
+        except (TypeError, ValueError):
+            warnings.append(f"year={year!r} not integer, set to null")
+            year = None
+    data["year"] = year
+
+    # authors: must be list
+    authors = data.get("authors")
+    if authors is not None and not isinstance(authors, list):
+        warnings.append(f"authors not a list, set to []")
+        authors = []
+    data["authors"] = authors or []
+
+    # confidence: must be object with valid values
+    valid_levels = {"high", "medium", "low"}
+    confidence = data.get("confidence", {})
+    if not isinstance(confidence, dict):
+        confidence = {}
+    for key in list(confidence.keys()):
+        if confidence[key] not in valid_levels:
+            warnings.append(f"confidence.{key}={confidence[key]!r} invalid, removed")
+            del confidence[key]
+    data["confidence"] = confidence
+
+    # doi: basic format check
+    doi = data.get("doi")
+    if doi is not None and doi != "" and not re.match(r"^10\.\d{4,}/", str(doi)):
+        warnings.append(f"doi={doi!r} format suspect, set to null")
+        data["doi"] = None
+
+    # arxiv_id: basic format check
+    arxiv = data.get("arxiv_id")
+    if arxiv is not None and arxiv != "" and not re.match(r"^\d{4}\.\d{4,5}", str(arxiv)):
+        warnings.append(f"arxiv_id={arxiv!r} format suspect, set to null")
+        data["arxiv_id"] = None
+
+    # url: basic format check
+    url = data.get("url")
+    if url is not None and url != "" and not url.startswith(("http://", "https://")):
+        warnings.append(f"url={url!r} not a URL, set to null")
+        data["url"] = None
+
+    # title: must be non-empty string
+    title = data.get("title")
+    if title is not None and not isinstance(title, str):
+        title = str(title) if title else None
+    data["title"] = title
+
+    # abstract: must be string
+    abstract = data.get("abstract")
+    if abstract is not None and not isinstance(abstract, str):
+        abstract = None
+    data["abstract"] = abstract
+
+    return data, warnings
+
+
+# ---------------------------------------------------------------------------
 # Apply high-confidence fields to works
 # ---------------------------------------------------------------------------
 
@@ -219,41 +298,58 @@ HIGH_CONFIDENCE_FIELDS = {
 }
 
 
-def apply_to_works(conn: sqlite3.Connection, extractions: list[dict]) -> int:
-    """Apply high-confidence extracted fields to works table. Returns count of updates."""
+def apply_to_works(conn: sqlite3.Connection, extractions: list[dict],
+                    overwrite: bool = False) -> int:
+    """Apply high-confidence extracted fields to works table.
+
+    Default: only fill empty fields (safe). With overwrite=True: also replace existing values.
+    Returns count of updates.
+    """
     updated = 0
     for ext in extractions:
-        if not ext.get("applied"):
+        # Skip already-applied extractions (fixed: was inverted before)
+        if ext.get("applied"):
             continue
+
         extracted = json.loads(ext["extracted_json"]) if ext["extracted_json"] else {}
         confidence = json.loads(ext["confidence_json"]) if ext["confidence_json"] else {}
         work_id = ext["work_id"]
 
+        # Get current work data to check existing fields
+        current = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
+        if not current:
+            continue
+
         sets = []
         params = []
         for field, col in HIGH_CONFIDENCE_FIELDS.items():
-            if confidence.get(field) == "high" and extracted.get(field) is not None:
-                value = extracted[field]
-                if field == "authors":
-                    value = json.dumps(value, ensure_ascii=False)
-                sets.append(f"{col} = ?")
-                params.append(value)
+            if confidence.get(field) != "high":
+                continue
+            value = extracted.get(field)
+            if value is None or value == "":
+                continue
+            # Default: only fill empty fields. With --overwrite: replace existing.
+            existing = current[col] if col in current.keys() else None
+            if existing and not overwrite:
+                continue
+            if field == "authors":
+                value = json.dumps(value, ensure_ascii=False)
+            sets.append(f"{col} = ?")
+            params.append(value)
 
-        # Also apply medium-confidence authors if high-confidence not available
+        # Also apply medium/high-confidence authors
         if "authors" not in [s.split(" =")[0] for s in sets]:
             if confidence.get("authors") in ("high", "medium") and extracted.get("authors"):
                 authors_raw = extracted["authors"]
                 if isinstance(authors_raw, list):
-                    # Handle both string and object formats
-                    names = []
-                    for a in authors_raw:
-                        if isinstance(a, str):
-                            names.append(a)
-                        elif isinstance(a, dict) and a.get("name"):
-                            names.append(a["name"])
+                    names = [a for a in authors_raw if isinstance(a, str)]
+                    if not names:
+                        names = [a["name"] for a in authors_raw if isinstance(a, dict) and a.get("name")]
                     if names:
-                        sets.append("authors = ?")
-                        params.append(json.dumps(names, ensure_ascii=False))
+                        existing_authors = current["authors"] if "authors" in current.keys() else None
+                        if not existing_authors or overwrite:
+                            sets.append("authors = ?")
+                            params.append(json.dumps(names, ensure_ascii=False))
 
         if sets:
             params.append(work_id)
@@ -261,7 +357,6 @@ def apply_to_works(conn: sqlite3.Connection, extractions: list[dict]) -> int:
                 f"UPDATE works SET {', '.join(sets)}, updated_at = datetime('now') WHERE id = ?",
                 params,
             )
-            # Mark extraction as applied
             conn.execute(
                 "UPDATE metadata_extractions SET applied = 1, applied_at = datetime('now') WHERE id = ?",
                 (ext["id"],),
@@ -279,7 +374,7 @@ def apply_to_works(conn: sqlite3.Connection, extractions: list[dict]) -> int:
 def run_extraction(args: argparse.Namespace) -> None:
     conn = connect_db()
     try:
-        works = get_works_to_process(conn, args.limit, args.work_id)
+        works = get_works_to_process(conn, args.limit, args.work_id, force=args.force)
         if not works:
             print("没有需要处理的文献。")
             return
@@ -347,6 +442,12 @@ def run_extraction(args: argparse.Namespace) -> None:
                 })
                 continue
 
+            # Validate extracted fields
+            extracted, validation_warnings = validate_extraction(extracted)
+            if validation_warnings:
+                for w in validation_warnings:
+                    print(f"  校验：{w}")
+
             confidence = extracted.get("confidence", {})
             missing = extracted.get("missing", [])
             print(f"  标题：{extracted.get('title', 'N/A')[:60]}")
@@ -358,7 +459,7 @@ def run_extraction(args: argparse.Namespace) -> None:
                 print(f"  缺失：{', '.join(missing)}")
 
             # Save to DB
-            if not args.dry_run:
+            if not args.no_write:
                 ext_id = f"ME-{uuid.uuid4().hex[:12]}"
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 conn.execute("""
@@ -387,13 +488,14 @@ def run_extraction(args: argparse.Namespace) -> None:
             print()
 
         # Apply high-confidence fields
-        if args.apply and not args.dry_run:
+        if args.apply and not args.no_write:
             print("=== 应用高置信字段到 works 表 ===")
             exts = conn.execute(
                 "SELECT * FROM metadata_extractions WHERE applied = 0"
             ).fetchall()
-            n = apply_to_works(conn, [dict(e) for e in exts])
-            print(f"更新了 {n} 篇文献的元数据")
+            n = apply_to_works(conn, [dict(e) for e in exts], overwrite=args.overwrite)
+            mode = "覆盖" if args.overwrite else "仅填空"
+            print(f"更新了 {n} 篇文献的元数据（{mode}模式）")
 
         # Summary
         ok = sum(1 for r in results if r.get("status") == "ok")
@@ -423,8 +525,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="基于 content.md 的元数据增强")
     parser.add_argument("--limit", type=int, default=None, help="最多处理 N 篇")
     parser.add_argument("--work-id", type=str, default=None, help="只处理指定 work ID")
-    parser.add_argument("--dry-run", action="store_true", help="只抽取不写 DB")
+    parser.add_argument("--no-write", action="store_true", help="调用模型但不写 DB（仍消耗 Ollama 资源）")
     parser.add_argument("--apply", action="store_true", help="将高置信字段写入 works 表")
+    parser.add_argument("--overwrite", action="store_true", help="配合 --apply 使用，覆盖已有字段（默认只填空字段）")
+    parser.add_argument("--force", action="store_true", help="跳过 7 天去重检查，强制重新抽取")
     parser.add_argument("--output", type=str, default=None, help="输出 JSON 路径")
     parser.add_argument("--url", type=str, default=DEFAULT_URL, help="Ollama URL")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL, help="模型名")
