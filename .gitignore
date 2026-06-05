@@ -1,0 +1,41 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Node
+web/node_modules/
+web/dist/
+
+# Data files (too large for git)
+works/
+_inbox/
+_duplicates/
+_quarantine/
+_archive/
+views/
+
+# Database & JSON data
+literature.sqlite
+literature.sqlite-wal
+literature.sqlite-shm
+literature_library.db
+index.json
+parse_ledger.json
+dedup_reviews.json
+literature_inventory.json
+migration_plan.json
+migration_plan.dryrun.json
+literature_report.md
+migration_report.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
