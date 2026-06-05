@@ -1,16 +1,48 @@
 """Basic API route tests for the literature library.
 
-Uses the real database (not mocked) to verify core API endpoints.
+Uses a temporary copy of the database to verify core API endpoints,
+ensuring tests never modify the real library data.
 Run with: uv run python -m pytest tests/test_api.py -v
 """
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
+from api.db import DB_PATH, get_conn
 from api.main import app
+
+# Create a temporary copy of the real DB for testing
+_tmp_dir = tempfile.mkdtemp(prefix="litlib_test_")
+_tmp_db = Path(_tmp_dir) / "literature.sqlite"
+shutil.copy2(str(DB_PATH), str(_tmp_db))
+
+
+def _test_get_conn():
+    conn = sqlite3.connect(str(_tmp_db))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+import sqlite3
+
+# Override the dependency so all API routes use the temp DB
+app.dependency_overrides[get_conn] = _test_get_conn
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cleanup_temp_db():
+    yield
+    shutil.rmtree(_tmp_dir, ignore_errors=True)
+
 
 client = TestClient(app)
 
