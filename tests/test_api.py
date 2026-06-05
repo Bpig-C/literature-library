@@ -1,0 +1,145 @@
+"""Basic API route tests for the literature library.
+
+Uses the real database (not mocked) to verify core API endpoints.
+Run with: uv run python -m pytest tests/test_api.py -v
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from fastapi.testclient import TestClient
+
+from api.main import app
+
+client = TestClient(app)
+
+
+class TestWorksList(unittest.TestCase):
+    def test_list_works_returns_results(self):
+        resp = client.get("/api/works")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("works", data)
+        self.assertIn("total", data)
+        self.assertGreater(data["total"], 0)
+
+    def test_list_works_has_summary(self):
+        resp = client.get("/api/works")
+        data = resp.json()
+        self.assertIn("summary", data)
+        self.assertIn("total", data["summary"])
+        self.assertIn("statuses", data["summary"])
+
+    def test_list_works_search(self):
+        resp = client.get("/api/works?search=arxiv")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("works", data)
+
+    def test_list_works_filter_status(self):
+        resp = client.get("/api/works?status=unread")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        for w in data["works"]:
+            self.assertEqual(w["read_status"], "unread")
+
+    def test_list_works_pagination(self):
+        resp = client.get("/api/works?page=1&per_page=5")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertLessEqual(len(data["works"]), 5)
+
+
+class TestWorkDetail(unittest.TestCase):
+    def _get_first_work_id(self):
+        resp = client.get("/api/works?per_page=1")
+        return resp.json()["works"][0]["id"]
+
+    def test_get_work_detail(self):
+        wid = self._get_first_work_id()
+        resp = client.get(f"/api/works/{wid}")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["id"], wid)
+        self.assertIn("title", data)
+        self.assertIn("source_files", data)
+        self.assertIn("relations", data)
+
+    def test_get_work_not_found(self):
+        resp = client.get("/api/works/W-nonexistent-999")
+        self.assertEqual(resp.status_code, 404)
+
+
+class TestFileContent(unittest.TestCase):
+    def _get_first_work_id(self):
+        resp = client.get("/api/works?per_page=1")
+        return resp.json()["works"][0]["id"]
+
+    def test_get_content(self):
+        wid = self._get_first_work_id()
+        resp = client.get(f"/api/files/{wid}/content")
+        # Content may or may not exist, but endpoint should not 500
+        self.assertIn(resp.status_code, [200, 404])
+
+
+class TestDuplicates(unittest.TestCase):
+    def test_list_duplicates(self):
+        resp = client.get("/api/duplicates")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("groups", data)
+        self.assertIn("total_groups", data)
+        self.assertGreater(data["total_groups"], 0)
+
+    def test_duplicates_have_candidates(self):
+        resp = client.get("/api/duplicates")
+        data = resp.json()
+        for g in data["groups"]:
+            self.assertIn("candidates", g)
+            self.assertIsInstance(g["candidates"], list)
+
+
+class TestRelations(unittest.TestCase):
+    def test_list_relations(self):
+        resp = client.get("/api/relations")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("relations", data)
+
+    def test_create_and_delete_relation(self):
+        import json as _json
+
+        # Get two distinct work IDs
+        resp = client.get("/api/works?per_page=10")
+        works = resp.json()["works"]
+        self.assertGreaterEqual(len(works), 2)
+        wid_a = works[0]["id"]
+        wid_b = works[1]["id"]
+
+        # Create relation
+        resp = client.post("/api/relations", json={
+            "work_id_a": wid_a,
+            "work_id_b": wid_b,
+            "relation_type": "not_duplicate",
+            "note": "test relation",
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+        # Delete relation (TestClient.delete doesn't support json=, use request)
+        resp = client.request(
+            "DELETE", "/api/relations",
+            content=_json.dumps({
+                "work_id_a": wid_a,
+                "work_id_b": wid_b,
+                "relation_type": "not_duplicate",
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json().get("ok"))
+
+
+if __name__ == "__main__":
+    unittest.main()
