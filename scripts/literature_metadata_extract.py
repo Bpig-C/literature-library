@@ -374,6 +374,21 @@ def apply_to_works(conn: sqlite3.Connection, extractions: list[dict],
 def run_extraction(args: argparse.Namespace) -> None:
     conn = connect_db()
     try:
+        # Phase 1: Apply existing unapplied extractions (runs independently of extraction)
+        if args.apply and not args.no_write:
+            print("=== 应用已有未应用的抽取结果 ===")
+            exts = conn.execute(
+                "SELECT * FROM metadata_extractions WHERE applied = 0"
+            ).fetchall()
+            if exts:
+                n = apply_to_works(conn, [dict(e) for e in exts], overwrite=args.overwrite)
+                mode = "覆盖" if args.overwrite else "仅填空"
+                print(f"更新了 {n} 篇文献的元数据（{mode}模式）")
+            else:
+                print("没有未应用的抽取结果。")
+            print()
+
+        # Phase 2: Extract new metadata
         works = get_works_to_process(conn, args.limit, args.work_id, force=args.force)
         if not works:
             print("没有需要处理的文献。")
@@ -487,15 +502,16 @@ def run_extraction(args: argparse.Namespace) -> None:
             })
             print()
 
-        # Apply high-confidence fields
-        if args.apply and not args.no_write:
-            print("=== 应用高置信字段到 works 表 ===")
-            exts = conn.execute(
+        # Phase 3: Apply newly extracted results
+        if args.apply and not args.no_write and results:
+            new_exts = conn.execute(
                 "SELECT * FROM metadata_extractions WHERE applied = 0"
             ).fetchall()
-            n = apply_to_works(conn, [dict(e) for e in exts], overwrite=args.overwrite)
-            mode = "覆盖" if args.overwrite else "仅填空"
-            print(f"更新了 {n} 篇文献的元数据（{mode}模式）")
+            if new_exts:
+                print("=== 应用本轮新抽取结果 ===")
+                n = apply_to_works(conn, [dict(e) for e in new_exts], overwrite=args.overwrite)
+                mode = "覆盖" if args.overwrite else "仅填空"
+                print(f"更新了 {n} 篇文献的元数据（{mode}模式）")
 
         # Summary
         ok = sum(1 for r in results if r.get("status") == "ok")
