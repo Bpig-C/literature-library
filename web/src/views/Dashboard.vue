@@ -19,7 +19,7 @@
       <h3>类型分布</h3>
       <div class="chips">
         <span class="chip" v-for="(count, type) in data.doc_types" :key="type">
-          {{ type }}: {{ count }}
+          {{ label(DOC_TYPE_LABELS, type) }}: {{ count }}
         </span>
       </div>
     </div>
@@ -27,7 +27,7 @@
       <h3>语言分布</h3>
       <div class="chips">
         <span class="chip" v-for="(count, lang) in data.languages" :key="lang">
-          {{ lang }}: {{ count }}
+          {{ label(LANGUAGE_LABELS, lang) }}: {{ count }}
         </span>
       </div>
     </div>
@@ -51,6 +51,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getWorks } from '../api'
+import { DOC_TYPE_LABELS, LANGUAGE_LABELS, label } from '../labels'
 
 const data = ref(null)
 

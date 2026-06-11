@@ -33,11 +33,25 @@ def list_works(
     sort: str = "id",
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
+    include_quarantined: bool = Query(False),
+    # Classification v0.2 filters
+    primary_doc_type: str | None = Query(None),
+    publication_status: str | None = Query(None),
+    ingestion_state: str | None = Query(None),
+    priority: str | None = Query(None),
+    # Multi-value tag filters (AND semantics)
+    reading_lane: str | None = Query(None),
+    artifact_focus: str | None = Query(None),
+    risk_domain: str | None = Query(None),
 ):
     conn = get_conn()
     try:
         where = []
         params = []
+
+        # Exclude quarantined by default
+        if not include_quarantined and status == "all":
+            where.append("w.read_status != 'quarantined'")
 
         if status != "all":
             where.append("w.read_status = ?")
@@ -48,6 +62,32 @@ def list_works(
         if language != "all":
             where.append("w.language = ?")
             params.append(language)
+        if primary_doc_type is not None:
+            where.append("w.primary_doc_type = ?")
+            params.append(primary_doc_type)
+        if publication_status is not None:
+            where.append("w.publication_status = ?")
+            params.append(publication_status)
+        if ingestion_state is not None:
+            where.append("w.ingestion_state = ?")
+            params.append(ingestion_state)
+        if priority is not None:
+            where.append("w.priority = ?")
+            params.append(priority)
+
+        # Multi-value tag filters: each tag_group filter requires that the work
+        # has an approved tag with the given tag_value
+        for tag_group, tag_value in [
+            ("reading_lane", reading_lane),
+            ("artifact_focus", artifact_focus),
+            ("risk_domain", risk_domain),
+        ]:
+            if tag_value is not None:
+                where.append(
+                    "w.id IN (SELECT work_id FROM work_classification_tags "
+                    "WHERE tag_group = ? AND tag_value = ? AND review_status = 'approved')"
+                )
+                params.extend([tag_group, tag_value])
         if search:
             where.append(
                 "(w.title LIKE ? OR w.id LIKE ? OR w.arxiv_id LIKE ? OR w.doi LIKE ?)"
@@ -212,12 +252,23 @@ def get_work(work_id: str):
                 ).fetchall()
             ]
 
+        # Classification tags (approved only, grouped by tag_group)
+        tag_rows = conn.execute(
+            "SELECT tag_group, tag_value FROM work_classification_tags "
+            "WHERE work_id = ? AND review_status = 'approved'",
+            (work_id,),
+        ).fetchall()
+        classification_tags = {}
+        for tr in tag_rows:
+            classification_tags.setdefault(tr["tag_group"], []).append(tr["tag_value"])
+
         work["source_files"] = sources
         work["archived_source_files"] = archived_sources
         work["relations"] = relations
         work["codes"] = codes
         work["duplicates"] = duplicates
         work["parse_runs"] = runs
+        work["classification_tags"] = classification_tags
 
         return work
     finally:
@@ -238,6 +289,9 @@ def update_work(work_id: str, body: WorkUpdate):
             if field == "authors":
                 updates.append("authors = ?")
                 params.append(json.dumps(value, ensure_ascii=False))
+            elif field == "is_core_literature" and value is not None:
+                updates.append("is_core_literature = ?")
+                params.append(1 if value else 0)
             elif value is not None:
                 updates.append(f"{field} = ?")
                 params.append(value)
@@ -351,9 +405,9 @@ def restore_work(work_id: str):
                     "UPDATE source_files SET source_path = ? WHERE id = ?",
                     (new_path, s["id"]),
                 )
-        # Remove bad_source code
+        # Remove quarantine-related codes
         conn.execute(
-            "DELETE FROM work_codes WHERE work_id = ? AND code = 'bad_source'",
+            "DELETE FROM work_codes WHERE work_id = ? AND code IN ('bad_source', 'quarantined')",
             (work_id,),
         )
 

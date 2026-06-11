@@ -14,6 +14,12 @@
       <router-link to="/relations" class="nav-item" :class="{ active: $route.path === '/relations' }">
         <span class="nav-icon">🔗</span>关系
       </router-link>
+      <router-link to="/metadata" class="nav-item" :class="{ active: $route.path === '/metadata' }">
+        <span class="nav-icon">🏷️</span>元数据
+      </router-link>
+      <router-link to="/classification" class="nav-item" :class="{ active: $route.path === '/classification' }">
+        <span class="nav-icon">📋</span>分类审核
+      </router-link>
     </nav>
     <main class="content">
       <slot />

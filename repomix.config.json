@@ -1,0 +1,38 @@
+{
+  "output": {
+    "filePath": "PROJECT_INDEX/history/LiteratureLib_{datetime}.md",
+    "style": "markdown",
+    "showDirectoryStructure": true
+  },
+  "compression": {
+    "enabled": true,
+    "keepSignatures": true,
+    "keepDocstrings": true,
+    "keepInterfaces": true
+  },
+  "ignore": {
+    "customPatterns": [
+      "**/*.md",
+      "**/*.json",
+      "**/*.log",
+      "**/*.db",
+      "**/*.sqlite",
+      "**/*.png",
+      "**/*.jpg",
+      "**/*.svg",
+      "**/*.pdf",
+      "**/*.lock",
+      "works/**",
+      "_quarantine/**",
+      "_archive/**",
+      "views/**",
+      "web/dist/**",
+      "web/public/**",
+      "web/node_modules/**",
+      "PROJECT_INDEX/history/**",
+      ".*/**"
+    ],
+    "useGitignore": true,
+    "useDefaultIgnore": true
+  }
+}

@@ -39,35 +39,35 @@
         <div>类型</div>
         <div>
           <select v-if="editing" v-model="editForm.doc_type">
-            <option value="paper">paper</option>
-            <option value="report">report</option>
-            <option value="system_card">system_card</option>
-            <option value="benchmark">benchmark</option>
-            <option value="preprint">preprint</option>
+            <option value="paper">论文</option>
+            <option value="report">报告</option>
+            <option value="system_card">系统卡</option>
+            <option value="benchmark">基准测试</option>
+            <option value="preprint">预印本</option>
           </select>
-          <span v-else>{{ work.doc_type || '' }}</span>
+          <span v-else>{{ label(DOC_TYPE_LABELS, work.doc_type) }}</span>
         </div>
         <div>语言</div>
         <div>
           <select v-if="editing" v-model="editForm.language">
-            <option value="en">en</option>
-            <option value="zh">zh</option>
-            <option value="unknown">unknown</option>
+            <option value="en">英文</option>
+            <option value="zh">中文</option>
+            <option value="unknown">未知</option>
           </select>
-          <span v-else>{{ work.language || '' }}</span>
+          <span v-else>{{ label(LANGUAGE_LABELS, work.language) }}</span>
         </div>
         <div>arXiv</div><div>{{ work.arxiv_id || '' }}</div>
         <div>DOI</div><div>{{ work.doi || '' }}</div>
         <div>中文标题</div><div>{{ work.title_zh || '' }}</div>
         <div>发表场所</div><div>{{ work.venue || '' }}</div>
         <div>链接</div><div><a v-if="work.url" :href="work.url" target="_blank">{{ work.url }}</a><span v-else></span></div>
-        <div>解析状态</div><div :class="'status-' + work.parse_status">{{ work.parse_status }}</div>
+        <div>解析状态</div><div :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</div>
         <div>阅读状态</div><div>
           <select v-if="editing" v-model="editForm.read_status">
-            <option value="unread">unread</option>
-            <option value="quarantined">quarantined</option>
+            <option value="unread">未读</option>
+            <option value="quarantined">已隔离</option>
           </select>
-          <span v-else>{{ work.read_status }}</span>
+          <span v-else>{{ label(READ_STATUS_LABELS, work.read_status) }}</span>
         </div>
       </div>
     </div>
@@ -75,6 +75,125 @@
     <div class="section" v-if="work.abstract">
       <h3>摘要</h3>
       <p class="abstract-text">{{ work.abstract }}</p>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h3>分类信息</h3>
+        <button v-if="!editingCls" @click="startEditCls">编辑</button>
+        <template v-else>
+          <button class="save" @click="saveEditCls">保存</button>
+          <button @click="editingCls = false">取消</button>
+        </template>
+      </div>
+      <div class="kv">
+        <div>主文档类型</div>
+        <div>
+          <select v-if="editingCls" v-model="clsForm.primary_doc_type">
+            <option :value="null">未标注</option>
+            <optgroup label="机构自述类">
+              <option value="system_model_card">系统卡/模型卡</option>
+              <option value="technical_report">技术报告</option>
+              <option value="governance_framework">治理框架</option>
+            </optgroup>
+            <optgroup label="评估类">
+              <option value="evaluation_report">第三方评估报告</option>
+              <option value="benchmark_dataset_paper">基准/数据集论文</option>
+            </optgroup>
+            <optgroup label="规范类">
+              <option value="standard_guideline">标准/指南</option>
+            </optgroup>
+            <optgroup label="报告类">
+              <option value="institutional_report">机构报告</option>
+              <option value="platform_snapshot">平台快照</option>
+            </optgroup>
+            <optgroup label="学术类">
+              <option value="research_article">研究论文</option>
+              <option value="survey_review">综述/评述</option>
+              <option value="thesis">学位论文</option>
+            </optgroup>
+            <optgroup label="网页类">
+              <option value="webpage_blog">网页/博客</option>
+            </optgroup>
+            <optgroup label="管理类">
+              <option value="workflow_artifact">工作流产物</option>
+              <option value="not_literature">非文献</option>
+              <option value="other_literature">其他</option>
+            </optgroup>
+          </select>
+          <span v-else>{{ label(PRIMARY_DOC_TYPE_LABELS, work.primary_doc_type) || '未标注' }}</span>
+        </div>
+        <div>发布状态</div>
+        <div>
+          <select v-if="editingCls" v-model="clsForm.publication_status">
+            <option :value="null">未标注</option>
+            <option value="published">已发表</option>
+            <option value="preprint">预印本</option>
+            <option value="working_paper">工作论文</option>
+            <option value="draft">草案</option>
+            <option value="living_document">持续更新文档</option>
+            <option value="institutional_release">机构正式发布</option>
+            <option value="webpage_release">网页发布</option>
+            <option value="unknown">未知</option>
+          </select>
+          <span v-else>{{ label(PUBLICATION_STATUS_LABELS, work.publication_status) || '未标注' }}</span>
+        </div>
+        <div>入库状态</div>
+        <div>
+          <select v-if="editingCls" v-model="clsForm.ingestion_state">
+            <option :value="null">未标注</option>
+            <option value="verified">已核验</option>
+            <option value="needs_review">待核查</option>
+            <option value="provisional">暂留</option>
+            <option value="excluded">已排除</option>
+            <option value="deprecated">已废弃</option>
+          </select>
+          <span v-else>{{ label(INGESTION_STATE_LABELS, work.ingestion_state) || '未标注' }}</span>
+        </div>
+        <div>优先级</div>
+        <div>
+          <select v-if="editingCls" v-model="clsForm.priority">
+            <option :value="null">未标注</option>
+            <option value="P0">核心必读</option>
+            <option value="P1">重要</option>
+            <option value="P2">参考</option>
+            <option value="P3">边缘</option>
+            <option value="archive">归档</option>
+          </select>
+          <span v-else>{{ label(PRIORITY_LABELS, work.priority) || '未标注' }}</span>
+        </div>
+      </div>
+      <div class="cls-tags" v-if="work.classification_tags && Object.keys(work.classification_tags).length">
+        <div v-for="(values, group) in work.classification_tags" :key="group" class="tag-row">
+          <span class="tag-group">{{ label(TAG_GROUP_LABELS, group) }}：</span>
+          <span class="chip" v-for="v in values" :key="v">{{ label(TAG_VALUE_LABELS[group], v) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h3>标签管理</h3>
+      </div>
+      <div v-if="allTags.length" class="tag-list">
+        <div v-for="t in allTags" :key="t.id" class="tag-item">
+          <span class="chip" :class="'tag-' + t.review_status">{{ label(TAG_GROUP_LABELS, t.tag_group) }}: {{ t.tag_value }}</span>
+          <span class="muted tiny">{{ t.source }}</span>
+          <button class="del" @click="removeTag(t.id)">删除</button>
+        </div>
+      </div>
+      <div v-else class="muted tiny" style="margin-bottom:8px">暂无标签</div>
+      <div class="add-tag">
+        <select v-model="newTag.tag_group">
+          <option value="reading_lane">阅读用途</option>
+          <option value="artifact_focus">贡献对象</option>
+          <option value="risk_domain">风险领域</option>
+          <option value="method_tags">方法标签</option>
+          <option value="processing_flags">处理标记</option>
+        </select>
+        <input v-model="newTag.tag_value" placeholder="标签值" />
+        <button @click="addTag" :disabled="!newTag.tag_value">添加</button>
+      </div>
     </div>
 
     <div class="section" v-if="work.source_files?.length">
@@ -103,7 +222,7 @@
         <router-link :to="'/works/' + (r.work_id_a === work.id ? r.work_id_b : r.work_id_a)">
           {{ r.partner_title }}
         </router-link>
-        <span class="chip">{{ r.relation_type }}</span>
+        <span class="chip">{{ label(RELATION_TYPE_LABELS, r.relation_type) }}</span>
         <button class="del" @click="removeRelation(r)">删除</button>
       </div>
     </div>
@@ -113,19 +232,19 @@
       <div class="add-rel">
         <input v-model="newRel.targetId" placeholder="目标 Work ID" />
         <select v-model="newRel.type">
-          <option value="translation_of">translation_of</option>
-          <option value="version_of">version_of</option>
-          <option value="same_work">same_work</option>
-          <option value="part_of">part_of</option>
-          <option value="supersedes">supersedes</option>
-          <option value="not_duplicate">not_duplicate</option>
+          <option value="translation_of">翻译版本</option>
+          <option value="version_of">版本关系</option>
+          <option value="same_work">同一作品</option>
+          <option value="part_of">组成部分</option>
+          <option value="supersedes">取代</option>
+          <option value="not_duplicate">非重复</option>
         </select>
         <button @click="addRelation" :disabled="!newRel.targetId">添加</button>
       </div>
     </div>
 
     <div class="section" v-if="work.codes?.length">
-      <h3>标签</h3>
+      <h3>质量标记</h3>
       <span class="chip" v-for="c in work.codes" :key="c.code">{{ c.code }}: {{ c.reason }}</span>
     </div>
 
@@ -146,7 +265,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl } from '../api'
+import { getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag } from '../api'
+import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, label } from '../labels'
 
 const props = defineProps(['id'])
 
@@ -156,6 +276,10 @@ const editing = ref(false)
 const editForm = ref({})
 const titleEl = ref(null)
 const newRel = ref({ targetId: '', type: 'translation_of' })
+const editingCls = ref(false)
+const clsForm = ref({})
+const allTags = ref([])
+const newTag = ref({ tag_group: 'reading_lane', tag_value: '' })
 
 const uniqueShaCount = computed(() => {
   if (!work.value?.source_files) return 0
@@ -175,6 +299,31 @@ async function loadWork() {
     const res = await fetch(contentUrl(props.id))
     if (res.ok) content.value = await res.text()
   } catch {}
+  await loadTags()
+}
+
+async function loadTags() {
+  try {
+    const res = await getTags(props.id)
+    allTags.value = res.tags
+  } catch { allTags.value = [] }
+}
+
+async function addTag() {
+  if (!newTag.value.tag_value) return
+  await createTag(props.id, {
+    tag_group: newTag.value.tag_group,
+    tag_value: newTag.value.tag_value,
+  })
+  newTag.value.tag_value = ''
+  await loadTags()
+  await loadWork()
+}
+
+async function removeTag(tagId) {
+  await deleteTag(tagId)
+  await loadTags()
+  await loadWork()
 }
 
 function startEdit() {
@@ -190,6 +339,22 @@ function startEdit() {
 }
 
 function cancelEdit() { editing.value = false }
+
+function startEditCls() {
+  clsForm.value = {
+    primary_doc_type: work.value.primary_doc_type || null,
+    publication_status: work.value.publication_status || null,
+    ingestion_state: work.value.ingestion_state || null,
+    priority: work.value.priority || null,
+  }
+  editingCls.value = true
+}
+
+async function saveEditCls() {
+  await updateWork(props.id, clsForm.value)
+  editingCls.value = false
+  await loadWork()
+}
 
 async function saveEdit() {
   const data = { ...editForm.value }
@@ -267,5 +432,16 @@ button.del { font-size: 12px; color: var(--bad); border: none; background: none;
 .status-succeeded { color: var(--ok); font-weight: 600; }
 .status-failed { color: var(--bad); font-weight: 600; }
 .abstract-text { font-size: 13px; line-height: 1.6; color: #374151; margin: 0; }
+.cls-tags { margin-top: 10px; }
+.tag-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0; }
+.tag-group { font-size: 12px; color: var(--muted); min-width: 80px; }
+.tag-list { margin-bottom: 8px; }
+.tag-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.tag-approved { background: #dcfce7; color: #166534; }
+.tag-pending { background: #fef3c7; color: #92400e; }
+.tag-rejected { background: #fee2e2; color: #991b1b; }
+.add-tag { display: flex; gap: 8px; align-items: center; }
+.add-tag select, .add-tag input { height: 30px; border: 1px solid var(--line); border-radius: 4px; padding: 0 8px; font: inherit; font-size: 12px; }
+.add-tag button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; font: inherit; font-size: 12px; }
 .empty { padding: 28px; text-align: center; color: var(--muted); }
 </style>

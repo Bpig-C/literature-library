@@ -71,3 +71,98 @@ export function contentUrl(workId) {
 export function pdfUrl(workId) {
   return `${BASE}/files/${encodeURIComponent(workId)}/pdf`
 }
+
+export function getMetadataExtractions(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/metadata${q ? '?' + q : ''}`)
+}
+
+export function getMetadataExtraction(extId) {
+  return request(`/metadata/${encodeURIComponent(extId)}`)
+}
+
+export function reviewMetadata(extId, data) {
+  return request(`/metadata/${encodeURIComponent(extId)}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function applyApprovedMetadata() {
+  return request('/metadata/apply-approved', { method: 'POST' })
+}
+
+export function batchApproveLowRisk() {
+  return request('/metadata/batch-approve-low-risk', { method: 'POST' })
+}
+
+export function quarantineFromReview(extId, reason) {
+  return request(`/metadata/${encodeURIComponent(extId)}/quarantine`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+// Classification tags
+export function getTags(workId) {
+  return request(`/classification/tags/${encodeURIComponent(workId)}`)
+}
+
+export function createTag(workId, data) {
+  return request(`/classification/tags/${encodeURIComponent(workId)}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function createTagsBatch(workId, tags) {
+  return request(`/classification/tags/${encodeURIComponent(workId)}/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ tags }),
+  })
+}
+
+export function deleteTag(tagId) {
+  return request(`/classification/tags/${encodeURIComponent(tagId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function reviewTag(tagId, data) {
+  return request(`/classification/tags/${encodeURIComponent(tagId)}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function getVocab() {
+  return request('/classification/vocab')
+}
+
+// Classification extractions
+export function getClassificationExtractions(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/classification/extractions${q ? '?' + q : ''}`)
+}
+
+export function getClassificationExtraction(extId) {
+  return request(`/classification/extractions/${encodeURIComponent(extId)}`)
+}
+
+export function reviewClassificationExtraction(extId, data) {
+  return request(`/classification/extractions/${encodeURIComponent(extId)}/review`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function batchApproveLowAmbiguity() {
+  return request('/classification/extractions/batch-approve-low-risk', { method: 'POST' })
+}
+
+export function quarantineFromClassificationReview(extId, reason) {
+  return request(`/classification/extractions/${encodeURIComponent(extId)}/quarantine`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}

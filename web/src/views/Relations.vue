@@ -6,12 +6,12 @@
       <div class="form-row">
         <input v-model="form.work_id_a" placeholder="Work ID A" />
         <select v-model="form.relation_type">
-          <option value="translation_of">translation_of</option>
-          <option value="version_of">version_of</option>
-          <option value="same_work">same_work</option>
-          <option value="part_of">part_of</option>
-          <option value="supersedes">supersedes</option>
-          <option value="not_duplicate">not_duplicate</option>
+          <option value="translation_of">翻译版本</option>
+          <option value="version_of">版本关系</option>
+          <option value="same_work">同一作品</option>
+          <option value="part_of">组成部分</option>
+          <option value="supersedes">取代</option>
+          <option value="not_duplicate">非重复</option>
         </select>
         <input v-model="form.work_id_b" placeholder="Work ID B" />
         <button @click="addRelation" :disabled="!form.work_id_a || !form.work_id_b">添加</button>
@@ -39,7 +39,7 @@
           <td>
             <router-link :to="'/works/' + r.work_id_b">{{ r.work_id_b_title }}</router-link>
           </td>
-          <td><span class="chip">{{ r.relation_type }}</span></td>
+          <td><span class="chip">{{ label(RELATION_TYPE_LABELS, r.relation_type) }}</span></td>
           <td>{{ r.confirmed ? '✓' : '' }}</td>
           <td class="note">{{ r.note || '' }}</td>
           <td><button class="del" @click="remove(r)">删除</button></td>
@@ -53,6 +53,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getRelations, createRelation, deleteRelation } from '../api'
+import { RELATION_TYPE_LABELS, label } from '../labels'
 
 const relations = ref([])
 const form = ref({ work_id_a: '', work_id_b: '', relation_type: 'translation_of' })

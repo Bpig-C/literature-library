@@ -37,11 +37,18 @@ def create_relation(body: RelationCreate):
     VALID_TYPES = {
         "same_work", "not_duplicate", "version_of",
         "translation_of", "supersedes", "part_of",
+        "parent", "child", "companion",
     }
+    VALID_CATEGORIES = {"content", "versioning", "document_structure"}
     if body.relation_type not in VALID_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid relation_type: {body.relation_type}. Must be one of: {VALID_TYPES}",
+        )
+    if body.relation_category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid relation_category: {body.relation_category}. Must be one of: {VALID_CATEGORIES}",
         )
 
     conn = get_conn()
@@ -51,9 +58,14 @@ def create_relation(body: RelationCreate):
             if not conn.execute("SELECT 1 FROM works WHERE id = ?", (wid,)).fetchone():
                 raise HTTPException(status_code=404, detail=f"Work not found: {wid}")
 
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         conn.execute(
-            "INSERT OR REPLACE INTO work_relations (work_id_a, work_id_b, relation_type, confirmed, note) VALUES (?, ?, ?, 0, ?)",
-            (body.work_id_a, body.work_id_b, body.relation_type, body.note),
+            "INSERT OR REPLACE INTO work_relations "
+            "(work_id_a, work_id_b, relation_type, confirmed, note, relation_category, source, created_at) "
+            "VALUES (?, ?, ?, 0, ?, ?, ?, ?)",
+            (body.work_id_a, body.work_id_b, body.relation_type,
+             body.note, body.relation_category, body.source, now),
         )
         conn.commit()
         return {"ok": True}

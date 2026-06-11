@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-06-08T00:00:00.000Z" agent="Codex" version="24.0.0">
+  <diagram id="architecture" name="系统架构">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="文献库系统架构 - 2026-06-08" style="text;html=1;fontSize=22;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="580" y="10" width="520" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="s-ui" value="用户界面层" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="140" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="vue" value="Vue 3 + Vite SPA&amp;#xa;localhost:19528" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="95" width="170" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="pages" value="页面&amp;#xa;Dashboard / Works / WorkDetail&amp;#xa;Duplicates / Relations&amp;#xa;MetadataReview / ClassificationReview" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="250" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="components" value="组件&amp;#xa;AppLayout&amp;#xa;PdfPreviewDrawer (pdfjs-dist)&amp;#xa;ResizeHandle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="310" y="170" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="api_js" value="web/src/api.js&amp;#xa;fetch wrapper&amp;#xa;统一 /api 前缀" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="265" width="180" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s-api" value="后端服务层" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="560" y="60" width="140" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="fastapi" value="FastAPI&amp;#xa;localhost:19527&amp;#xa;CORS: localhost:19528&amp;#xa;生产模式托管 web/dist" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="95" width="190" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="routes" value="API 路由&amp;#xa;works.py / files.py&amp;#xa;metadata.py / classification.py&amp;#xa;duplicates.py / relations.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="520" y="205" width="260" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="risk" value="辅助模块&amp;#xa;risk.py compute_risk&amp;#xa;classification_vocab.py&amp;#xa;classification_ambiguity.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="800" y="205" width="220" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="s-svc" value="脚本与外部服务" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="60" width="180" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="scripts" value="维护脚本&amp;#xa;literature_ingest.py&amp;#xa;literature_batch_parse.py&amp;#xa;literature_dedup.py&amp;#xa;literature_metadata_extract/rerun.py&amp;#xa;literature_classification_extract.py&amp;#xa;literature_healthcheck.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="95" width="260" height="118" as="geometry" />
+        </mxCell>
+        <mxCell id="doc_parser" value="document-parser&amp;#xa;localhost:18201&amp;#xa;封装 MinerU 调用" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="95" width="170" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="mineru" value="MinerU&amp;#xa;localhost:18200&amp;#xa;PDF -&gt; content.md / content.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="175" width="190" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama" value="Ollama 本地模型&amp;#xa;localhost:11435&amp;#xa;qwen3:4b-instruct&amp;#xa;元数据/分类抽取" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#9333ea;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="250" width="190" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="mimo" value="Mimo 2.5 Pro&amp;#xa;Claude Code skill&amp;#xa;全文重抽取/高风险修复" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#9333ea;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="250" width="190" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="s-data" value="数据层" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="sqlite" value="SQLite (WAL)&amp;#xa;literature.sqlite&amp;#xa;逻辑关系中心" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="405" width="170" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="tables_core" value="核心表&amp;#xa;works&amp;#xa;source_files&amp;#xa;literature_parse_runs&amp;#xa;parse_artifacts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="250" y="395" width="210" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="tables_review" value="审核/抽取表&amp;#xa;metadata_extractions&amp;#xa;classification_extractions&amp;#xa;work_classification_tags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="500" y="395" width="240" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="tables_rel" value="关系/质量表&amp;#xa;work_relations&amp;#xa;work_codes&amp;#xa;duplicate_groups&amp;#xa;duplicate_candidates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="780" y="395" width="230" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="s-fs" value="文件系统" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="370" width="120" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="inbox" value="_inbox/&amp;#xa;新 PDF 临时入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="405" width="145" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="works_dir" value="works/{work_id}/&amp;#xa;source/&amp;#xa;parsed/mineru/{source_file_id}/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="395" width="210" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="archive" value="_archive/&amp;#xa;ingested_inbox/&amp;#xa;dedup/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="480" width="160" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="dups" value="_duplicates/&amp;#xa;exact_sha256" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="495" width="150" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="quarantine" value="_quarantine/{work_id}/&amp;#xa;坏源/失败/隔离文件" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f5f9;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1390" y="480" width="190" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="s-flow" value="核心工作流" style="text;html=1;fontSize=14;fontStyle=5;align=left;verticalAlign=top;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="40" y="610" width="140" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_inbox" value="1. 投递 PDF&amp;#xa;_inbox" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="40" y="650" width="120" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_ingest" value="2. 摄入&amp;#xa;sha256 去重&amp;#xa;写 DB / ledger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="190" y="640" width="140" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_parse" value="3. 解析&amp;#xa;MinerU + document-parser&amp;#xa;生成 content.md" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="370" y="640" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_extract" value="4. 模型抽取&amp;#xa;Ollama / Mimo&amp;#xa;写 extraction 表" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="640" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_review" value="5. 人工审核&amp;#xa;MetadataReview&amp;#xa;ClassificationReview" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="790" y="640" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_approve" value="批准?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="645" width="76" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_apply" value="写入稳定层&amp;#xa;works / tags&amp;#xa;supersede 其余 pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="625" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_reject" value="needs_fix / rejected&amp;#xa;不写入 works&amp;#xa;可重抽或隔离" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="720" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_dedup" value="去重审核&amp;#xa;Duplicates&amp;#xa;same_work / version_of&amp;#xa;archive / quarantine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="735" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="约束&amp;#xa;文件系统只存物理文件；逻辑关系由 SQLite 管理&amp;#xa;模型结果先入审核表，人工确认后才进入稳定层" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#d4d4d4;dashed=1;fontSize=10;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="650" width="250" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="e_vue_api" value="/api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2563eb;fontSize=9;" edge="1" source="vue" target="fastapi" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pages_api" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2563eb;fontSize=9;" edge="1" source="pages" target="api_js" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_fastapi" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2563eb;fontSize=9;" edge="1" source="api_js" target="fastapi" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_fastapi_routes" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="fastapi" target="routes" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_routes_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="routes" target="sqlite" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_routes_risk" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="routes" target="risk" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_db" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="scripts" target="sqlite" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_doc" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="scripts" target="doc_parser" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_doc_mineru" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="doc_parser" target="mineru" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_ollama" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9333ea;dashed=1;fontSize=9;" edge="1" source="scripts" target="ollama" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mimo_review" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9333ea;dashed=1;fontSize=9;" edge="1" source="mimo" target="tables_review" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sql_core" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="sqlite" target="tables_core" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sql_review" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="sqlite" target="tables_review" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sql_rel" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="sqlite" target="tables_rel" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_inbox_scripts" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="inbox" target="scripts" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_worksdir" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="scripts" target="works_dir" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_archive" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="scripts" target="archive" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_scripts_dups" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="scripts" target="dups" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_routes_quarantine" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#dc2626;fontSize=9;" edge="1" source="routes" target="quarantine" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_inbox" target="wf_ingest" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_ingest" target="wf_parse" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_parse" target="wf_extract" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_extract" target="wf_review" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_review" target="wf_approve" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e6" value="是" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#16a34a;fontSize=9;" edge="1" source="wf_approve" target="wf_apply" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e7" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#dc2626;fontSize=9;" edge="1" source="wf_approve" target="wf_reject" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_ingest" target="wf_dedup" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="wf_e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#475569;fontSize=9;" edge="1" source="wf_dedup" target="wf_review" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

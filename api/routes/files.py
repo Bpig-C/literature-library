@@ -51,7 +51,7 @@ def get_pdf(work_id: str):
         return FileResponse(
             str(pdf_path),
             media_type="application/pdf",
-            filename=pdf_path.name,
+            content_disposition_type="inline",
         )
     finally:
         conn.close()

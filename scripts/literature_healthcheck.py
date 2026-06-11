@@ -201,20 +201,40 @@ def check_quarantine_db_consistency(conn: sqlite3.Connection) -> list[dict]:
         ).fetchall()
     }
 
-    # Works with bad_source code
-    bad_source_works = {
+    # Works with quarantine-related code (bad_source or quarantined)
+    code_works = {
         r["work_id"] for r in conn.execute(
-            "SELECT DISTINCT work_id FROM work_codes WHERE code = 'bad_source'"
+            "SELECT DISTINCT work_id FROM work_codes WHERE code IN ('bad_source', 'quarantined')"
         ).fetchall()
     }
 
-    # DB says quarantined but no bad_source code
-    for wid in db_quarantined - bad_source_works:
+    # DB says quarantined but no quarantine code
+    for wid in db_quarantined - code_works:
         issues.append({"type": "quarantine_no_code", "work_id": wid})
 
-    # Has bad_source code but not quarantined
-    for wid in bad_source_works - db_quarantined:
+    # Has quarantine code but not quarantined
+    for wid in code_works - db_quarantined:
         issues.append({"type": "code_no_quarantine", "work_id": wid})
+
+    # Check file location: quarantined works should have _quarantine/{work_id}/ with actual files
+    quarantine_dir = LIBRARY_ROOT / "_quarantine"
+    for wid in db_quarantined:
+        q_path = quarantine_dir / wid
+        sources = conn.execute(
+            "SELECT id, source_path, original_name FROM source_files WHERE work_id = ? AND status = 'active'",
+            (wid,),
+        ).fetchall()
+        for s in sources:
+            sp = s["source_path"]
+            if not sp:
+                continue
+            sp_path = Path(sp)
+            # source_path should point to _quarantine/{work_id}/
+            if not sp_path.parent.resolve().samefile(q_path.resolve()) if q_path.exists() else True:
+                issues.append({"type": "quarantine_path_mismatch", "work_id": wid, "source_id": s["id"], "source_path": sp})
+            # File should actually exist at that path
+            elif not sp_path.exists():
+                issues.append({"type": "quarantine_file_missing", "work_id": wid, "source_id": s["id"], "source_path": sp})
 
     return issues
 
@@ -500,9 +520,15 @@ def format_markdown(result: dict[str, Any]) -> str:
         lines.append("")
         for item in qc:
             if item["type"] == "quarantine_no_code":
-                lines.append(f"- {item['work_id']}：已隔离但无 bad_source 标签")
+                lines.append(f"- {item['work_id']}：已隔离但无隔离标签")
             elif item["type"] == "code_no_quarantine":
-                lines.append(f"- {item['work_id']}：有 bad_source 标签但未标记隔离")
+                lines.append(f"- {item['work_id']}：有隔离标签但未标记隔离")
+            elif item["type"] == "quarantine_no_files":
+                lines.append(f"- {item['work_id']}：已隔离但隔离目录不存在")
+            elif item["type"] == "quarantine_path_mismatch":
+                lines.append(f"- {item['work_id']}：source_path 未指向隔离目录 (source_id={item.get('source_id')})")
+            elif item["type"] == "quarantine_file_missing":
+                lines.append(f"- {item['work_id']}：隔离目录中源文件缺失 (source_id={item.get('source_id')})")
         lines.append("")
 
     # Duplicate review
