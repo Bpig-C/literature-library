@@ -17,10 +17,15 @@ _quarantine/
 _archive/
 /views/
 
+# Markdown documents
+*.md
+
+# Log files
+*.log
+
 # Database & JSON data
-literature.sqlite
-literature.sqlite-wal
-literature.sqlite-shm
+*.sqlite*
+*.db
 literature_library.db
 index.json
 parse_ledger.json
@@ -28,8 +33,10 @@ dedup_reviews.json
 literature_inventory.json
 migration_plan.json
 migration_plan.dryrun.json
-literature_report.md
-migration_report.md
+
+# Internal directories
+.claude/
+PROJECT_INDEX/
 
 # IDE
 .vscode/
