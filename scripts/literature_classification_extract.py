@@ -520,6 +520,25 @@ def run_extraction(args: argparse.Namespace) -> None:
             print("没有需要处理的文献。")
             return
 
+        # Supersede old pending extractions for works about to be re-extracted
+        work_ids_to_extract = [w["id"] for w in works]
+        if work_ids_to_extract and not args.no_write:
+            placeholders = ",".join("?" * len(work_ids_to_extract))
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            result = conn.execute(
+                f"UPDATE classification_extractions SET "
+                f"review_status = 'rejected', "
+                f"fix_action = 'superseded', "
+                f"review_note = 'superseded by new extraction run', "
+                f"reviewed_at = ? "
+                f"WHERE work_id IN ({placeholders}) AND review_status = 'pending'",
+                [now] + work_ids_to_extract,
+            )
+            superseded_count = result.rowcount
+            if superseded_count > 0:
+                conn.commit()
+                print(f"已废掉 {superseded_count} 条旧 pending extractions")
+
         print(f"待处理：{len(works)} 篇文献")
         print(f"模型：{args.model}")
         print(f"Ollama：{args.url}")
