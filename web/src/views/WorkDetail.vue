@@ -609,7 +609,7 @@ watch(() => props.id, loadWork, { immediate: true })
 /* List panel */
 .list-panel {
   display: flex; flex-direction: column; overflow: hidden; background: #fafbfc;
-  border-right: 1px solid var(--line); min-width: 0;
+  border-right: 1px solid var(--line); min-width: 0; min-height: 0;
 }
 .list-panel.collapsed .list-header,
 .list-panel.collapsed .list-filters,
@@ -655,7 +655,7 @@ watch(() => props.id, loadWork, { immediate: true })
 
 /* Detail panel */
 .detail-panel {
-  overflow-y: auto; padding: 16px 24px; min-width: 0;
+  overflow-y: auto; padding: 16px 24px; min-width: 0; min-height: 0;
 }
 .empty-panel { display: flex; align-items: center; justify-content: center; }
 
