@@ -13,8 +13,9 @@ async function request(path, options = {}) {
 }
 
 export function getWorks(params = {}) {
-  const q = new URLSearchParams(params).toString()
-  return request(`/works${q ? '?' + q : ''}`)
+  // Support both object params and pre-built query string
+  const q = typeof params === 'string' ? params : new URLSearchParams(params).toString()
+  return request(`/works${q ? (q.startsWith('?') ? q : '?' + q) : ''}`)
 }
 
 export function getWork(id) {

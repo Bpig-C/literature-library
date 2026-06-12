@@ -30,6 +30,12 @@
       </button>
     </div>
     <div class="advanced-filters" v-if="showAdvanced">
+      <div class="filter-row classified-toggle">
+        <button :class="['toggle-btn', { active: classifiedOnly }]" @click="classifiedOnly = !classifiedOnly; loadData()">
+          {{ classifiedOnly ? '✓ 已分类' : '已分类' }} {{ classifiedOnly ? totalMatching : '' }}
+        </button>
+        <button v-if="classifiedOnly" class="toggle-btn" @click="classifiedOnly = false; loadData()">显示全部</button>
+      </div>
       <div class="filter-row">
         <label>主文档类型</label>
         <select v-model="primaryDocTypeFilter" @change="loadData">
@@ -96,8 +102,7 @@
       </div>
       <div class="filter-row">
         <label>阅读用途</label>
-        <select v-model="readingLaneFilter" @change="loadData">
-          <option :value="null">全部</option>
+        <select v-model="readingLaneFilter" multiple @change="loadData">
           <option value="framework_taxonomy">框架与分类</option>
           <option value="evaluation_method">评测方法</option>
           <option value="governance_method">治理方法</option>
@@ -109,6 +114,49 @@
           <option value="background_theory">理论背景</option>
           <option value="literature_mapping">文献综述</option>
           <option value="workflow_support">工作流支持</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <label>风险领域</label>
+        <select v-model="riskDomainFilter" multiple @change="loadData">
+          <option value="jailbreak_resistance">越狱抵抗</option>
+          <option value="self_preservation">自我保护</option>
+          <option value="deception_honesty">欺骗与诚实</option>
+          <option value="power_seeking">权力寻求</option>
+          <option value="oversight_evasion">监督规避</option>
+          <option value="situational_awareness">情境感知</option>
+          <option value="goal_misgeneralization">目标误泛化</option>
+          <option value="value_alignment">价值对齐</option>
+          <option value="multi_agent_safety">多智能体安全</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <label>关注对象</label>
+        <select v-model="artifactFocusFilter" multiple @change="loadData">
+          <option value="audit_finding">审计发现</option>
+          <option value="benchmark">基准测试</option>
+          <option value="capability_profile">能力画像</option>
+          <option value="dataset">数据集</option>
+          <option value="empirical_finding">实证发现</option>
+          <option value="eval_suite">评测套件</option>
+          <option value="evaluation_framework">评测框架</option>
+          <option value="framework">框架</option>
+          <option value="framework_proposal">框架提案</option>
+          <option value="governance">治理</option>
+          <option value="guideline">指南</option>
+          <option value="model">模型</option>
+          <option value="model_card">模型卡</option>
+          <option value="policy_analysis">政策分析</option>
+          <option value="risk_assessment">风险评估</option>
+          <option value="risk_management">风险管理</option>
+          <option value="safety_case_argument">安全论证</option>
+          <option value="safety_report">安全报告</option>
+          <option value="standard">标准</option>
+          <option value="theoretical_contribution">理论贡献</option>
+          <option value="tool_release">工具发布</option>
+          <option value="transparency">透明度</option>
+          <option value="trend">趋势</option>
         </select>
       </div>
     </div>
@@ -202,7 +250,10 @@ const primaryDocTypeFilter = ref(null)
 const publicationStatusFilter = ref(null)
 const ingestionStateFilter = ref(null)
 const priorityFilter = ref(null)
-const readingLaneFilter = ref(null)
+const readingLaneFilter = ref([])
+const riskDomainFilter = ref([])
+const artifactFocusFilter = ref([])
+const classifiedOnly = ref(false)
 const sortKey = ref('created_at')
 const sortDir = ref('desc')
 const sortOptions = [
@@ -242,8 +293,29 @@ async function loadData() {
   if (publicationStatusFilter.value) params.publication_status = publicationStatusFilter.value
   if (ingestionStateFilter.value) params.ingestion_state = ingestionStateFilter.value
   if (priorityFilter.value) params.priority = priorityFilter.value
-  if (readingLaneFilter.value) params.reading_lane = readingLaneFilter.value
-  const res = await getWorks(params)
+  if (classifiedOnly.value) params.classified_only = true
+
+  // Build URLSearchParams manually to support array params
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      searchParams.append(key, value)
+    }
+  }
+  // Multi-value tag filters
+  for (const [key, values] of [
+    ['reading_lane', readingLaneFilter.value],
+    ['risk_domain', riskDomainFilter.value],
+    ['artifact_focus', artifactFocusFilter.value],
+  ]) {
+    if (values && values.length > 0) {
+      for (const v of values) {
+        searchParams.append(key, v)
+      }
+    }
+  }
+  const q = searchParams.toString()
+  const res = await getWorks(q ? '?' + q : '')
   works.value = res.works
   total.value = res.total
   totalMatching.value = res.total_matching
@@ -308,9 +380,21 @@ h1 { margin-bottom: 12px; font-size: 22px; }
   background: #f8fafc; border: 1px solid var(--line); border-radius: 6px;
   margin-bottom: 10px;
 }
+.classified-toggle {
+  width: 100%; flex-direction: row; align-items: center; gap: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.toggle-btn {
+  height: 30px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--line);
+  background: #fff; cursor: pointer; font: inherit; font-size: 12px; color: #4a5568;
+}
+.toggle-btn.active {
+  background: var(--accent, #3b82f6); color: #fff; border-color: var(--accent, #3b82f6);
+}
 .filter-row { display: flex; flex-direction: column; gap: 4px; }
 .filter-row label { font-size: 11px; color: #6b7280; font-weight: 500; }
 .filter-row select, .filter-row input { height: 30px; border: 1px solid var(--line); border-radius: 4px; padding: 0 8px; font: inherit; font-size: 12px; background: #fff; }
+.filter-row select[multiple] { height: auto; min-height: 60px; padding: 4px; }
 .status-verified { color: var(--ok); }
 .status-needs_review { color: #d97706; }
 .status-provisional { color: #6b7280; }

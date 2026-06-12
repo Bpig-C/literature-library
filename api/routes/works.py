@@ -40,10 +40,12 @@ def list_works(
     publication_status: str | None = Query(None),
     ingestion_state: str | None = Query(None),
     priority: str | None = Query(None),
-    # Multi-value tag filters (AND semantics)
-    reading_lane: str | None = Query(None),
-    artifact_focus: str | None = Query(None),
-    risk_domain: str | None = Query(None),
+    # Multi-value tag filters (OR within dimension)
+    reading_lane: list[str] | None = Query(default=None),
+    artifact_focus: list[str] | None = Query(default=None),
+    risk_domain: list[str] | None = Query(default=None),
+    # Classified-only filter
+    classified_only: bool = Query(False),
 ):
     conn = get_conn()
     try:
@@ -76,19 +78,23 @@ def list_works(
             where.append("w.priority = ?")
             params.append(priority)
 
-        # Multi-value tag filters: each tag_group filter requires that the work
-        # has an approved tag with the given tag_value
-        for tag_group, tag_value in [
+        # Classified-only filter
+        if classified_only:
+            where.append("w.primary_doc_type IS NOT NULL AND w.primary_doc_type != ''")
+
+        # Multi-value tag filters: OR within dimension (match any selected value)
+        for tag_group, tag_values in [
             ("reading_lane", reading_lane),
             ("artifact_focus", artifact_focus),
             ("risk_domain", risk_domain),
         ]:
-            if tag_value is not None:
+            if tag_values:
+                placeholders = ",".join("?" * len(tag_values))
                 where.append(
-                    "w.id IN (SELECT work_id FROM work_classification_tags "
-                    "WHERE tag_group = ? AND tag_value = ? AND review_status = 'approved')"
+                    f"w.id IN (SELECT work_id FROM work_classification_tags "
+                    f"WHERE tag_group = ? AND tag_value IN ({placeholders}) AND review_status = 'approved')"
                 )
-                params.extend([tag_group, tag_value])
+                params.extend([tag_group, *tag_values])
         if search:
             where.append(
                 "(w.title LIKE ? OR w.id LIKE ? OR w.arxiv_id LIKE ? OR w.doi LIKE ?)"
