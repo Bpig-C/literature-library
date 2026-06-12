@@ -9,11 +9,14 @@ class WorkUpdate(BaseModel):
     title: str | None = None
     authors: list[str] | None = None
     year: int | None = None
+    month: int | None = None
     doc_type: str | None = None
     language: str | None = None
     read_status: str | None = None
+    publication_date_json: str | None = None
     # Classification v0.2 fields
     primary_doc_type: str | None = None
+    secondary_doc_type: str | None = None
     publication_status: str | None = None
     ingestion_state: str | None = None
     priority: str | None = None

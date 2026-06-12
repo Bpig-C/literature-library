@@ -20,6 +20,7 @@ from api.db import get_conn
 # Columns to add to works table
 WORKS_COLUMNS = [
     ("primary_doc_type", "TEXT"),
+    ("secondary_doc_type", "TEXT"),
     ("publication_status", "TEXT"),
     ("ingestion_state", "TEXT"),
     ("priority", "TEXT"),
@@ -41,6 +42,7 @@ RELATIONS_COLUMNS = [
 # Indexes for works table
 WORKS_INDEXES = [
     ("idx_works_primary_doc_type", "works", "primary_doc_type"),
+    ("idx_works_secondary_doc_type", "works", "secondary_doc_type"),
     ("idx_works_publication_status", "works", "publication_status"),
     ("idx_works_ingestion_state", "works", "ingestion_state"),
     ("idx_works_priority", "works", "priority"),

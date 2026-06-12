@@ -1,7 +1,7 @@
 ﻿<template>
   <div class="review-layout" :class="{ 'with-pdf': selected && showPdfDrawer }" :style="layoutStyle">
     <!-- Left: list panel -->
-    <div class="list-panel">
+    <div class="list-panel" :class="{ collapsed: listCollapsed }">
       <h1>元数据审核</h1>
       <div class="stats-bar">
         <div v-for="s in STATUSES" :key="s.key" class="stat-card"
@@ -24,6 +24,12 @@
         </button>
       </div>
       <input v-model="search" placeholder="搜索标题、ID..." class="search-input" />
+      <div class="sort-row">
+        <n-select v-model:value="sortKey" :options="sortOptions" size="small" style="flex:1" @update:value="resetAndLoad" />
+        <button class="sort-dir-btn" @click="toggleSortDir" :title="sortDir === 'desc' ? '降序' : '升序'">
+          {{ sortDir === 'desc' ? '↓' : '↑' }}
+        </button>
+      </div>
       <label class="include-toggle">
         <input type="checkbox" v-model="includeQuarantined" />
         <span>显示已隔离</span>
@@ -46,13 +52,12 @@
         </div>
         <div v-if="!extractions.length" class="empty">没有匹配的记录</div>
       </div>
-      <div class="pagination" v-if="totalPages > 1">
-        <button :disabled="page <= 1" @click="page--; loadList()">上一页</button>
-        <span>{{ page }} / {{ totalPages }}</span>
-        <button :disabled="page >= totalPages" @click="page++; loadList()">下一页</button>
+      <n-pagination v-if="totalPages > 1" v-model:page="page" :page-count="totalPages" @update:page="loadList()" />
+      <div class="list-collapse-bar" @click="toggleListCollapse" :title="listCollapsed ? '展开列表' : '收起列表'">
+        {{ listCollapsed ? '»' : '«' }}
       </div>
     </div>
-    <ResizeHandle @resize="onResizeList" />
+    <ResizeHandle v-if="selected && showPdfDrawer" @resize="onResizeList" />
 
     <!-- Right: detail panel -->
     <div class="detail-panel" v-if="selected">
@@ -232,8 +237,8 @@
     </div>
     <ResizeHandle v-if="selected && showPdfDrawer" @resize="onResizeDetail" />
     <PdfPreviewDrawer
-      v-if="selected && showPdfDrawer"
-      :key="pdfPreviewKey"
+      v-if="selected && showPdfDrawer && activePdfWorkId === selected.work_id"
+      :key="pdfDrawerKey"
       :url="pdfLink"
       :work-id="selected.work_id"
       @close="closePdfDrawer"
@@ -243,9 +248,14 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useMessage, useDialog } from 'naive-ui'
+import { usePagination } from '../composables/usePagination'
 import { getMetadataExtractions, reviewMetadata, batchApproveLowRisk, quarantineFromReview, contentUrl, pdfUrl } from '../api'
 import PdfPreviewDrawer from '../components/PdfPreviewDrawer.vue'
 import ResizeHandle from '../components/ResizeHandle.vue'
+
+const message = useMessage()
+const dialog = useDialog()
 
 const STATUSES = [
   { key: 'pending', label: '待审' },
@@ -295,9 +305,14 @@ const riskFilter = ref('all')
 const modelFilter = ref('all')
 const search = ref('')
 const includeQuarantined = ref(false)
-const page = ref(1)
-const perPage = 20
-const total = ref(0)
+const sortKey = ref('created_at')
+const sortDir = ref('desc')
+const sortOptions = [
+  { label: '抽取时间', value: 'created_at' },
+  { label: '风险分数', value: 'risk_score' },
+  { label: '标题', value: 'work_title' },
+]
+const { page, total, totalPages, params: paginationParams, reset } = usePagination({ perPage: 20, mode: 'page' })
 const summary = ref({})
 const extractions = ref([])
 const selected = ref(null)
@@ -317,16 +332,18 @@ const showQuarantineModal = ref(false)
 const quarantineReason = ref('')
 const quarantineLoading = ref(false)
 const showPdfDrawer = ref(false)
+const activePdfWorkId = ref(null)
 const pdfPreviewKey = ref(0)
 const listWidth = ref(340)
+const listPrevWidth = ref(340)
+const listCollapsed = ref(false)
 const detailWidth = ref(null)
-
-const totalPages = computed(() => Math.ceil(total.value / perPage))
 
 const confidence = computed(() => selected.value?.confidence_json || {})
 const evidence = computed(() => selected.value?.extracted_json?.evidence || {})
 
 const pdfLink = computed(() => selected.value ? pdfUrl(selected.value.work_id) : '#')
+const pdfDrawerKey = computed(() => `${activePdfWorkId.value || 'none'}:${pdfPreviewKey.value}`)
 
 const notePlaceholder = computed(() => {
   if (!selected.value) return '审核备注...'
@@ -338,14 +355,13 @@ const notePlaceholder = computed(() => {
 })
 
 const layoutStyle = computed(() => {
-  const cols = [`${listWidth.value}px`, '6px']
   if (selected.value && showPdfDrawer.value) {
-    cols.push(detailWidth.value === null ? 'minmax(320px, 1fr)' : `${detailWidth.value}px`)
-    cols.push('6px', 'minmax(420px, 42vw)')
-  } else {
-    cols.push('minmax(0, 1fr)')
+    // 5 columns: list | handle | detail | handle | pdf
+    const detail = detailWidth.value === null ? 'minmax(320px, 1fr)' : `${detailWidth.value}px`
+    return { gridTemplateColumns: `${listWidth.value}px 6px ${detail} 6px minmax(420px, 42vw)` }
   }
-  return { gridTemplateColumns: cols.join(' ') }
+  // 2 columns: list | detail (no ResizeHandle between them)
+  return { gridTemplateColumns: `${listWidth.value}px minmax(0, 1fr)` }
 })
 
 const FRONT_CHARS = 12000
@@ -383,16 +399,29 @@ function onResizeDetail(w) {
   detailWidth.value = Math.max(320, Math.min(w, 960))
 }
 
-function openPdfDrawer() {
-  if (!showPdfDrawer.value) {
-    showPdfDrawer.value = true
-    pdfPreviewKey.value += 1
+function toggleListCollapse() {
+  if (listCollapsed.value) {
+    listWidth.value = listPrevWidth.value
+    listCollapsed.value = false
+  } else {
+    listPrevWidth.value = listWidth.value
+    listWidth.value = 80
+    listCollapsed.value = true
   }
+}
+
+function openPdfDrawer() {
+  if (!selected.value) return
+  activePdfWorkId.value = selected.value.work_id
+  showPdfDrawer.value = true
+  pdfPreviewKey.value += 1
 }
 
 function closePdfDrawer() {
   showPdfDrawer.value = false
   detailWidth.value = null
+  activePdfWorkId.value = null
+  pdfPreviewKey.value += 1
 }
 
 function togglePdfDrawer() {
@@ -418,11 +447,13 @@ function formatCurrent(f) {
 }
 
 async function loadList() {
-  const params = { status: statusFilter.value, page: page.value, per_page: perPage }
+  const params = { ...paginationParams.value, status: statusFilter.value }
   if (riskFilter.value !== 'all') params.risk = riskFilter.value
   if (modelFilter.value !== 'all') params.model = modelFilter.value
   if (search.value) params.search = search.value
   if (includeQuarantined.value) params.include_quarantined = true
+  params.sort = sortKey.value
+  params.order = sortDir.value
   const res = await getMetadataExtractions(params)
   extractions.value = res.extractions
   total.value = res.total
@@ -430,16 +461,23 @@ async function loadList() {
 }
 
 async function doBatchApprove() {
-  if (!confirm('确认批量批准所有低风险待审记录？')) return
-  const res = await batchApproveLowRisk()
-  alert(`已批准 ${res.approved} 条，回填 ${res.applied} 条`)
-  await loadList()
+  dialog.warning({
+    title: '批量批准',
+    content: '确认批量批准所有低风险待审记录？',
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const res = await batchApproveLowRisk()
+      message.success(`已批准 ${res.approved} 条，回填 ${res.applied} 条`)
+      await loadList()
+    },
+  })
 }
 
 function selectExtraction(ext) {
   const keepPdfOpen = showPdfDrawer.value
   selected.value = ext
-  if (keepPdfOpen) pdfPreviewKey.value += 1
+  if (keepPdfOpen) openPdfDrawer()
   const ej = ext.extracted_json || {}
   editForm.value = {
     title: ej.title || '',
@@ -504,7 +542,20 @@ function highlightNext() {
 async function doReview(status) {
   if (!selected.value) return
   if (status === 'rejected' && !reviewNote.value.trim()) {
-    alert('拒绝时请填写原因，便于 Mimo 重新抽取')
+    message.warning('拒绝时请填写原因，便于 Mimo 重新抽取')
+    return
+  }
+  // Validate fields before submission
+  if (editForm.value.doi && !/^(10\.\d{4,}\/|doi:)/.test(editForm.value.doi)) {
+    message.warning('DOI 格式似乎不正确')
+    return
+  }
+  if (editForm.value.url && !/^https?:\/\//.test(editForm.value.url)) {
+    message.warning('URL 需要以 http:// 或 https:// 开头')
+    return
+  }
+  if (editForm.value.arxiv_id && !/^\d{4}\.\d{4,5}(v\d+)?$/.test(editForm.value.arxiv_id)) {
+    message.warning('arXiv ID 格式似乎不正确（应为如 2301.12345）')
     return
   }
   const editedFields = {}
@@ -548,28 +599,68 @@ async function doQuarantine() {
     selected.value = null
     await loadList()
   } catch (e) {
-    alert('隔离失败: ' + e.message)
+    message.error('隔离失败: ' + e.message)
   } finally {
     quarantineLoading.value = false
   }
 }
 
-watch(statusFilter, () => { page.value = 1; riskFilter.value = 'all'; modelFilter.value = 'all'; loadList() })
-watch(riskFilter, () => { page.value = 1; loadList() })
-watch(modelFilter, () => { page.value = 1; loadList() })
-watch(includeQuarantined, () => { page.value = 1; loadList() })
+watch(statusFilter, () => { reset(); riskFilter.value = 'all'; modelFilter.value = 'all'; loadList() })
+watch(riskFilter, () => { reset(); loadList() })
+watch(modelFilter, () => { reset(); loadList() })
+watch(includeQuarantined, () => { reset(); loadList() })
 let searchTimer = null
 watch(search, () => {
   clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => { page.value = 1; loadList() }, 300)
+  searchTimer = setTimeout(() => { reset(); loadList() }, 300)
 })
+
+function toggleSortDir() {
+  sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  loadList()
+}
+
+function resetAndLoad() {
+  reset()
+  loadList()
+}
 
 onMounted(loadList)
 </script>
 
 <style scoped>
-.review-layout { display: grid; grid-template-columns: 340px 6px minmax(0, 1fr); gap: 0; height: calc(100vh - 40px); }
-.list-panel { min-width: 0; border-right: 1px solid var(--line); overflow-y: auto; padding: 16px; background: var(--panel); }
+.review-layout { display: grid; gap: 0; height: calc(100vh - 40px); }
+.list-panel { min-width: 0; border-right: 1px solid var(--line); overflow-y: auto; padding: 16px; background: var(--panel); transition: width .2s; position: relative; }
+.list-panel.collapsed { overflow: hidden; padding: 16px 6px; }
+.list-panel.collapsed h1,
+.list-panel.collapsed .stats-bar,
+.list-panel.collapsed .model-bar,
+.list-panel.collapsed .risk-bar,
+.list-panel.collapsed .search-input,
+.list-panel.collapsed .sort-row,
+.list-panel.collapsed .include-toggle,
+.list-panel.collapsed .ext-meta,
+.list-panel.collapsed .pagination { display: none; }
+.list-collapse-bar {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 18px;
+  height: 28px;
+  cursor: pointer;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  user-select: none;
+  transition: background .15s;
+  z-index: 10;
+}
+.list-collapse-bar:hover { background: #e0e5ec; color: var(--text); }
 .detail-panel { min-width: 0; overflow-y: auto; padding: 20px 24px; }
 .detail-panel.empty-state { display: flex; align-items: center; justify-content: center; color: var(--muted); }
 h1 { font-size: 18px; margin-bottom: 12px; }
@@ -585,6 +676,9 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 
 /* Search */
 .search-input { width: 100%; height: 32px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; font: inherit; margin-bottom: 10px; }
+.sort-row { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
+.sort-dir-btn { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.sort-dir-btn:hover { background: #eef2f7; }
 .include-toggle { display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; color: var(--muted); font-size: 12px; user-select: none; }
 .include-toggle input { margin: 0; }
 
@@ -616,11 +710,6 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 .ext-item.quarantined { opacity: .68; background: #f9fafb; }
 .ext-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ext-meta { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); margin-top: 2px; }
-
-/* Pagination */
-.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 12px; }
-.pagination button { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; cursor: pointer; font: inherit; }
-.pagination button:disabled { opacity: 0.4; cursor: default; }
 
 /* Detail header */
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
@@ -695,8 +784,8 @@ textarea.full-input { height: auto; padding: 6px; resize: vertical; }
 
 /* Review bar */
 .review-bar { display: flex; gap: 8px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); margin-bottom: 12px; flex-wrap: wrap; }
-.note-input { flex: 1; min-width: 200px; height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; font: inherit; }
-.review-bar button { height: 34px; padding: 0 16px; border: none; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
+.note-input { flex: 1 1 200px; min-width: 200px; height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; font: inherit; }
+.review-bar button { flex-shrink: 0; white-space: nowrap; height: 34px; padding: 0 16px; border: none; border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
 .btn-approve { background: #16833a; color: #fff; }
 .btn-fix { background: #9a6700; color: #fff; }
 .btn-reject { background: #c32f27; color: #fff; }

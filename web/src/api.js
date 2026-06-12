@@ -156,6 +156,13 @@ export function reviewClassificationExtraction(extId, data) {
   })
 }
 
+export function saveClassificationDraft(extId, data) {
+  return request(`/classification/extractions/${encodeURIComponent(extId)}/save-draft`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
 export function batchApproveLowAmbiguity() {
   return request('/classification/extractions/batch-approve-low-risk', { method: 'POST' })
 }

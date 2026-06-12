@@ -31,6 +31,7 @@ def list_works(
     language: str = "all",
     search: str = "",
     sort: str = "id",
+    order: str = "asc",
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=200),
     include_quarantined: bool = Query(False),
@@ -135,10 +136,11 @@ def list_works(
             "created_at": "w.created_at",
             "read_status": "w.read_status",
         }.get(sort, "w.id")
+        sort_dir = "DESC" if order.lower() == "desc" else "ASC"
 
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"SELECT w.* FROM works w{where_clause} ORDER BY {sort_col} LIMIT ? OFFSET ?",
+            f"SELECT w.* FROM works w{where_clause} ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 
@@ -285,13 +287,28 @@ def update_work(work_id: str, body: WorkUpdate):
 
         updates = []
         params = []
-        for field, value in body.model_dump(exclude_unset=True).items():
+        # Handle month -> publication_date_json sync
+        body_data = body.model_dump(exclude_unset=True)
+        month_val = body_data.pop("month", None)
+        if month_val is not None:
+            # Update publication_date_json with month
+            date_json = json.loads(row["publication_date_json"] or "{}") if row["publication_date_json"] else {}
+            date_json["month"] = month_val
+            if "year" not in date_json and row["year"]:
+                date_json["year"] = row["year"]
+            updates.append("publication_date_json = ?")
+            params.append(json.dumps(date_json, ensure_ascii=False))
+        for field, value in body_data.items():
             if field == "authors":
                 updates.append("authors = ?")
                 params.append(json.dumps(value, ensure_ascii=False))
             elif field == "is_core_literature" and value is not None:
                 updates.append("is_core_literature = ?")
                 params.append(1 if value else 0)
+            elif field == "publication_date_json" and value is not None:
+                # Direct update of publication_date_json
+                updates.append("publication_date_json = ?")
+                params.append(value)
             elif value is not None:
                 updates.append(f"{field} = ?")
                 params.append(value)

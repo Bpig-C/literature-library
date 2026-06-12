@@ -66,16 +66,20 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  const token = ++loadToken  // invalidate any in-flight load
+  renderToken += 1           // invalidate any in-flight render
   cancelRender()
-  if (loadTask) loadTask.destroy()
-  if (pdfDoc) pdfDoc.destroy()
+  if (loadTask) { try { loadTask.destroy() } catch {} loadTask = null }
+  if (pdfDoc) { try { pdfDoc.destroy() } catch {} pdfDoc = null }
 })
 
 async function loadPdf() {
   const token = ++loadToken
+  renderToken += 1
   cancelRender()
   if (loadTask) loadTask.destroy()
   if (pdfDoc) pdfDoc.destroy()
+  clearCanvas()
 
   loading.value = true
   error.value = ''
@@ -146,6 +150,17 @@ function cancelRender() {
     renderTask.cancel()
     renderTask = null
   }
+}
+
+function clearCanvas() {
+  const canvas = canvasEl.value
+  if (!canvas) return
+  const context = canvas.getContext('2d')
+  if (context) context.clearRect(0, 0, canvas.width, canvas.height)
+  canvas.width = 0
+  canvas.height = 0
+  canvas.style.width = ''
+  canvas.style.height = ''
 }
 
 function goToPage(nextPage) {

@@ -76,6 +76,8 @@ def list_metadata(
     per_page: int = Query(20, ge=1, le=100),
     search: str = Query(""),
     include_quarantined: bool = Query(False),
+    sort: str = Query("created_at"),
+    order: str = Query("desc"),
 ):
     conn = get_conn()
     try:
@@ -155,10 +157,18 @@ def list_metadata(
         ).fetchone()[0]
 
         offset = (page - 1) * per_page
+
+        sort_col = {
+            "created_at": "me.created_at",
+            "risk_score": "me.risk_score",
+            "work_title": "w.title",
+        }.get(sort, "me.created_at")
+        sort_dir = "DESC" if order.lower() == "desc" else "ASC"
+
         rows = conn.execute(
             f"SELECT me.* FROM metadata_extractions me "
             f"JOIN works w ON w.id = me.work_id {where_clause} "
-            f"ORDER BY me.risk_score DESC, me.created_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 
@@ -566,7 +576,8 @@ def _apply_single(conn, ext_id: str, work_id: str, extracted: dict, confidence: 
     params = []
     for field, col in APPLY_FIELDS.items():
         conf = confidence.get(field) if isinstance(confidence, dict) else None
-        if conf not in ("high", "medium"):
+        # title_zh: apply even when confidence is None (historical data has None)
+        if conf not in ("high", "medium") and field != "title_zh":
             continue
         value = extracted.get(field)
         if value is None or value == "":
@@ -580,6 +591,12 @@ def _apply_single(conn, ext_id: str, work_id: str, extracted: dict, confidence: 
             value = json.dumps(value, ensure_ascii=False)
         sets.append(f"{col} = ?")
         params.append(value)
+
+    # Sync year from publication_date_json if year is not already set
+    pdj = extracted.get("publication_date")
+    if isinstance(pdj, dict) and pdj.get("year") and not current["year"]:
+        sets.append("year = ?")
+        params.append(pdj["year"])
 
     if sets:
         params.append(work_id)

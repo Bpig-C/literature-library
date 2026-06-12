@@ -21,6 +21,10 @@
         <option value="en">英文</option>
         <option value="zh">中文</option>
       </select>
+      <n-select v-model:value="sortKey" :options="sortOptions" style="width: 160px" @update:value="loadData" />
+      <button class="sort-dir-btn" @click="toggleSortDir" :title="sortDir === 'desc' ? '降序（最新在前）' : '升序（最旧在前）'">
+        {{ sortDir === 'desc' ? '↓ 新→旧' : '↑ 旧→新' }}
+      </button>
       <button class="toggle-advanced" @click="showAdvanced = !showAdvanced">
         {{ showAdvanced ? '收起筛选' : '高级筛选' }}
       </button>
@@ -30,34 +34,27 @@
         <label>主文档类型</label>
         <select v-model="primaryDocTypeFilter" @change="loadData">
           <option :value="null">全部</option>
-          <optgroup label="机构自述类">
-            <option value="system_model_card">系统卡/模型卡</option>
-            <option value="technical_report">技术报告</option>
-            <option value="governance_framework">治理框架</option>
+          <optgroup label="功能定位类型（优先）">
+            <option value="system_model_card">系统卡/模型卡 (system_model_card)</option>
+            <option value="governance_framework">治理框架 (governance_framework)</option>
+            <option value="standard_guideline">标准/指南 (standard_guideline)</option>
+            <option value="benchmark_dataset_paper">基准/数据集论文 (benchmark_dataset_paper)</option>
+            <option value="evaluation_report">第三方评估报告 (evaluation_report)</option>
           </optgroup>
-          <optgroup label="评估类">
-            <option value="evaluation_report">第三方评估报告</option>
-            <option value="benchmark_dataset_paper">基准/数据集论文</option>
+          <optgroup label="文档形态类型">
+            <option value="technical_report">技术报告 (technical_report)</option>
+            <option value="institutional_report">机构报告 (institutional_report)</option>
+            <option value="research_article">研究论文 (research_article)</option>
+            <option value="survey_review">综述/评述 (survey_review)</option>
+            <option value="platform_snapshot">平台快照 (platform_snapshot)</option>
+            <option value="thesis">学位论文 (thesis)</option>
+            <option value="book_chapter">书章 (book_chapter)</option>
+            <option value="webpage_blog">网页/博客 (webpage_blog)</option>
+            <option value="other_literature">其他 (other_literature)</option>
           </optgroup>
-          <optgroup label="规范类">
-            <option value="standard_guideline">标准/指南</option>
-          </optgroup>
-          <optgroup label="报告类">
-            <option value="institutional_report">机构报告</option>
-            <option value="platform_snapshot">平台快照</option>
-          </optgroup>
-          <optgroup label="学术类">
-            <option value="research_article">研究论文</option>
-            <option value="survey_review">综述/评述</option>
-            <option value="thesis">学位论文</option>
-          </optgroup>
-          <optgroup label="网页类">
-            <option value="webpage_blog">网页/博客</option>
-          </optgroup>
-          <optgroup label="管理类">
-            <option value="workflow_artifact">工作流产物</option>
-            <option value="not_literature">非文献</option>
-            <option value="other_literature">其他</option>
+          <optgroup label="存在性标记">
+            <option value="workflow_artifact">工作流产物 (workflow_artifact)</option>
+            <option value="not_literature">非文献 (not_literature)</option>
           </optgroup>
         </select>
       </div>
@@ -65,36 +62,36 @@
         <label>发布状态</label>
         <select v-model="publicationStatusFilter" @change="loadData">
           <option :value="null">全部</option>
-          <option value="published">已发表</option>
-          <option value="preprint">预印本</option>
-          <option value="working_paper">工作论文</option>
-          <option value="draft">草案</option>
-          <option value="living_document">持续更新文档</option>
-          <option value="institutional_release">机构正式发布</option>
-          <option value="webpage_release">网页发布</option>
-          <option value="unknown">未知</option>
+          <option value="published">已发表 (published)</option>
+          <option value="preprint">预印本 (preprint)</option>
+          <option value="working_paper">工作论文 (working_paper)</option>
+          <option value="draft">草案 (draft)</option>
+          <option value="living_document">持续更新文档 (living_document)</option>
+          <option value="institutional_release">机构正式发布 (institutional_release)</option>
+          <option value="webpage_release">网页发布 (webpage_release)</option>
+          <option value="unknown">未知 (unknown)</option>
         </select>
       </div>
       <div class="filter-row">
         <label>入库状态</label>
         <select v-model="ingestionStateFilter" @change="loadData">
           <option :value="null">全部</option>
-          <option value="verified">已核验</option>
-          <option value="needs_review">待核查</option>
-          <option value="provisional">暂留</option>
-          <option value="excluded">已排除</option>
-          <option value="deprecated">已废弃</option>
+          <option value="verified">已核验 (verified)</option>
+          <option value="needs_review">待核查 (needs_review)</option>
+          <option value="provisional">暂留 (provisional)</option>
+          <option value="excluded">已排除 (excluded)</option>
+          <option value="deprecated">已废弃 (deprecated)</option>
         </select>
       </div>
       <div class="filter-row">
         <label>优先级</label>
         <select v-model="priorityFilter" @change="loadData">
           <option :value="null">全部</option>
-          <option value="P0">核心必读</option>
-          <option value="P1">重要</option>
-          <option value="P2">参考</option>
-          <option value="P3">边缘</option>
-          <option value="archive">归档</option>
+          <option value="P0">核心必读 (P0)</option>
+          <option value="P1">重要 (P1)</option>
+          <option value="P2">参考 (P2)</option>
+          <option value="P3">边缘 (P3)</option>
+          <option value="archive">归档 (archive)</option>
         </select>
       </div>
       <div class="filter-row">
@@ -159,24 +156,43 @@
       </table>
     </div>
     <div class="empty" v-else>没有匹配的文献</div>
-    <div class="pager" v-if="totalMatching > perPage">
-      <button :disabled="page <= 1" @click="page--; loadData()">上一页</button>
-      <span>{{ page }} / {{ Math.ceil(totalMatching / perPage) }}</span>
-      <button :disabled="page >= Math.ceil(totalMatching / perPage)" @click="page++; loadData()">下一页</button>
+    <n-pagination v-if="totalMatching > perPage" v-model:page="page" :page-count="matchingTotalPages" @update:page="loadData()" />
+
+    <!-- Quarantine Modal -->
+    <div v-if="showQuarantineModal" class="modal-overlay" @click.self="showQuarantineModal = false">
+      <div class="modal-box">
+        <h3>隔离文献</h3>
+        <p class="modal-desc">确定要隔离「{{ quarantineTarget?.title || quarantineTarget?.id }}」吗？</p>
+        <div class="modal-reason">
+          <label>隔离原因（可选）</label>
+          <input v-model="quarantineReason" placeholder="例如：内容无关、404 页面..." />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showQuarantineModal = false">取消</button>
+          <button class="btn-confirm" :disabled="quarantineLoading" @click="confirmQuarantine">
+            {{ quarantineLoading ? '处理中...' : '确认隔离' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useMessage, useDialog } from 'naive-ui'
+import { usePagination } from '../composables/usePagination'
 import { getWorks, quarantineWork, restoreWork } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, LANGUAGE_LABELS, PARSE_STATUS_LABELS, READ_STATUS_LABELS, INGESTION_STATE_LABELS, label } from '../labels'
 
+const message = useMessage()
+const dialog = useDialog()
+
 const works = ref([])
-const total = ref(0)
+const { page, total, params: paginationParams, reset } = usePagination({ perPage: 50, mode: 'page' })
 const totalMatching = ref(0)
-const page = ref(1)
 const perPage = 50
+const matchingTotalPages = computed(() => Math.ceil(totalMatching.value / perPage))
 const search = ref('')
 const statusFilter = ref('all')
 const typeFilter = ref('all')
@@ -187,21 +203,40 @@ const publicationStatusFilter = ref(null)
 const ingestionStateFilter = ref(null)
 const priorityFilter = ref(null)
 const readingLaneFilter = ref(null)
+const sortKey = ref('created_at')
+const sortDir = ref('desc')
+const sortOptions = [
+  { label: '入库时间', value: 'created_at' },
+  { label: '年份', value: 'year' },
+  { label: '标题', value: 'title' },
+  { label: 'ID', value: 'id' },
+]
+
+const showQuarantineModal = ref(false)
+const quarantineReason = ref('')
+const quarantineLoading = ref(false)
+const quarantineTarget = ref(null)
 
 let timer = null
 function debouncedLoad() {
   clearTimeout(timer)
-  timer = setTimeout(() => { page.value = 1; loadData() }, 300)
+  timer = setTimeout(() => { reset(); loadData() }, 300)
+}
+
+function toggleSortDir() {
+  sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  loadData()
 }
 
 async function loadData() {
   const params = {
+    ...paginationParams.value,
     search: search.value,
     status: statusFilter.value,
     doc_type: typeFilter.value,
     language: langFilter.value,
-    page: page.value,
-    per_page: perPage,
+    sort: sortKey.value,
+    order: sortDir.value,
   }
   if (primaryDocTypeFilter.value) params.primary_doc_type = primaryDocTypeFilter.value
   if (publicationStatusFilter.value) params.publication_status = publicationStatusFilter.value
@@ -214,17 +249,40 @@ async function loadData() {
   totalMatching.value = res.total_matching
 }
 
-async function quarantine(w) {
-  const reason = prompt('隔离原因（可选）：')
-  if (reason === null) return
-  await quarantineWork(w.id, reason)
-  await loadData()
+function quarantine(w) {
+  quarantineTarget.value = w
+  quarantineReason.value = ''
+  quarantineLoading.value = false
+  showQuarantineModal.value = true
 }
 
-async function restore(w) {
-  if (!confirm('确认恢复 ' + (w.title || w.id) + '？')) return
-  await restoreWork(w.id)
-  await loadData()
+async function confirmQuarantine() {
+  if (!quarantineTarget.value || quarantineLoading.value) return
+  quarantineLoading.value = true
+  try {
+    await quarantineWork(quarantineTarget.value.id, quarantineReason.value)
+    showQuarantineModal.value = false
+    await loadData()
+    message.success('已隔离')
+  } catch (e) {
+    message.error('隔离失败: ' + (e.message || e))
+  } finally {
+    quarantineLoading.value = false
+  }
+}
+
+function restore(w) {
+  dialog.warning({
+    title: '恢复文献',
+    content: '确认恢复「' + (w.title || w.id) + '」？',
+    positiveText: '恢复',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      await restoreWork(w.id)
+      await loadData()
+      message.success('已恢复')
+    },
+  })
 }
 
 onMounted(loadData)
@@ -243,6 +301,8 @@ h1 { margin-bottom: 12px; font-size: 22px; }
 .count { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
 .toggle-advanced { height: 34px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: #f8fafc; cursor: pointer; font: inherit; font-size: 13px; color: #4a5568; }
 .toggle-advanced:hover { background: #eef2f7; }
+.sort-dir-btn { height: 34px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: #f8fafc; cursor: pointer; font: inherit; font-size: 13px; color: #4a5568; white-space: nowrap; }
+.sort-dir-btn:hover { background: #eef2f7; }
 .advanced-filters {
   display: flex; flex-wrap: wrap; gap: 10px; padding: 12px;
   background: #f8fafc; border: 1px solid var(--line); border-radius: 6px;
@@ -279,7 +339,14 @@ tr:hover td { background: #eef5ff; }
 .act-btn.quarantine { color: var(--bad); border-color: var(--bad); }
 .act-btn.restore { color: var(--ok); border-color: var(--ok); }
 .empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-.pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; }
-.pager button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; font: inherit; }
-.pager button:disabled { opacity: 0.4; cursor: default; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-box { background: #fff; border-radius: 8px; padding: 24px; width: 420px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+.modal-box h3 { margin: 0 0 8px; font-size: 16px; }
+.modal-desc { margin: 0 0 16px; font-size: 13px; color: #6b7280; }
+.modal-reason label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+.modal-reason input { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; font: inherit; box-sizing: border-box; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.btn-cancel { height: 32px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; font: inherit; font-size: 13px; }
+.btn-confirm { height: 32px; padding: 0 14px; border: none; border-radius: 6px; background: var(--bad, #dc2626); color: #fff; cursor: pointer; font: inherit; font-size: 13px; }
+.btn-confirm:disabled { opacity: 0.5; cursor: default; }
 </style>
