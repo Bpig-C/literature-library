@@ -8,6 +8,8 @@ __pycache__/
 # Node
 web/node_modules/
 web/dist/
+web/package-lock.json
+web/bundle-report.html
 
 # Data files (too large for git)
 works/
@@ -46,3 +48,10 @@ PROJECT_INDEX/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# One-time scripts and scan results
+scripts/_*.py
+scripts/_scan_results.json
+
+# Documentation assets
+docs/issues/screenshots/
