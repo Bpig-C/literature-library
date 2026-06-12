@@ -143,31 +143,41 @@
             <span v-else :class="work.priority ? 'priority-' + work.priority : ''">{{ label(PRIORITY_LABELS, work.priority) || '未知' }}</span>
           </div>
         </div>
-        <div class="cls-tags" v-if="work.classification_tags && Object.keys(work.classification_tags).length">
-          <div v-for="(values, group) in work.classification_tags" :key="group" class="tag-row">
-            <span class="tag-group">{{ label(TAG_GROUP_LABELS, group) }}：</span>
-            <n-tag v-for="v in values" :key="v" size="small" round>{{ label(TAG_VALUE_LABELS[group], v) }}</n-tag>
-          </div>
-        </div>
-      </div>
 
-      <!-- 标签管理 -->
-      <div class="section">
-        <div class="section-header"><h3>标签管理</h3></div>
-        <div v-if="allTags.length" class="tag-list">
-          <div v-for="t in allTags" :key="t.id" class="tag-item">
-            <n-tag :type="t.review_status === 'approved' ? 'success' : t.review_status === 'rejected' ? 'error' : 'warning'" size="small">
-              {{ label(TAG_GROUP_LABELS, t.tag_group) }}: {{ t.tag_value }}
-            </n-tag>
-            <span class="muted tiny">{{ t.source }}</span>
-            <n-button text type="error" size="tiny" @click="removeTag(t.id)">删除</n-button>
+        <!-- 多值标签：阅读用途、关注对象、风险领域 -->
+        <div class="cls-multi-tags">
+          <div class="cls-tag-row">
+            <span class="cls-tag-label">阅读用途</span>
+            <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable size="small" style="flex:1" />
+            <div v-else class="cls-tag-chips">
+              <n-tag v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" size="small" round>{{ label(READING_LANE_LABELS, v) }}</n-tag>
+              <span v-if="!work.classification_tags?.reading_lane?.length" class="muted tiny">—</span>
+            </div>
           </div>
-        </div>
-        <div v-else class="muted tiny" style="margin-bottom:8px">暂无标签</div>
-        <div class="add-tag">
-          <n-select v-model:value="newTag.tag_group" :options="tagGroupOptions" style="width: 120px" size="small" @update:value="newTag.tag_value = null" />
-          <n-select v-model:value="newTag.tag_value" :options="getTagOptions(newTag.tag_group)" filterable tag placeholder="选择标签值..." style="min-width: 200px" size="small" />
-          <n-button size="small" type="primary" :disabled="!newTag.tag_value" @click="addTag">添加</n-button>
+          <div class="cls-tag-row">
+            <span class="cls-tag-label">关注对象</span>
+            <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable size="small" style="flex:1" />
+            <div v-else class="cls-tag-chips">
+              <n-tag v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" size="small" round>{{ label(ARTIFACT_FOCUS_LABELS, v) }}</n-tag>
+              <span v-if="!work.classification_tags?.artifact_focus?.length" class="muted tiny">—</span>
+            </div>
+          </div>
+          <div class="cls-tag-row">
+            <span class="cls-tag-label">风险领域</span>
+            <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable size="small" style="flex:1" />
+            <div v-else class="cls-tag-chips">
+              <n-tag v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" size="small" round>{{ label(RISK_DOMAIN_LABELS, v) }}</n-tag>
+              <span v-if="!work.classification_tags?.risk_domain?.length" class="muted tiny">—</span>
+            </div>
+          </div>
+          <div class="cls-tag-row">
+            <span class="cls-tag-label">方法标签</span>
+            <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable size="small" style="flex:1" />
+            <div v-else class="cls-tag-chips">
+              <n-tag v-for="v in (work.classification_tags?.method_tags || [])" :key="v" size="small" round>{{ label(METHOD_TAG_LABELS, v) }}</n-tag>
+              <span v-if="!work.classification_tags?.method_tags?.length" class="muted tiny">—</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -251,7 +261,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag } from '../api'
-import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, PROCESSING_FLAGS_LABELS, label } from '../labels'
+import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, label } from '../labels'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import PdfPreviewDrawer from '../components/PdfPreviewDrawer.vue'
 
@@ -292,7 +302,6 @@ const newRel = ref({ targetId: '', type: 'translation_of' })
 const editingCls = ref(false)
 const clsForm = ref({})
 const allTags = ref([])
-const newTag = ref({ tag_group: 'reading_lane', tag_value: '' })
 const showPdf = ref(false)
 
 const showQuarantineModal = ref(false)
@@ -351,11 +360,14 @@ const priorityOptions = [
   { label: '参考 (P2)', value: 'P2' }, { label: '边缘 (P3)', value: 'P3' },
   { label: '归档', value: 'archive' },
 ]
-const tagGroupOptions = [
-  { label: '阅读用途', value: 'reading_lane' }, { label: '贡献对象', value: 'artifact_focus' },
-  { label: '风险领域', value: 'risk_domain' }, { label: '方法标签', value: 'method_tags' },
-  { label: '处理标记', value: 'processing_flags' },
-]
+// Build n-select options from label maps
+function labelsToOptions(labels) {
+  return Object.entries(labels).map(([k, v]) => ({ label: `${v}`, value: k }))
+}
+const readingLaneOptions = labelsToOptions(READING_LANE_LABELS)
+const artifactFocusOptions = labelsToOptions(ARTIFACT_FOCUS_LABELS)
+const riskDomainOptions = labelsToOptions(RISK_DOMAIN_LABELS)
+const methodTagOptions = labelsToOptions(METHOD_TAG_LABELS)
 const relationTypeOptions = [
   { label: '翻译版本', value: 'translation_of' }, { label: '版本关系', value: 'version_of' },
   { label: '同一作品', value: 'same_work' }, { label: '组成部分', value: 'part_of' },
@@ -393,20 +405,6 @@ const uniqueShaCount = computed(() => {
   if (!work.value?.source_files) return 0
   return new Set(work.value.source_files.map(s => s.content_sha256).filter(Boolean)).size
 })
-
-const TAG_GROUP_OPTIONS_MAP = {
-  reading_lane: READING_LANE_LABELS,
-  artifact_focus: ARTIFACT_FOCUS_LABELS,
-  risk_domain: RISK_DOMAIN_LABELS,
-  method_tags: METHOD_TAG_LABELS,
-  processing_flags: PROCESSING_FLAGS_LABELS,
-}
-
-function getTagOptions(group) {
-  const map = TAG_GROUP_OPTIONS_MAP[group]
-  if (!map) return []
-  return Object.entries(map).map(([k, v]) => ({ label: `${v} (${k})`, value: k }))
-}
 
 function isDuplicateSha(s) {
   if (!work.value?.source_files) return false
@@ -493,22 +491,6 @@ async function loadTags() {
   } catch { allTags.value = [] }
 }
 
-async function addTag() {
-  if (!newTag.value.tag_value) return
-  await createTag(props.id, { tag_group: newTag.value.tag_group, tag_value: newTag.value.tag_value })
-  newTag.value.tag_value = ''
-  await loadTags()
-  await loadWork()
-  await loadList()
-}
-
-async function removeTag(tagId) {
-  await deleteTag(tagId)
-  await loadTags()
-  await loadWork()
-  await loadList()
-}
-
 function startEdit() {
   editForm.value = {
     title: work.value.title,
@@ -533,18 +515,44 @@ async function saveEdit() {
 }
 
 function startEditCls() {
+  const tags = work.value.classification_tags || {}
   clsForm.value = {
     primary_doc_type: work.value.primary_doc_type || null,
     secondary_doc_type: work.value.secondary_doc_type || null,
     publication_status: work.value.publication_status || null,
     ingestion_state: work.value.ingestion_state || null,
     priority: work.value.priority || null,
+    // Multi-value tags
+    reading_lane: [...(tags.reading_lane || [])],
+    artifact_focus: [...(tags.artifact_focus || [])],
+    risk_domain: [...(tags.risk_domain || [])],
+    method_tags: [...(tags.method_tags || [])],
   }
   editingCls.value = true
 }
 
 async function saveEditCls() {
-  await updateWork(props.id, clsForm.value)
+  // Save scalar fields
+  const { reading_lane, artifact_focus, risk_domain, method_tags, ...scalarFields } = clsForm.value
+  await updateWork(props.id, scalarFields)
+
+  // Save multi-value tags: diff and apply
+  const TAG_GROUPS = { reading_lane, artifact_focus, risk_domain, method_tags }
+  const oldTags = work.value.classification_tags || {}
+  for (const [group, newValues] of Object.entries(TAG_GROUPS)) {
+    const oldValues = oldTags[group] || []
+    const toDelete = oldValues.filter(v => !newValues.includes(v))
+    const toAdd = newValues.filter(v => !oldValues.includes(v))
+    // Delete removed tags
+    for (const t of (allTags.value.filter(t => t.tag_group === group && toDelete.includes(t.tag_value)))) {
+      await deleteTag(t.id)
+    }
+    // Create new tags
+    for (const v of toAdd) {
+      await createTag(props.id, { tag_group: group, tag_value: v })
+    }
+  }
+
   editingCls.value = false
   await loadWork()
   await loadList()
@@ -682,12 +690,10 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 
 .abstract-text { font-size: 13px; line-height: 1.6; color: #374151; margin: 0; }
 
-.cls-tags { margin-top: 10px; }
-.tag-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0; }
-.tag-group { font-size: 12px; color: var(--muted); min-width: 80px; }
-.tag-list { margin-bottom: 8px; }
-.tag-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-.add-tag { display: flex; gap: 8px; align-items: center; }
+.cls-multi-tags { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.cls-tag-row { display: flex; align-items: center; gap: 8px; }
+.cls-tag-label { font-size: 12px; color: var(--muted); min-width: 60px; flex-shrink: 0; }
+.cls-tag-chips { display: flex; gap: 4px; flex-wrap: wrap; }
 
 .file-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .file-item.archived { opacity: 0.6; }
