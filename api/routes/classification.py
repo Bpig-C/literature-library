@@ -614,7 +614,11 @@ def batch_approve_low_ambiguity():
             "WHERE ce.review_status = 'pending' AND ce.ambiguity_score < 20 "
             "AND w.read_status != 'quarantined' "
             "ORDER BY ce.work_id, "
-            "  CASE WHEN ce.model_name LIKE '%mimo%' THEN 0 ELSE 1 END, "
+            "  CASE "
+            "    WHEN ce.model_name LIKE '%mimo2.5pro%' THEN 0 "
+            "    WHEN ce.model_name LIKE '%mimo-claude%' THEN 1 "
+            "    ELSE 2 "
+            "  END, "
             "  ce.ambiguity_score ASC"
         ).fetchall()
         if not rows:
@@ -624,7 +628,6 @@ def batch_approve_low_ambiguity():
         approved_count = 0
         applied_works = set()
         applied_ids = []
-        superseded_ids = []
 
         for row in rows:
             ext = dict(row)
@@ -699,9 +702,6 @@ def batch_approve_low_ambiguity():
                 applied_ids.append(ext["id"])
                 applied_works.add(work_id)
                 approved_count += 1
-            else:
-                # This work already had an extraction applied — supersede this one
-                superseded_ids.append(ext["id"])
 
         # Mark applied extractions as approved
         if applied_ids:
@@ -712,14 +712,16 @@ def batch_approve_low_ambiguity():
                 [now] + applied_ids,
             )
 
-        # Supersede other pending extractions for the same works
-        if superseded_ids:
-            placeholders = ",".join("?" * len(superseded_ids))
+        # Supersede ALL other extractions for approved works (including previously approved)
+        if applied_works:
+            work_placeholders = ",".join("?" * len(applied_works))
+            id_placeholders = ",".join("?" * len(applied_ids))
             conn.execute(
                 f"UPDATE classification_extractions SET review_status = 'rejected', "
                 f"fix_action = 'superseded', review_note = 'superseded by batch-approved extraction', "
-                f"reviewed_at = ? WHERE id IN ({placeholders})",
-                [now] + superseded_ids,
+                f"reviewed_at = ? "
+                f"WHERE work_id IN ({work_placeholders}) AND id NOT IN ({id_placeholders})",
+                [now] + list(applied_works) + applied_ids,
             )
 
         conn.commit()
@@ -751,7 +753,11 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
             "WHERE ce.review_status = 'pending' AND ce.ambiguity_score <= ? "
             "AND w.read_status != 'quarantined' "
             "ORDER BY ce.work_id, "
-            "  CASE WHEN ce.model_name LIKE '%mimo%' THEN 0 ELSE 1 END, "
+            "  CASE "
+            "    WHEN ce.model_name LIKE '%mimo2.5pro%' THEN 0 "
+            "    WHEN ce.model_name LIKE '%mimo-claude%' THEN 1 "
+            "    ELSE 2 "
+            "  END, "
             "  ce.ambiguity_score ASC",
             (body.threshold,),
         ).fetchall()
@@ -762,7 +768,6 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
         approved_count = 0
         applied_works = set()
         applied_ids = []
-        superseded_ids = []
 
         for row in rows:
             ext = dict(row)
@@ -837,9 +842,6 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
                 applied_ids.append(ext["id"])
                 applied_works.add(work_id)
                 approved_count += 1
-            else:
-                # This work already had an extraction applied — supersede this one
-                superseded_ids.append(ext["id"])
 
         # Mark applied extractions as approved with tag
         if applied_ids:
@@ -850,14 +852,16 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
                 [now, body.tag] + applied_ids,
             )
 
-        # Supersede other pending extractions for the same works
-        if superseded_ids:
-            placeholders = ",".join("?" * len(superseded_ids))
+        # Supersede ALL other extractions for approved works (including previously approved)
+        if applied_works:
+            work_placeholders = ",".join("?" * len(applied_works))
+            id_placeholders = ",".join("?" * len(applied_ids))
             conn.execute(
                 f"UPDATE classification_extractions SET review_status = 'rejected', "
                 f"fix_action = 'superseded', review_note = 'superseded by batch-approved extraction', "
-                f"reviewed_at = ? WHERE id IN ({placeholders})",
-                [now] + superseded_ids,
+                f"reviewed_at = ? "
+                f"WHERE work_id IN ({work_placeholders}) AND id NOT IN ({id_placeholders})",
+                [now] + list(applied_works) + applied_ids,
             )
 
         conn.commit()
