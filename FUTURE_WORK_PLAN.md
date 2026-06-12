@@ -14,6 +14,26 @@
 当前项目已具备：
 
 - 本地稳定存储：`works/`、`_inbox/`、`_duplicates/`、`_quarantine/`、`_archive/` 已存在。
+- 主数据库：`literature.sqlite` 当前有 138 个 `works`、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1374 条 `work_classification_tags`。
+- 解析账本：`parse_ledger.json` 共 140 条，全部 `succeeded`。
+- 活跃 PDF：`works/*/source/*.pdf` 共 140 个。
+- MinerU 全文：140 条成功解析记录均有 `content_md_path`，实际路径为 `works/{work_id}/parsed/mineru/{source_file_id}/content.md`。
+- API 后端：FastAPI 已提供 `/api` 路由组，包含 works、metadata、classification、relations 等完整 API。
+- 前端：Vue 3 SPA 已提供 Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview 七个页面。
+- 摄入 MVP：`scripts/literature_ingest.py` 已存在，并有 `tests/test_literature_ingest.py` 覆盖新 PDF 摄入和精确重复归档。
+- 去重闭环：重复候选已审查，same_work/exact_sha256 冗余源文件已归档，关系型重复已写入 `work_relations`。
+- 元数据增强与审核：`scripts/literature_metadata_extract.py` 已完成基于 MinerU `content.md` 的批量抽取，138 篇文献均已写入 `metadata_extractions`；MetadataReview 已具备风险分级、低风险批量通过、原文/PDF 预览、人机修正闭环和审核页隔离闭环。
+- 分类系统：已完成分类本体 v0.2 实施，包括 `works` 表扩展字段（primary_doc_type、publication_status、ingestion_state、priority 等）、`work_classification_tags` 多值标签表、`classification_extractions` 候选表；`scripts/literature_classification_extract.py` 已完成批量抽取；ClassificationReview 页面已实现审核、编辑、保存草稿、隔离等功能。阶段 0（分类积压清理）已完成：每个 work 有 3 个模型候选（mimo2.5pro、mimo-claude、qwen3:4b），批量通过后每个 work 保留 1 个最优 approved extraction（mimo2.5pro > mimo-claude > qwen3:4b），当前状态：approved 119 / pending 125（缺 evidence）/ rejected 129（含 superseded）。
+
+## 1. 当前状态核对
+
+### 1.1 总体判断
+
+项目已经从外部规划文档中 2026-06-04 的状态继续向前推进。外部文档仍有参考价值，尤其是系统目标、架构原则、目录约定、去重策略、摄入流水线、AnalysisRun 设计和关键约束；但其中关于 Phase 1、Phase 3、Phase 4 的实施状态已经落后于当前项目。
+
+当前项目已具备：
+
+- 本地稳定存储：`works/`、`_inbox/`、`_duplicates/`、`_quarantine/`、`_archive/` 已存在。
 - 主数据库：`literature.sqlite` 当前有 138 个 `works`、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1120 条 `work_classification_tags`。
 - 解析账本：`parse_ledger.json` 共 140 条，全部 `succeeded`。
 - 活跃 PDF：`works/*/source/*.pdf` 共 140 个。
