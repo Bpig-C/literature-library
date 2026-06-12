@@ -4,7 +4,7 @@
     <div class="list-panel" :class="{ collapsed: listCollapsed }">
       <div class="list-header">
         <h2>文献</h2>
-        <router-link to="/works" class="full-link" title="完整筛选页面">完整</router-link>
+        <router-link to="/works" class="full-link" title="完整筛选页面" @click="clearSavedFilters">完整</router-link>
       </div>
       <div class="list-filters">
         <n-input v-model:value="listSearch" placeholder="搜索..." size="small" clearable @input="debouncedLoadList" />
@@ -279,6 +279,8 @@ const listSortOptions = [
 const listWidth = ref(300)
 const listPrevWidth = ref(300)
 const listCollapsed = ref(false)
+// Persisted filter state from Works page (survives list refreshes within this session)
+const savedFilters = ref(null)
 
 // --- Detail state ---
 const work = ref(null)
@@ -424,12 +426,13 @@ function toggleSortDir() {
 }
 
 async function loadList() {
-  // Restore filter state from Works page if available
-  let savedFilters = null
-  try {
-    const raw = sessionStorage.getItem('works_filters')
-    if (raw) savedFilters = JSON.parse(raw)
-  } catch {}
+  // On first call, read filter state from sessionStorage (set by Works page)
+  if (!savedFilters.value) {
+    try {
+      const raw = sessionStorage.getItem('works_filters')
+      if (raw) savedFilters.value = JSON.parse(raw)
+    } catch {}
+  }
 
   const params = {
     page: listPage.value,
@@ -437,22 +440,26 @@ async function loadList() {
     sort: listSortKey.value,
     order: listSortDir.value,
   }
-  // Apply saved filters from Works page, or default to classified_only
-  if (savedFilters) {
-    params.classified_only = savedFilters.classified_only || false
-    if (savedFilters.search) { params.search = savedFilters.search; listSearch.value = savedFilters.search }
-    if (savedFilters.status && savedFilters.status !== 'all') params.status = savedFilters.status
-    if (savedFilters.doc_type && savedFilters.doc_type !== 'all') params.doc_type = savedFilters.doc_type
-    if (savedFilters.language && savedFilters.language !== 'all') params.language = savedFilters.language
-    if (savedFilters.primary_doc_type) params.primary_doc_type = savedFilters.primary_doc_type
-    if (savedFilters.publication_status) params.publication_status = savedFilters.publication_status
-    if (savedFilters.ingestion_state) params.ingestion_state = savedFilters.ingestion_state
-    if (savedFilters.priority) params.priority = savedFilters.priority
-    if (savedFilters.reading_lane?.length) params.reading_lane = savedFilters.reading_lane
-    if (savedFilters.risk_domain?.length) params.risk_domain = savedFilters.risk_domain
-    if (savedFilters.artifact_focus?.length) params.artifact_focus = savedFilters.artifact_focus
-    // Clear after first use
-    sessionStorage.removeItem('works_filters')
+  // Apply persisted filters, or default to classified_only
+  if (savedFilters.value) {
+    const f = savedFilters.value
+    params.classified_only = f.classified_only || false
+    // List's own search/sort override saved filters
+    if (listSearch.value) {
+      params.search = listSearch.value
+    } else if (f.search) {
+      params.search = f.search
+    }
+    if (f.status && f.status !== 'all') params.status = f.status
+    if (f.doc_type && f.doc_type !== 'all') params.doc_type = f.doc_type
+    if (f.language && f.language !== 'all') params.language = f.language
+    if (f.primary_doc_type) params.primary_doc_type = f.primary_doc_type
+    if (f.publication_status) params.publication_status = f.publication_status
+    if (f.ingestion_state) params.ingestion_state = f.ingestion_state
+    if (f.priority) params.priority = f.priority
+    if (f.reading_lane?.length) params.reading_lane = f.reading_lane
+    if (f.risk_domain?.length) params.risk_domain = f.risk_domain
+    if (f.artifact_focus?.length) params.artifact_focus = f.artifact_focus
   } else {
     params.classified_only = true
     if (listSearch.value) params.search = listSearch.value
@@ -461,6 +468,11 @@ async function loadList() {
   const res = await getWorks('?' + q)
   worksList.value = res.works
   listTotal.value = res.total_matching
+}
+
+function clearSavedFilters() {
+  savedFilters.value = null
+  sessionStorage.removeItem('works_filters')
 }
 
 // --- Detail ---
