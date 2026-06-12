@@ -424,14 +424,39 @@ function toggleSortDir() {
 }
 
 async function loadList() {
+  // Restore filter state from Works page if available
+  let savedFilters = null
+  try {
+    const raw = sessionStorage.getItem('works_filters')
+    if (raw) savedFilters = JSON.parse(raw)
+  } catch {}
+
   const params = {
     page: listPage.value,
     per_page: listPerPage,
     sort: listSortKey.value,
     order: listSortDir.value,
-    classified_only: true,
   }
-  if (listSearch.value) params.search = listSearch.value
+  // Apply saved filters from Works page, or default to classified_only
+  if (savedFilters) {
+    params.classified_only = savedFilters.classified_only || false
+    if (savedFilters.search) { params.search = savedFilters.search; listSearch.value = savedFilters.search }
+    if (savedFilters.status && savedFilters.status !== 'all') params.status = savedFilters.status
+    if (savedFilters.doc_type && savedFilters.doc_type !== 'all') params.doc_type = savedFilters.doc_type
+    if (savedFilters.language && savedFilters.language !== 'all') params.language = savedFilters.language
+    if (savedFilters.primary_doc_type) params.primary_doc_type = savedFilters.primary_doc_type
+    if (savedFilters.publication_status) params.publication_status = savedFilters.publication_status
+    if (savedFilters.ingestion_state) params.ingestion_state = savedFilters.ingestion_state
+    if (savedFilters.priority) params.priority = savedFilters.priority
+    if (savedFilters.reading_lane?.length) params.reading_lane = savedFilters.reading_lane
+    if (savedFilters.risk_domain?.length) params.risk_domain = savedFilters.risk_domain
+    if (savedFilters.artifact_focus?.length) params.artifact_focus = savedFilters.artifact_focus
+    // Clear after first use
+    sessionStorage.removeItem('works_filters')
+  } else {
+    params.classified_only = true
+    if (listSearch.value) params.search = listSearch.value
+  }
   const q = new URLSearchParams(params).toString()
   const res = await getWorks('?' + q)
   worksList.value = res.works
@@ -462,12 +487,14 @@ async function addTag() {
   newTag.value.tag_value = ''
   await loadTags()
   await loadWork()
+  await loadList()
 }
 
 async function removeTag(tagId) {
   await deleteTag(tagId)
   await loadTags()
   await loadWork()
+  await loadList()
 }
 
 function startEdit() {
@@ -490,6 +517,7 @@ async function saveEdit() {
   await updateWork(props.id, data)
   editing.value = false
   await loadWork()
+  await loadList()
 }
 
 function startEditCls() {
@@ -507,6 +535,7 @@ async function saveEditCls() {
   await updateWork(props.id, clsForm.value)
   editingCls.value = false
   await loadWork()
+  await loadList()
 }
 
 async function addRelation() {
@@ -534,6 +563,7 @@ async function confirmQuarantine() {
     await quarantineWork(props.id, quarantineReason.value)
     showQuarantineModal.value = false
     await loadWork()
+    await loadList()
     message.success('已隔离')
   } catch (e) {
     message.error('隔离失败: ' + (e.message || e))
@@ -548,6 +578,7 @@ function restore() {
     onPositiveClick: async () => {
       await restoreWork(props.id)
       await loadWork()
+      await loadList()
       message.success('已恢复')
     },
   })

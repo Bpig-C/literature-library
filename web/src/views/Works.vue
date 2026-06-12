@@ -73,7 +73,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in works" :key="w.id" @click="$router.push('/works/' + w.id)">
+          <tr v-for="w in works" :key="w.id" @click="goToWork(w.id)">
             <td>
               <div class="title">{{ w.title || w.id }}</div>
               <div class="muted tiny">{{ w.id }}</div>
@@ -117,11 +117,13 @@
 
 <script setup>
 import { computed, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
 import { getWorks, quarantineWork, restoreWork } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, LANGUAGE_LABELS, PARSE_STATUS_LABELS, READ_STATUS_LABELS, INGESTION_STATE_LABELS, label } from '../labels'
 
+const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
 
@@ -285,6 +287,28 @@ function debouncedLoad() {
 function toggleSortDir() {
   sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
   loadData()
+}
+
+function goToWork(id) {
+  // Save current filter state for WorkDetail list panel to restore
+  const filterState = {
+    search: search.value,
+    status: statusFilter.value,
+    doc_type: typeFilter.value,
+    language: langFilter.value,
+    sort: sortKey.value,
+    order: sortDir.value,
+    primary_doc_type: primaryDocTypeFilter.value,
+    publication_status: publicationStatusFilter.value,
+    ingestion_state: ingestionStateFilter.value,
+    priority: priorityFilter.value,
+    classified_only: classifiedOnly.value,
+    reading_lane: readingLaneFilter.value,
+    risk_domain: riskDomainFilter.value,
+    artifact_focus: artifactFocusFilter.value,
+  }
+  sessionStorage.setItem('works_filters', JSON.stringify(filterState))
+  router.push('/works/' + id)
 }
 
 async function loadData() {
