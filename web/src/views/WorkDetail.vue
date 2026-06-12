@@ -146,35 +146,38 @@
 
         <!-- 多值标签：阅读用途、关注对象、风险领域 -->
         <div class="cls-multi-tags">
+          <div v-if="invalidTags.length" class="invalid-tags-banner">
+            ⚠ 以下值不在词汇表中：{{ invalidTags.map(t => t.field + ':' + t.value).join('、') }}
+          </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">阅读用途</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" size="small" round>{{ label(READING_LANE_LABELS, v) }}</n-tag>
+              <n-tag v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" size="small" round :type="isInvalidTag('reading_lane', v) ? 'warning' : 'default'">{{ label(READING_LANE_LABELS, v) || v }}</n-tag>
               <span v-if="!work.classification_tags?.reading_lane?.length" class="muted tiny">—</span>
             </div>
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">关注对象</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" size="small" round>{{ label(ARTIFACT_FOCUS_LABELS, v) }}</n-tag>
+              <n-tag v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" size="small" round :type="isInvalidTag('artifact_focus', v) ? 'warning' : 'default'">{{ label(ARTIFACT_FOCUS_LABELS, v) || v }}</n-tag>
               <span v-if="!work.classification_tags?.artifact_focus?.length" class="muted tiny">—</span>
             </div>
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">风险领域</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" size="small" round>{{ label(RISK_DOMAIN_LABELS, v) }}</n-tag>
+              <n-tag v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" size="small" round :type="isInvalidTag('risk_domain', v) ? 'warning' : 'default'">{{ label(RISK_DOMAIN_LABELS, v) || v }}</n-tag>
               <span v-if="!work.classification_tags?.risk_domain?.length" class="muted tiny">—</span>
             </div>
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">方法标签</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.method_tags || [])" :key="v" size="small" round>{{ label(METHOD_TAG_LABELS, v) }}</n-tag>
+              <n-tag v-for="v in (work.classification_tags?.method_tags || [])" :key="v" size="small" round :type="isInvalidTag('method_tags', v) ? 'warning' : 'default'">{{ label(METHOD_TAG_LABELS, v) || v }}</n-tag>
               <span v-if="!work.classification_tags?.method_tags?.length" class="muted tiny">—</span>
             </div>
           </div>
@@ -410,6 +413,29 @@ function isDuplicateSha(s) {
   if (!work.value?.source_files) return false
   return work.value.source_files.filter(f => f.content_sha256 === s.content_sha256).length > 1
 }
+
+// Detect tag values not in vocabulary
+const VOCAB_MAP = {
+  reading_lane: READING_LANE_LABELS,
+  artifact_focus: ARTIFACT_FOCUS_LABELS,
+  risk_domain: RISK_DOMAIN_LABELS,
+  method_tags: METHOD_TAG_LABELS,
+}
+function isInvalidTag(fieldKey, value) {
+  const vocab = VOCAB_MAP[fieldKey]
+  return vocab && !(value in vocab)
+}
+const invalidTags = computed(() => {
+  if (!work.value) return []
+  const tags = work.value.classification_tags || {}
+  const result = []
+  for (const group of ['reading_lane', 'artifact_focus', 'risk_domain', 'method_tags']) {
+    for (const v of (tags[group] || [])) {
+      if (isInvalidTag(group, v)) result.push({ field: group, value: v })
+    }
+  }
+  return result
+})
 
 // --- List ---
 let listTimer = null
@@ -691,6 +717,7 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .abstract-text { font-size: 13px; line-height: 1.6; color: #374151; margin: 0; }
 
 .cls-multi-tags { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.invalid-tags-banner { padding: 6px 10px; margin-bottom: 4px; border-radius: 6px; background: #fef3c7; color: #92400e; font-size: 12px; }
 .cls-tag-row { display: flex; align-items: center; gap: 8px; }
 .cls-tag-label { font-size: 12px; color: var(--muted); min-width: 60px; flex-shrink: 0; }
 .cls-tag-chips { display: flex; gap: 4px; flex-wrap: wrap; }
