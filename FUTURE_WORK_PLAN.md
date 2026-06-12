@@ -518,6 +518,37 @@ MetadataReview 不仅是元数据质量审核页，也承担“来源是否应�
 - Works/MetadataReview 能筛出 `doc_type_review_status='pending'` 或冲突项供人工确认。
 - P1.2 综述矩阵默认只使用 `confirmed` 或高置信度类型；低置信度类型在导出中有提示或被排除。
 
+#### P1.0i：分类结果筛选增强 ⏳ 待实施
+
+在分类审核完成后，Works 页面需要支持按分类结果（标签）筛选文献，让用户能够快速定位特定类型的文献。
+
+**现状**：
+- 后端 `risk_domain`/`reading_lane`/`artifact_focus` 参数已存在，但单值匹配
+- 前端 `reading_lane` 过滤器已存在，但单选
+- 前端缺少 `risk_domain`、`artifact_focus` 过滤器
+- 缺少"已分类"视图快捷切换
+
+**实施方案**：
+
+| 变更 | 文件 | 内容 |
+|------|------|------|
+| 1 | `api/routes/works.py` | tag 过滤器改为 `list[str]` 多值，SQL 用 `IN` 匹配 |
+| 2 | `api/routes/works.py` | 新增 `classified_only: bool` 参数 |
+| 3 | `web/src/views/Works.vue` | 新增 `risk_domain`、`artifact_focus` 多选过滤器 |
+| 4 | `web/src/views/Works.vue` | `reading_lane` 改为多选 |
+| 5 | `web/src/views/Works.vue` | "已分类"快捷 toggle 按钮 |
+
+**不在范围内**：
+- 不新增数据库字段
+- 不改分页逻辑
+- 不引入 Collections 系统
+- `method_tags` 过滤器推迟到 P2
+
+**验收标准**：
+- Works 页面可按 `risk_domain`、`reading_lane`、`artifact_focus` 多选筛选
+- 点击"已分类"按钮可快速筛选已分类的文献（primary_doc_type 非空）
+- 多选筛选逻辑为 OR（选多个值 = 匹配任意一个）
+
 #### P1.1：分析运行
 
 > **设计已细化**：P1.1/P1.2 的实施以 `docs/superpowers/specs/2026-06-12-reading-methodology-analysis-runs-design.md` 为准（三层阅读模板与 AnalysisRun 设计：digest 速览层 / angle 角度层 / synthesis 综合层，模板版本化，executor 无关提交约定）。本节以下内容保留为原始设计依据；冲突处以设计文档为准（差异：第一版不开 `POST /api/works/{id}/analyses`，写入走 CLI 校验）。
@@ -648,7 +679,8 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 6. P1.0f 人机共用审核修正闭环。✅ 核心闭环已完成
 7. P1.0g 审核页隔离文献/文件闭环。✅ 已完成并审核通过
 8. P1.0h 文献类型标签重建与确认。✅ 分类系统 Phase 1-3 已完成
-9. P1.1 分析运行。
+9. P1.0i 分类结果筛选增强。⏳ 待实施
+10. P1.1 分析运行。
 10. P1.2 综述矩阵。
 11. P2 Collections/标签/主题体系。
 12. P3 摄入后解析自动化。
