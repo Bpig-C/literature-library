@@ -154,7 +154,12 @@ If evidence is insufficient, use null for scalar fields and [] for list fields.
 Output only valid JSON. No markdown, no explanations, no thinking traces.
 
 Core rule:
-- primary_doc_type is the document identity, single-choice.
+- primary_doc_type is the document identity, single-choice, with three-tier priority:
+  Tier 1 (functional types, prefer): system_model_card, governance_framework, standard_guideline, benchmark_dataset_paper, evaluation_report
+  Tier 2 (form types, fallback): technical_report, institutional_report, research_article, survey_review, platform_snapshot, thesis, book_chapter, webpage_blog, other_literature
+  Tier 3 (existence markers): not_literature, workflow_artifact
+- If a document matches a Tier 1 type, use it as primary_doc_type even if it also has Tier 2 form attributes.
+- Use secondary_doc_type to record the次要形态属性 when a document spans two tiers (e.g., evaluation_report that is also technically a technical_report).
 - publication_status is release status, not document type.
 - reading_lane means why we read it.
 - artifact_focus means what it contributes or discusses.
@@ -190,20 +195,31 @@ risk_domain (optional, fill only when explicit): {risk_domains}
 
 method_tags (optional, fill only when explicit): {method_tags_list}
 
-Primary doc type decision order:
+Primary doc type decision order (three-tier hierarchy):
+
+Tier 1 — Functional types (prefer if document matches):
 1. system/model/safety card / transparency report -> system_model_card
 2. standard/guideline/code of practice -> standard_guideline
 3. safety/risk/governance/deployment framework -> governance_framework
 4. reusable benchmark/dataset/eval suite as main contribution -> benchmark_dataset_paper
 5. third-party structural evaluation of a model/system/framework -> evaluation_report
-6. leaderboard/dashboard/platform snapshot -> platform_snapshot
-7. thesis -> thesis
-8. technical object centered report -> technical_report
-9. institutional trend/landscape/annual/capacity report -> institutional_report
-10. survey/review/position paper -> survey_review
-11. ordinary research article -> research_article
-12. webpage/blog -> webpage_blog
-13. workflow artifact / not literature / other as needed
+
+Tier 2 — Form types (use only when no Tier 1 match):
+5.5 leaderboard/dashboard/platform snapshot -> platform_snapshot
+6. thesis -> thesis
+7. technical object centered report -> technical_report
+8. institutional trend/landscape/annual/capacity report -> institutional_report
+9. survey/review/position paper -> survey_review
+10. ordinary research article -> research_article
+11. webpage/blog -> webpage_blog
+12. other related literature -> other_literature
+
+Tier 3 — Existence markers (not document form):
+13. workflow artifact -> workflow_artifact
+14. not literature / invalid -> not_literature
+
+If a document matches Tier 1, use that as primary_doc_type even if it also has Tier 2 form attributes.
+Use secondary_doc_type to record the form attribute when a document spans tiers (e.g., evaluation_report that is also technically a technical_report). secondary_doc_type is optional, use only when the secondary attribute adds classification value.
 
 Ambiguity rules:
 - A system/model card written by the model developer -> system_model_card (not evaluation_report)
@@ -230,6 +246,7 @@ Document excerpt:
 Return JSON:
 {{
   "primary_doc_type": "one of the vocabulary values or null",
+  "secondary_doc_type": "optional, one of the vocabulary values or null — use when document spans two tiers",
   "publication_status": "one of the vocabulary values or null",
   "primary_source_actor_type": "one of the vocabulary values or null",
   "region": "one of the vocabulary values or null",
@@ -304,6 +321,7 @@ def validate_extraction(data: dict) -> tuple[dict, list[str]]:
     # Validate scalar fields against vocabulary
     SCALAR_FIELDS = {
         "primary_doc_type": "primary_doc_type",
+        "secondary_doc_type": "primary_doc_type",  # uses same vocab as primary_doc_type
         "publication_status": "publication_status",
         "primary_source_actor_type": "primary_source_actor_type",
         "region": "region",
@@ -370,6 +388,7 @@ def validate_extraction(data: dict) -> tuple[dict, list[str]]:
 
 CLASSIFICATION_FIELDS = {
     "primary_doc_type": "primary_doc_type",
+    "secondary_doc_type": "secondary_doc_type",
     "publication_status": "publication_status",
     "ingestion_state": "ingestion_state",
     "priority": "priority",
@@ -406,6 +425,10 @@ def apply_to_works(conn: sqlite3.Connection, extractions: list[dict],
         evidence = extracted.get("evidence") or {}
         if not evidence.get("primary_doc_type"):
             continue
+
+        # Merge dual-source confidence (D1 read-side fix)
+        embedded_confidence = extracted.get("confidence", {})
+        merged_confidence = {**embedded_confidence, **confidence}
 
         # Update works table scalar fields (fill-empty only)
         current = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
@@ -452,7 +475,7 @@ def apply_to_works(conn: sqlite3.Connection, extractions: list[dict],
                         "review_status, created_at, updated_at) "
                         "VALUES (?, ?, ?, ?, 'model', ?, ?, 'pending', ?, ?)",
                         (tag_id, work_id, group, v,
-                         confidence.get(group, "low"),
+                         merged_confidence.get(group, "low"),
                          evidence.get(group, ""),
                          now, now),
                     )
@@ -599,10 +622,13 @@ def run_extraction(args: argparse.Namespace) -> None:
             amb = compute_ambiguity(extracted, confidence)
 
             pdt = extracted.get("primary_doc_type") or "N/A"
+            sdt = extracted.get("secondary_doc_type") or ""
             ps = extracted.get("publication_status") or "N/A"
             rl = extracted.get("reading_lane") or []
             af = extracted.get("artifact_focus") or []
             print(f"  primary_doc_type: {pdt} (conf={confidence.get('primary_doc_type', '?')})")
+            if sdt:
+                print(f"  secondary_doc_type: {sdt}")
             print(f"  publication_status: {ps}")
             print(f"  reading_lane: {rl}")
             print(f"  artifact_focus: {af}")
@@ -639,6 +665,7 @@ def run_extraction(args: argparse.Namespace) -> None:
                 "work_id": work_id,
                 "status": "ok",
                 "primary_doc_type": extracted.get("primary_doc_type"),
+                "secondary_doc_type": extracted.get("secondary_doc_type"),
                 "publication_status": extracted.get("publication_status"),
                 "reading_lane": extracted.get("reading_lane"),
                 "artifact_focus": extracted.get("artifact_focus"),

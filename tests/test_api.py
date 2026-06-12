@@ -1935,6 +1935,404 @@ class TestClassificationExtractions(unittest.TestCase):
         data = resp.json()
         self.assertEqual(len(data["extractions"]), 0)
 
+    def test_edit_promotes_confidence(self):
+        """Editing a field via save-draft should promote its confidence to high."""
+        import json as _json
+
+        work_id = "W-test-edit-promote"
+        ext_id = "CE-test-edit-promote"
+        self._create_classification_fixture(work_id, ext_id)
+        try:
+            # Edit a field that was low confidence
+            resp = client.patch(f"/api/classification/extractions/{ext_id}/save-draft", json={
+                "edited_fields": {"publication_status": "preprint"},
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json().get("ok"))
+
+            # Verify confidence was promoted
+            conn = _test_get_conn()
+            row = conn.execute(
+                "SELECT confidence_json FROM classification_extractions WHERE id = ?",
+                (ext_id,),
+            ).fetchone()
+            conn.close()
+            confidence = _json.loads(row["confidence_json"])
+            self.assertEqual(confidence["publication_status"], "high",
+                             "Edited field confidence should be promoted to high")
+        finally:
+            self._delete_classification_fixture(work_id, ext_id)
+
+    def test_save_draft_no_change_preserves_score(self):
+        """Saving draft without actual value changes should not alter ambiguity score."""
+        import json as _json
+
+        work_id = "W-test-no-change"
+        ext_id = "CE-test-no-change"
+        self._create_classification_fixture(work_id, ext_id, ambiguity_score=10)
+        try:
+            # First save triggers recomputation (fixes hand-filled score)
+            resp = client.patch(f"/api/classification/extractions/{ext_id}/save-draft", json={
+                "edited_fields": {},
+            })
+            self.assertEqual(resp.status_code, 200)
+
+            # Get the recomputed score
+            conn = _test_get_conn()
+            row = conn.execute(
+                "SELECT ambiguity_score FROM classification_extractions WHERE id = ?",
+                (ext_id,),
+            ).fetchone()
+            recomputed_score = row["ambiguity_score"]
+            conn.close()
+
+            # Save draft again with same values (simulating open-and-save without edits)
+            resp = client.patch(f"/api/classification/extractions/{ext_id}/save-draft", json={
+                "edited_fields": {
+                    "primary_doc_type": "evaluation_report",
+                    "publication_status": "published",
+                },
+            })
+            self.assertEqual(resp.status_code, 200)
+
+            # Score should be unchanged after second save
+            conn = _test_get_conn()
+            row = conn.execute(
+                "SELECT ambiguity_score FROM classification_extractions WHERE id = ?",
+                (ext_id,),
+            ).fetchone()
+            conn.close()
+            self.assertEqual(row["ambiguity_score"], recomputed_score,
+                             "Score should not change when no actual value changes")
+        finally:
+            self._delete_classification_fixture(work_id, ext_id)
+
+    def test_dual_source_confidence_merge(self):
+        """Ambiguity computation should merge embedded and column confidence."""
+        import json as _json
+        from api.classification_ambiguity import compute_ambiguity
+
+        extracted = {
+            "primary_doc_type": "evaluation_report",
+            "publication_status": "published",
+            "reading_lane": ["evaluation_method"],
+            "artifact_focus": ["audit_finding"],
+            "evidence": {"primary_doc_type": "evaluation"},
+            "confidence": {"primary_doc_type": "high", "publication_status": "high"},
+        }
+        # Column confidence is sparse (only primary_doc_type)
+        column_confidence = {"primary_doc_type": "high"}
+
+        # Merge dual-source
+        embedded_confidence = extracted.get("confidence", {})
+        merged = {**embedded_confidence, **column_confidence}
+
+        result = compute_ambiguity(extracted, merged)
+        # Should be low ambiguity because embedded confidence covers publication_status
+        self.assertLessEqual(result["score"], 15,
+                             "Merged confidence should produce low ambiguity")
+
+        # Without merge (old behavior), publication_status would be "low" default
+        result_old = compute_ambiguity(extracted, column_confidence)
+        self.assertGreater(result_old["score"], result["score"],
+                           "Without merge, score should be higher due to missing confidence")
+
+    def test_review_extraction_promotes_confidence(self):
+        """Reviewing with edited fields should also promote confidence."""
+        import json as _json
+
+        work_id = "W-test-review-promote"
+        ext_id = "CE-test-review-promote"
+        self._create_classification_fixture(work_id, ext_id)
+        try:
+            resp = client.patch(f"/api/classification/extractions/{ext_id}/review", json={
+                "review_status": "needs_fix",
+                "review_note": "edited field",
+                "edited_fields": {"publication_status": "preprint"},
+            })
+            self.assertEqual(resp.status_code, 200)
+
+            # Verify confidence was promoted
+            conn = _test_get_conn()
+            row = conn.execute(
+                "SELECT confidence_json FROM classification_extractions WHERE id = ?",
+                (ext_id,),
+            ).fetchone()
+            conn.close()
+            confidence = _json.loads(row["confidence_json"])
+            self.assertEqual(confidence["publication_status"], "high")
+        finally:
+            self._delete_classification_fixture(work_id, ext_id)
+
+    def test_approve_writes_tags_with_merged_confidence(self):
+        """Approving should write tags using merged (embedded + column) confidence.
+
+        Regression test: Mimo batch records have embedded confidence like
+        {"risk_domain": "high"} but sparse column confidence_json. Tags must
+        reflect the merged confidence, not just the column.
+        """
+        import json as _json
+
+        work_id = "W-test-merged-conf-tag"
+        ext_id = "CE-test-merged-conf-tag"
+        conn = _test_get_conn()
+        conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+        conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+        conn.execute(
+            """
+            INSERT INTO works
+            (id, title, authors, doc_type, language, metadata_status, parse_status,
+             read_status, created_at, updated_at)
+            VALUES (?, 'Test merged confidence', '[]', 'paper', 'en', 'pending', 'parsed',
+                    'unread', datetime('now'), datetime('now'))
+            """,
+            (work_id,),
+        )
+        # Simulate Mimo batch pattern: embedded confidence has risk_domain=high,
+        # but column confidence_json is sparse (only primary_doc_type)
+        conn.execute(
+            """
+            INSERT INTO classification_extractions
+            (id, work_id, model_name, prompt_version, extracted_json, confidence_json,
+             ambiguity_score, ambiguity_reasons, review_status, applied, raw_response,
+             created_at, updated_at)
+            VALUES (?, ?, 'mimo-test', 'v1', ?, ?, 5, '[]', 'pending', 0, '{}',
+                    datetime('now'), datetime('now'))
+            """,
+            (
+                ext_id,
+                work_id,
+                _json.dumps({
+                    "primary_doc_type": "evaluation_report",
+                    "publication_status": "published",
+                    "reading_lane": ["evaluation_method"],
+                    "artifact_focus": ["audit_finding"],
+                    "risk_domain": ["fairness"],
+                    "evidence": {"primary_doc_type": "test"},
+                    "confidence": {
+                        "primary_doc_type": "high",
+                        "risk_domain": "high",
+                        "reading_lane": "medium",
+                    },
+                }, ensure_ascii=False),
+                _json.dumps({"primary_doc_type": "high"}, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        try:
+            resp = client.patch(f"/api/classification/extractions/{ext_id}/review", json={
+                "review_status": "approved",
+                "review_note": "test merged confidence in tags",
+            })
+            self.assertEqual(resp.status_code, 200)
+
+            # Verify tags have merged confidence, not just column confidence
+            conn = _test_get_conn()
+            tags = conn.execute(
+                "SELECT tag_group, confidence FROM work_classification_tags "
+                "WHERE work_id = ? AND source = 'model'",
+                (work_id,),
+            ).fetchall()
+            conn.close()
+
+            tag_conf = {t["tag_group"]: t["confidence"] for t in tags}
+            # risk_domain should be "high" from embedded confidence, not "low"
+            self.assertEqual(tag_conf.get("risk_domain"), "high",
+                             "risk_domain tag should use embedded confidence (high), not column default (low)")
+            # reading_lane should be "medium" from embedded confidence
+            self.assertEqual(tag_conf.get("reading_lane"), "medium",
+                             "reading_lane tag should use embedded confidence (medium)")
+        finally:
+            conn = _test_get_conn()
+            conn.execute("DELETE FROM work_classification_tags WHERE work_id = ?", (work_id,))
+            conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+            conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+            conn.commit()
+            conn.close()
+
+    def test_batch_approve_with_tag_writes_merged_confidence(self):
+        """Batch approve with tag should write tags using merged confidence.
+
+        Regression test: ensures batch-approve-with-tag endpoint merges embedded
+        confidence before writing work_classification_tags, not just column confidence.
+        """
+        import json as _json
+
+        work_id = "W-test-batch-tag-conf"
+        ext_id = "CE-test-batch-tag-conf"
+        conn = _test_get_conn()
+        conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+        conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+        conn.execute(
+            """
+            INSERT INTO works
+            (id, title, authors, doc_type, language, metadata_status, parse_status,
+             read_status, created_at, updated_at)
+            VALUES (?, 'Test batch tag confidence', '[]', 'paper', 'en', 'pending', 'parsed',
+                    'unread', datetime('now'), datetime('now'))
+            """,
+            (work_id,),
+        )
+        # Embedded confidence: risk_domain=high, artifact_focus=medium
+        # Column confidence: only primary_doc_type=high
+        conn.execute(
+            """
+            INSERT INTO classification_extractions
+            (id, work_id, model_name, prompt_version, extracted_json, confidence_json,
+             ambiguity_score, ambiguity_reasons, review_status, applied, raw_response,
+             created_at, updated_at)
+            VALUES (?, ?, 'mimo-test', 'v1', ?, ?, 5, '[]', 'pending', 0, '{}',
+                    datetime('now'), datetime('now'))
+            """,
+            (
+                ext_id,
+                work_id,
+                _json.dumps({
+                    "primary_doc_type": "evaluation_report",
+                    "publication_status": "published",
+                    "reading_lane": ["evaluation_method"],
+                    "artifact_focus": ["audit_finding"],
+                    "risk_domain": ["fairness"],
+                    "evidence": {"primary_doc_type": "test"},
+                    "confidence": {
+                        "primary_doc_type": "high",
+                        "risk_domain": "high",
+                        "artifact_focus": "medium",
+                    },
+                }, ensure_ascii=False),
+                _json.dumps({"primary_doc_type": "high"}, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        try:
+            resp = client.post("/api/classification/extractions/batch-approve-with-tag", json={
+                "threshold": 100,
+                "tag": "test-batch-merged-conf",
+            })
+            self.assertEqual(resp.status_code, 200)
+            self.assertGreaterEqual(resp.json()["approved"], 1, "Should approve at least our test extraction")
+
+            # Verify our specific extraction was approved
+            conn = _test_get_conn()
+            ext_row = conn.execute(
+                "SELECT review_status, review_note FROM classification_extractions WHERE id = ?",
+                (ext_id,),
+            ).fetchone()
+            self.assertEqual(ext_row["review_status"], "approved")
+            self.assertEqual(ext_row["review_note"], "test-batch-merged-conf")
+
+            # Verify tags for our specific work have merged confidence
+            tags = conn.execute(
+                "SELECT tag_group, confidence FROM work_classification_tags "
+                "WHERE work_id = ? AND source = 'model'",
+                (work_id,),
+            ).fetchall()
+            conn.close()
+
+            tag_conf = {t["tag_group"]: t["confidence"] for t in tags}
+            self.assertEqual(tag_conf.get("risk_domain"), "high",
+                             "Batch approve: risk_domain should use embedded confidence (high)")
+            self.assertEqual(tag_conf.get("artifact_focus"), "medium",
+                             "Batch approve: artifact_focus should use embedded confidence (medium)")
+        finally:
+            conn = _test_get_conn()
+            conn.execute("DELETE FROM work_classification_tags WHERE work_id = ?", (work_id,))
+            conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+            conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+            conn.commit()
+            conn.close()
+
+    def test_cli_apply_to_works_writes_merged_confidence(self):
+        """CLI apply_to_works should write tags using merged confidence.
+
+        Regression test: ensures scripts/literature_classification_extract.apply_to_works
+        merges embedded + column confidence before writing work_classification_tags.
+        """
+        import json as _json
+        from scripts.literature_classification_extract import apply_to_works
+
+        work_id = "W-test-cli-apply-conf"
+        ext_id = "CE-test-cli-apply-conf"
+        conn = _test_get_conn()
+        conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+        conn.execute("DELETE FROM work_classification_tags WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+        conn.execute(
+            """
+            INSERT INTO works
+            (id, title, authors, doc_type, language, metadata_status, parse_status,
+             read_status, created_at, updated_at)
+            VALUES (?, 'Test CLI apply confidence', '[]', 'paper', 'en', 'pending', 'parsed',
+                    'unread', datetime('now'), datetime('now'))
+            """,
+            (work_id,),
+        )
+        # Embedded confidence: risk_domain=high, method_tags=medium
+        # Column confidence: only primary_doc_type=high
+        extracted_json = _json.dumps({
+            "primary_doc_type": "evaluation_report",
+            "publication_status": "published",
+            "reading_lane": ["evaluation_method"],
+            "artifact_focus": ["audit_finding"],
+            "risk_domain": ["fairness"],
+            "method_tags": ["standard_comparison"],
+            "evidence": {"primary_doc_type": "test"},
+            "confidence": {
+                "primary_doc_type": "high",
+                "risk_domain": "high",
+                "method_tags": "medium",
+            },
+        }, ensure_ascii=False)
+        confidence_json = _json.dumps({"primary_doc_type": "high"}, ensure_ascii=False)
+
+        conn.execute(
+            """
+            INSERT INTO classification_extractions
+            (id, work_id, model_name, prompt_version, extracted_json, confidence_json,
+             ambiguity_score, ambiguity_reasons, review_status, applied, raw_response,
+             created_at, updated_at)
+            VALUES (?, ?, 'mimo-test', 'v1', ?, ?, 5, '[]', 'pending', 0, '{}',
+                    datetime('now'), datetime('now'))
+            """,
+            (ext_id, work_id, extracted_json, confidence_json),
+        )
+        conn.commit()
+
+        # Call apply_to_works
+        ext_row = conn.execute(
+            "SELECT * FROM classification_extractions WHERE id = ?", (ext_id,)
+        ).fetchone()
+        count = apply_to_works(conn, [dict(ext_row)], ambiguity_threshold=20)
+        conn.commit()
+
+        self.assertEqual(count, 1, "apply_to_works should apply 1 extraction")
+
+        # Verify tags have merged confidence
+        tags = conn.execute(
+            "SELECT tag_group, confidence FROM work_classification_tags "
+            "WHERE work_id = ? AND source = 'model'",
+            (work_id,),
+        ).fetchall()
+        conn.close()
+
+        tag_conf = {t["tag_group"]: t["confidence"] for t in tags}
+        self.assertEqual(tag_conf.get("risk_domain"), "high",
+                         "CLI apply: risk_domain should use embedded confidence (high)")
+        self.assertEqual(tag_conf.get("method_tags"), "medium",
+                         "CLI apply: method_tags should use embedded confidence (medium)")
+
+        # Cleanup
+        conn = _test_get_conn()
+        conn.execute("DELETE FROM work_classification_tags WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM classification_extractions WHERE id = ?", (ext_id,))
+        conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+        conn.commit()
+        conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
