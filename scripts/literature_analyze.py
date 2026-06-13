@@ -276,7 +276,7 @@ def validate_quotes(data: dict, content_md_path: str) -> list[str]:
     return warnings
 
 
-def cmd_submit(input_path: str, executor: str, model_name: str | None, force: bool) -> None:
+def cmd_submit(input_path: str, executor: str, model_name: str | None, force: bool, strict: bool = False) -> None:
     conn = get_conn()
     try:
         if not table_exists(conn, "analysis_runs"):
@@ -330,6 +330,11 @@ def cmd_submit(input_path: str, executor: str, model_name: str | None, force: bo
             quote_warnings = []
             if cmr and cmr["content_md_path"]:
                 quote_warnings = validate_quotes(data, cmr["content_md_path"])
+
+            # In strict mode, reject if any quote not found in content.md
+            if strict and quote_warnings:
+                results.append({"file": str(f), "status": "rejected", "error": "strict mode: evidence quotes not found in content.md", "quote_warnings": quote_warnings})
+                continue
 
             # Check template exists
             tpl = find_template(angle, tv)
@@ -547,6 +552,7 @@ def main() -> None:
     p_submit.add_argument("--executor", default="human", help="Executor identity (default: human)")
     p_submit.add_argument("--model-name", default=None, help="Model name")
     p_submit.add_argument("--force", action="store_true", help="Force submit even if existing run")
+    p_submit.add_argument("--strict", action="store_true", help="Reject if evidence quotes not found in content.md")
 
     # --status
     sub.add_parser("status", help="Show analysis coverage status")
@@ -563,7 +569,7 @@ def main() -> None:
     if args.command == "plan":
         cmd_plan(args.angle, args.template_version)
     elif args.command == "submit":
-        cmd_submit(args.input, args.executor, args.model_name, args.force)
+        cmd_submit(args.input, args.executor, args.model_name, args.force, args.strict)
     elif args.command == "status":
         cmd_status()
     elif args.command == "review":
