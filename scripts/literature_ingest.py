@@ -572,6 +572,13 @@ def build_ingest_plan(
             "content_sha256": digest,
             "source_path": str(library_path),
         }
+        # Update source_by_work so title_candidates_for can find source_path
+        # for works planned in the same batch
+        state["source_by_work"].setdefault(work_id, []).append({
+            "id": source_file_id,
+            "work_id": work_id,
+            "source_path": str(library_path),
+        })
         if not existing_work:
             state["work_map"][work_id] = {
                 "id": work_id,
