@@ -113,6 +113,7 @@ export const ARTIFACT_FOCUS_LABELS = {
   benchmark: '基准测试',
   dataset: '数据集',
   evaluation_suite: '评测套件',
+  eval_suite: '评测套件',
   metric: '度量指标',
   model: '模型',
   system_card: '系统卡',
@@ -121,12 +122,14 @@ export const ARTIFACT_FOCUS_LABELS = {
   transparency_report: '透明度报告',
   safety_case_argument: '安全论证',
   risk_update: '风险更新',
+  risk_assessment: '风险评估',
   interpretability_finding: '可解释性发现',
   audit_finding: '审计发现',
   standard: '标准',
   guideline: '指南',
   governance: '治理',
   policy: '政策',
+  policy_analysis: '政策分析',
   risk_management: '风险管理',
   audit: '审计',
   red_teaming: '红队测试',
@@ -139,6 +142,11 @@ export const ARTIFACT_FOCUS_LABELS = {
   trend: '趋势',
   literature_index: '文献索引',
   workflow_cache: '工作流缓存',
+  empirical_finding: '实证发现',
+  capability_profile: '能力画像',
+  framework_proposal: '框架提案',
+  theoretical_contribution: '理论贡献',
+  tool_release: '工具发布',
 }
 
 export const RISK_DOMAIN_LABELS = {
@@ -171,6 +179,16 @@ export const RISK_DOMAIN_LABELS = {
   robustness: '鲁棒性',
   safety_case_validity: '安全论证有效性',
   unknown: '未知',
+  jailbreak_resistance: '越狱抵抗',
+  self_preservation: '自我保护',
+  cyber_offense: '网络攻击',
+  reward_hacking: '奖励黑客',
+  power_seeking: '权力寻求',
+  autonomous_replication: '自主复制',
+  systemic_risk: '系统性风险',
+  distributional_risk: '分布性风险',
+  bio_risk: '生物风险',
+  alignment_tax: '对齐税',
 }
 
 export const METHOD_TAG_LABELS = {
@@ -200,12 +218,19 @@ export const METHOD_TAG_LABELS = {
   taxonomy_building: '分类法构建',
   standard_comparison: '标准比较',
   empirical_experiment: '实证实验',
+  empirical_measurement: '实证测量',
   case_study: '案例研究',
   expert_elicitation: '专家征询',
   leaderboard_comparison: '排行榜比较',
   text_extraction: '正文抽取',
   document_repair: '文档修复',
   summary_synthesis: '摘要综合',
+  interpretability_analysis: '可解释性分析',
+  framework_design: '框架设计',
+  policy_review: '政策评述',
+  theoretical_analysis: '理论分析',
+  survey_synthesis: '综述综合',
+  formal_verification: '形式化验证',
 }
 
 export const SOURCE_ACTOR_TYPE_LABELS = {

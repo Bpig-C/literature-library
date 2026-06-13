@@ -262,13 +262,20 @@ def get_work(work_id: str):
 
         # Classification tags (approved only, grouped by tag_group)
         tag_rows = conn.execute(
-            "SELECT tag_group, tag_value FROM work_classification_tags "
+            "SELECT tag_group, tag_value, confidence, evidence FROM work_classification_tags "
             "WHERE work_id = ? AND review_status = 'approved'",
             (work_id,),
         ).fetchall()
         classification_tags = {}
+        tag_confidence = {}
+        tag_evidence = {}
         for tr in tag_rows:
-            classification_tags.setdefault(tr["tag_group"], []).append(tr["tag_value"])
+            group = tr["tag_group"]
+            classification_tags.setdefault(group, []).append(tr["tag_value"])
+            if tr["confidence"]:
+                tag_confidence[f"{group}:{tr['tag_value']}"] = tr["confidence"]
+            if tr["evidence"]:
+                tag_evidence[f"{group}:{tr['tag_value']}"] = tr["evidence"]
 
         work["source_files"] = sources
         work["archived_source_files"] = archived_sources
@@ -277,6 +284,8 @@ def get_work(work_id: str):
         work["duplicates"] = duplicates
         work["parse_runs"] = runs
         work["classification_tags"] = classification_tags
+        work["tag_confidence"] = tag_confidence
+        work["tag_evidence"] = tag_evidence
 
         return work
     finally:

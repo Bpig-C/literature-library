@@ -153,7 +153,10 @@
             <span class="cls-tag-label">阅读用途</span>
             <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" size="small" round :type="isInvalidTag('reading_lane', v) ? 'warning' : 'default'">{{ label(READING_LANE_LABELS, v) || v }}</n-tag>
+              <span v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" class="tag-with-conf">
+                <n-tag size="small" round :type="isInvalidTag('reading_lane', v) ? 'warning' : 'default'">{{ label(READING_LANE_LABELS, v) || v }}</n-tag>
+                <span v-if="getTagConf('reading_lane', v)" class="conf-badge" :class="getTagConf('reading_lane', v)">{{ getTagConf('reading_lane', v) }}</span>
+              </span>
               <span v-if="!work.classification_tags?.reading_lane?.length" class="muted tiny">—</span>
             </div>
           </div>
@@ -161,7 +164,10 @@
             <span class="cls-tag-label">关注对象</span>
             <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" size="small" round :type="isInvalidTag('artifact_focus', v) ? 'warning' : 'default'">{{ label(ARTIFACT_FOCUS_LABELS, v) || v }}</n-tag>
+              <span v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" class="tag-with-conf">
+                <n-tag size="small" round :type="isInvalidTag('artifact_focus', v) ? 'warning' : 'default'">{{ label(ARTIFACT_FOCUS_LABELS, v) || v }}</n-tag>
+                <span v-if="getTagConf('artifact_focus', v)" class="conf-badge" :class="getTagConf('artifact_focus', v)">{{ getTagConf('artifact_focus', v) }}</span>
+              </span>
               <span v-if="!work.classification_tags?.artifact_focus?.length" class="muted tiny">—</span>
             </div>
           </div>
@@ -169,7 +175,10 @@
             <span class="cls-tag-label">风险领域</span>
             <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" size="small" round :type="isInvalidTag('risk_domain', v) ? 'warning' : 'default'">{{ label(RISK_DOMAIN_LABELS, v) || v }}</n-tag>
+              <span v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" class="tag-with-conf">
+                <n-tag size="small" round :type="isInvalidTag('risk_domain', v) ? 'warning' : 'default'">{{ label(RISK_DOMAIN_LABELS, v) || v }}</n-tag>
+                <span v-if="getTagConf('risk_domain', v)" class="conf-badge" :class="getTagConf('risk_domain', v)">{{ getTagConf('risk_domain', v) }}</span>
+              </span>
               <span v-if="!work.classification_tags?.risk_domain?.length" class="muted tiny">—</span>
             </div>
           </div>
@@ -177,8 +186,25 @@
             <span class="cls-tag-label">方法标签</span>
             <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable tag size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
-              <n-tag v-for="v in (work.classification_tags?.method_tags || [])" :key="v" size="small" round :type="isInvalidTag('method_tags', v) ? 'warning' : 'default'">{{ label(METHOD_TAG_LABELS, v) || v }}</n-tag>
+              <span v-for="v in (work.classification_tags?.method_tags || [])" :key="v" class="tag-with-conf">
+                <n-tag size="small" round :type="isInvalidTag('method_tags', v) ? 'warning' : 'default'">{{ label(METHOD_TAG_LABELS, v) || v }}</n-tag>
+                <span v-if="getTagConf('method_tags', v)" class="conf-badge" :class="getTagConf('method_tags', v)">{{ getTagConf('method_tags', v) }}</span>
+              </span>
               <span v-if="!work.classification_tags?.method_tags?.length" class="muted tiny">—</span>
+            </div>
+          </div>
+
+          <!-- 证据片段 -->
+          <div v-if="hasTagEvidence" class="cls-evidence">
+            <div class="cls-evidence-header" @click="showTagEvidence = !showTagEvidence">
+              <span>证据片段</span>
+              <span class="cls-evidence-toggle">{{ showTagEvidence ? '收起' : '展开' }}</span>
+            </div>
+            <div v-if="showTagEvidence" class="cls-evidence-body">
+              <div v-for="(val, key) in work.tag_evidence" :key="key" class="cls-evidence-item">
+                <span class="cls-evidence-key">{{ key }}</span>
+                <span class="cls-evidence-val">{{ val }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -458,6 +484,16 @@ const invalidTags = computed(() => {
     }
   }
   return result
+})
+
+// Tag confidence and evidence helpers
+const showTagEvidence = ref(false)
+function getTagConf(group, value) {
+  return work.value?.tag_confidence?.[`${group}:${value}`] || null
+}
+const hasTagEvidence = computed(() => {
+  if (!work.value?.tag_evidence) return false
+  return Object.keys(work.value.tag_evidence).length > 0
 })
 
 // --- List ---
@@ -743,7 +779,19 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .invalid-tags-banner { padding: 6px 10px; margin-bottom: 4px; border-radius: 6px; background: #fef3c7; color: #92400e; font-size: 12px; }
 .cls-tag-row { display: flex; align-items: center; gap: 8px; }
 .cls-tag-label { font-size: 12px; color: var(--muted); min-width: 60px; flex-shrink: 0; }
-.cls-tag-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.cls-tag-chips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.tag-with-conf { display: inline-flex; align-items: center; gap: 2px; }
+.conf-badge { padding: 0 5px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.conf-badge.high { background: #dcfce7; color: #166534; }
+.conf-badge.medium { background: #fef3c7; color: #92400e; }
+.conf-badge.low { background: #fee2e2; color: #991b1b; }
+.cls-evidence { margin-top: 8px; }
+.cls-evidence-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+.cls-evidence-toggle { color: var(--accent); font-size: 11px; }
+.cls-evidence-body { margin-top: 4px; }
+.cls-evidence-item { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.cls-evidence-key { color: var(--muted); min-width: 120px; flex-shrink: 0; }
+.cls-evidence-val { color: #374151; }
 
 .file-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .file-item.archived { opacity: 0.6; }
