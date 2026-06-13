@@ -63,7 +63,7 @@
         <thead>
           <tr>
             <th>标题</th>
-            <th>年份</th>
+            <th>日期</th>
             <th>主类型</th>
             <th>语言</th>
             <th>来源</th>
@@ -78,7 +78,7 @@
               <div class="title">{{ w.title || w.id }}</div>
               <div class="muted tiny">{{ w.id }}</div>
             </td>
-            <td>{{ w.year || '' }}</td>
+            <td>{{ formatDate(w) }}</td>
             <td>{{ label(PRIMARY_DOC_TYPE_LABELS, w.primary_doc_type) || label(DOC_TYPE_LABELS, w.doc_type) }}</td>
             <td>{{ label(LANGUAGE_LABELS, w.language) }}</td>
             <td>
@@ -355,6 +355,21 @@ function goToWork(id) {
   }
   sessionStorage.setItem('works_filters', JSON.stringify(filterState))
   router.push('/works/' + id)
+}
+
+function formatDate(w) {
+  try {
+    const pdj = w.publication_date_json ? JSON.parse(w.publication_date_json) : null
+    if (pdj && typeof pdj === 'object') {
+      const parts = []
+      if (pdj.year) parts.push(pdj.year)
+      if (pdj.month) parts.push(String(pdj.month).padStart(2, '0'))
+      if (pdj.day) parts.push(String(pdj.day).padStart(2, '0'))
+      if (parts.length > 1) return parts.join('-')
+      if (pdj.raw) return pdj.raw
+    }
+  } catch {}
+  return w.year || ''
 }
 
 async function loadData() {

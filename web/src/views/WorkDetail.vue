@@ -19,7 +19,7 @@
           @click="router.push('/works/' + w.id)">
           <div class="list-item-title">{{ w.title || w.id }}</div>
           <div class="list-item-meta">
-            <span>{{ w.year || '' }}</span>
+            <span>{{ formatListDate(w) }}</span>
             <span v-if="w.primary_doc_type" class="type-chip">{{ label(PRIMARY_DOC_TYPE_LABELS, w.primary_doc_type) }}</span>
             <span v-if="w.priority" class="priority-chip" :class="w.priority">{{ w.priority }}</span>
           </div>
@@ -71,10 +71,16 @@
             <n-input v-if="editing" v-model:value="editForm.authors_str" size="small" placeholder="用分号分隔" />
             <span v-else>{{ (work.authors || []).join('; ') || '未知' }}</span>
           </div>
-          <div>年份</div>
+          <div>发布日期</div>
           <div>
-            <n-input v-if="editing" v-model:value.number="editForm.year" size="small" type="text" />
-            <span v-else>{{ work.year || '' }}</span>
+            <template v-if="editing">
+              <div class="date-edit-row">
+                <n-input v-model:value.number="editForm.year" size="small" type="text" placeholder="年" style="width:70px" />
+                <n-input v-model:value.number="editForm.month" size="small" type="text" placeholder="月" style="width:50px" />
+                <n-input v-model:value.number="editForm.day" size="small" type="text" placeholder="日" style="width:50px" />
+              </div>
+            </template>
+            <span v-else>{{ dateDisplay }}</span>
           </div>
           <div>类型</div>
           <div>
@@ -486,6 +492,20 @@ function contribType(type) {
   return 'default'
 }
 
+function formatListDate(w) {
+  try {
+    const pdj = w.publication_date_json ? JSON.parse(w.publication_date_json) : null
+    if (pdj && typeof pdj === 'object') {
+      const parts = []
+      if (pdj.year) parts.push(pdj.year)
+      if (pdj.month) parts.push(String(pdj.month).padStart(2, '0'))
+      if (pdj.day) parts.push(String(pdj.day).padStart(2, '0'))
+      if (parts.length > 1) return parts.join('-')
+    }
+  } catch {}
+  return w.year || ''
+}
+
 // Detect tag values not in vocabulary
 const VOCAB_MAP = {
   reading_lane: READING_LANE_LABELS,
@@ -517,6 +537,23 @@ function getTagConf(group, value) {
 const hasTagEvidence = computed(() => {
   if (!work.value?.tag_evidence) return false
   return Object.keys(work.value.tag_evidence).length > 0
+})
+
+// Date display from publication_date_json
+const dateDisplay = computed(() => {
+  if (!work.value) return ''
+  try {
+    const pdj = work.value.publication_date_json ? JSON.parse(work.value.publication_date_json) : null
+    if (pdj && typeof pdj === 'object') {
+      const parts = []
+      if (pdj.year) parts.push(pdj.year + '年')
+      if (pdj.month) parts.push(pdj.month + '月')
+      if (pdj.day) parts.push(pdj.day + '日')
+      if (parts.length) return parts.join('')
+      if (pdj.raw) return pdj.raw
+    }
+  } catch {}
+  return work.value.year || ''
 })
 
 // --- List ---
@@ -600,10 +637,17 @@ async function loadTags() {
 }
 
 function startEdit() {
+  let month = null, day = null
+  try {
+    const pdj = work.value.publication_date_json ? JSON.parse(work.value.publication_date_json) : null
+    if (pdj) { month = pdj.month || null; day = pdj.day || null }
+  } catch {}
   editForm.value = {
     title: work.value.title,
     authors_str: (work.value.authors || []).join('; '),
     year: work.value.year,
+    month,
+    day,
     doc_type: work.value.doc_type,
     language: work.value.language,
     read_status: work.value.read_status,
@@ -616,6 +660,13 @@ async function saveEdit() {
   const data = { ...editForm.value }
   data.authors = data.authors_str.split(';').map(s => s.trim()).filter(Boolean)
   delete data.authors_str
+  // Build publication_date_json from year/month/day
+  const pdj = { year: data.year || null, month: data.month || null, day: data.day || null }
+  if (pdj.year || pdj.month || pdj.day) {
+    data.publication_date_json = JSON.stringify(pdj)
+  }
+  delete data.month
+  delete data.day
   await updateWork(props.id, data)
   editing.value = false
   await loadWork()
@@ -803,6 +854,7 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .cls-tag-row { display: flex; align-items: center; gap: 8px; }
 .cls-tag-label { font-size: 12px; color: var(--muted); min-width: 60px; flex-shrink: 0; }
 .cls-tag-chips { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.date-edit-row { display: flex; gap: 6px; align-items: center; }
 .tag-with-conf { display: inline-flex; align-items: center; gap: 2px; }
 .conf-badge { padding: 0 5px; border-radius: 999px; font-size: 10px; font-weight: 600; }
 .conf-badge.high { background: #dcfce7; color: #166534; }
