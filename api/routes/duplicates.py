@@ -32,7 +32,8 @@ def list_duplicates():
         # Enrich candidates with work info
         for c in candidates:
             work = conn.execute(
-                "SELECT title, authors, year, doc_type, language, parse_status, read_status FROM works WHERE id = ?",
+                "SELECT title, authors, year, doc_type, language, parse_status, read_status, "
+                "arxiv_id, doi FROM works WHERE id = ?",
                 (c["work_id"],),
             ).fetchone()
             if work:
@@ -42,13 +43,22 @@ def list_duplicates():
                 c["work_language"] = work["language"] or ""
                 c["work_parse_status"] = work["parse_status"] or ""
                 c["work_read_status"] = work["read_status"] or ""
+                c["work_arxiv_id"] = work["arxiv_id"] or ""
+                c["work_doi"] = work["doi"] or ""
             # Source file info
             src = conn.execute(
-                "SELECT original_name, relative_source_path FROM source_files WHERE id = ?",
+                "SELECT original_name, relative_source_path, file_size FROM source_files WHERE id = ?",
                 (c.get("source_file_id") or "",),
             ).fetchone()
             if src:
                 c["source_original_name"] = src["original_name"] or ""
+                c["source_file_size"] = src["file_size"] or 0
+            # Tag count
+            tag_count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM work_classification_tags WHERE work_id = ? AND review_status = 'approved'",
+                (c["work_id"],),
+            ).fetchone()
+            c["tag_count"] = tag_count["cnt"] if tag_count else 0
 
         # Group candidates
         cands_by_group: dict[str, list] = {}

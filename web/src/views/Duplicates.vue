@@ -32,7 +32,7 @@
         <span :class="'badge ' + badgeClass(g)">{{ badgeText(g) }}</span>
       </div>
 
-      <div class="cand-grid">
+        <div class="cand-grid">
         <div v-for="c in g.candidates" :key="c.id" class="cand-card">
           <div class="cand-title">{{ c.work_title || c.work_id }}</div>
           <div class="cand-meta">
@@ -40,6 +40,13 @@
             <div v-if="c.work_year">年份: {{ c.work_year }}</div>
             <div v-if="c.work_doc_type">类型: {{ c.work_doc_type }}</div>
             <div v-if="c.work_language">语言: {{ c.work_language }}</div>
+            <div v-if="c.work_arxiv_id">arXiv: <a :href="'https://arxiv.org/abs/' + c.work_arxiv_id" target="_blank">{{ c.work_arxiv_id }}</a></div>
+            <div v-if="c.work_doi">DOI: <a :href="'https://doi.org/' + c.work_doi" target="_blank">{{ c.work_doi }}</a></div>
+          </div>
+          <div class="cand-signals">
+            <span v-if="c.source_file_size" class="signal" title="文件大小">📄 {{ formatSize(c.source_file_size) }}</span>
+            <span class="signal" title="已审核标签数">🏷️ {{ c.tag_count }}</span>
+            <span v-if="c.score" class="signal" title="相似度">📊 {{ (c.score * 100).toFixed(0) }}%</span>
           </div>
           <div class="cand-source">{{ c.source_original_name || '' }}</div>
         </div>
@@ -160,6 +167,13 @@ function badgeText(g) {
   return allDecided ? '已决策' : '待决策'
 }
 
+function formatSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+
 function exportJSON() {
   const items = []
   for (const [key, d] of Object.entries(decisions.value)) {
@@ -214,6 +228,8 @@ h1 { margin-bottom: 12px; font-size: 22px; }
 .cand-title { font-weight: 600; margin-bottom: 4px; word-break: break-word; }
 .cand-meta { font-size: 12px; color: var(--muted); }
 .cand-source { font-size: 12px; color: #475467; margin-top: 4px; word-break: break-all; }
+.cand-signals { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.signal { font-size: 11px; color: #374151; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
 .auto-msg { padding: 10px 14px; color: #065f46; font-size: 13px; border-top: 1px solid var(--line); }
 .decision-section { padding: 12px 14px; border-top: 1px solid var(--line); }
 .pair-row { margin-bottom: 10px; }
