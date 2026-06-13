@@ -567,7 +567,11 @@ def supersede_extraction(ext_id: str, body: MetadataSupersedeAction):
 
 
 def _apply_single(conn, ext_id: str, work_id: str, extracted: dict, confidence: dict) -> int:
-    """Overwrite apply for one extraction. Returns 1 if work was updated."""
+    """Fill-empty apply for one extraction. Returns 1 if work was updated.
+
+    Only writes fields where works table is empty/null, matching classification
+    apply semantics. This preserves human-edited values in works table.
+    """
     current = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
     if not current:
         return 0
@@ -581,6 +585,10 @@ def _apply_single(conn, ext_id: str, work_id: str, extracted: dict, confidence: 
             continue
         value = extracted.get(field)
         if value is None or value == "":
+            continue
+        # Fill-empty: skip if works already has this value
+        existing = current[col] if col in current.keys() else None
+        if existing:
             continue
         # Serialize complex fields
         if field == "authors" and isinstance(value, list):
