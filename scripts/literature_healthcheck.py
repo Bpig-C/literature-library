@@ -36,6 +36,7 @@ def check_db_tables(conn: sqlite3.Connection) -> dict[str, Any]:
         "duplicate_groups", "duplicate_candidates", "work_relations",
         "work_codes", "migration_meta", "library_migration_files", "inventory_meta",
         "metadata_extractions",
+        "analysis_runs", "classification_extractions", "work_classification_tags",
     }
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -366,6 +367,128 @@ def check_metadata_extractions(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def check_analysis_runs(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Check analysis_runs table consistency (§9.4).
+
+    Returns dict with 'ok', 'total', 'issues', and 'summary' keys.
+    If the table doesn't exist, returns ok=True with a status message.
+    """
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='analysis_runs'"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        exists = None
+
+    if not exists:
+        return {"ok": True, "status": "table_absent", "total": 0, "issues": []}
+
+    issues: list[dict] = []
+    rows = conn.execute("SELECT * FROM analysis_runs").fetchall()
+
+    # Collect quarantined work_ids for cross-check
+    quarantined_works = set()
+    try:
+        quarantined_works = {
+            r["id"] for r in conn.execute(
+                "SELECT id FROM works WHERE read_status = 'quarantined'"
+            ).fetchall()
+        }
+    except sqlite3.OperationalError:
+        pass
+
+    all_work_ids = {r["id"] for r in conn.execute("SELECT id FROM works").fetchall()}
+
+    # Allowed review_status values
+    allowed_statuses = {"pending", "approved", "needs_fix", "rejected"}
+
+    # Track active (non-superseded) runs per (work_id, angle, template_version)
+    active_runs: dict[tuple, list[int]] = {}
+
+    for r in rows:
+        rid = r["id"]
+        work_id = r["work_id"]
+        md_path = r["md_path"]
+        review_status = r["review_status"]
+        extracted_json = r["extracted_json"]
+        superseded_by = r["superseded_by"]
+        angle = r["angle"]
+        template_version = r["template_version"]
+
+        # 1. work_id must exist in works table
+        if work_id not in all_work_ids:
+            issues.append({"type": "ar_orphan_work", "run_id": rid, "work_id": work_id})
+
+        # 2. md_path must exist and be non-empty
+        if md_path:
+            p = Path(md_path)
+            if not p.exists():
+                issues.append({"type": "ar_missing_md", "run_id": rid, "work_id": work_id, "path": md_path})
+            elif p.stat().st_size == 0:
+                issues.append({"type": "ar_empty_md", "run_id": rid, "work_id": work_id, "path": md_path})
+        else:
+            issues.append({"type": "ar_no_md_path", "run_id": rid, "work_id": work_id})
+
+        # 3. review_status must be valid
+        if review_status and review_status not in allowed_statuses:
+            issues.append({
+                "type": "ar_invalid_status",
+                "run_id": rid,
+                "work_id": work_id,
+                "review_status": review_status,
+            })
+
+        # 4. extracted_json must be valid JSON
+        if extracted_json:
+            try:
+                json.loads(extracted_json)
+            except (json.JSONDecodeError, TypeError):
+                issues.append({"type": "ar_invalid_json", "run_id": rid, "work_id": work_id})
+
+        # 5. Track active runs for uniqueness check
+        if not superseded_by:
+            key = (work_id, angle, template_version)
+            active_runs.setdefault(key, []).append(rid)
+
+    # 6. Uniqueness: at most one active run per (work_id, angle, template_version)
+    for key, run_ids in active_runs.items():
+        if len(run_ids) > 1:
+            issues.append({
+                "type": "ar_duplicate_active",
+                "work_id": key[0],
+                "angle": key[1],
+                "template_version": key[2],
+                "run_ids": run_ids,
+            })
+
+    # 7. Quarantined works should not have pending analysis runs
+    if quarantined_works:
+        pending_quarantined = conn.execute(
+            "SELECT id, work_id FROM analysis_runs WHERE review_status = 'pending' AND superseded_by IS NULL"
+        ).fetchall()
+        for r in pending_quarantined:
+            if r["work_id"] in quarantined_works:
+                issues.append({
+                    "type": "ar_quarantined_pending",
+                    "run_id": r["id"],
+                    "work_id": r["work_id"],
+                })
+
+    summary = {
+        "total": len(rows),
+        "active": sum(1 for r in rows if not r["superseded_by"]),
+        "superseded": sum(1 for r in rows if r["superseded_by"]),
+        "pending": sum(1 for r in rows if r["review_status"] == "pending" and not r["superseded_by"]),
+    }
+
+    return {
+        "ok": len(issues) == 0,
+        "status": "present",
+        "issues": issues,
+        "summary": summary,
+    }
+
+
 def run_all_checks() -> dict[str, Any]:
     """Run all health checks and return structured results."""
     conn = connect_db()
@@ -384,12 +507,14 @@ def run_all_checks() -> dict[str, Any]:
         orphan_codes = check_work_codes_orphan(conn)
         orphan_source_refs = check_source_file_id_orphans(conn)
         metadata_ext = check_metadata_extractions(conn)
+        analysis_runs_result = check_analysis_runs(conn)
     finally:
         conn.close()
 
     all_issues = (
         works_source + missing_pdfs + missing_content
         + quarantine_db + orphan_artifacts + orphan_codes + orphan_source_refs
+        + analysis_runs_result.get("issues", [])
     )
 
     return {
@@ -409,6 +534,7 @@ def run_all_checks() -> dict[str, Any]:
         "orphan_codes": orphan_codes,
         "orphan_source_file_refs": orphan_source_refs,
         "metadata_extractions": metadata_ext,
+        "analysis_runs": analysis_runs_result,
         "total_issues": len(all_issues),
         "healthy": len(all_issues) == 0 and db["ok"],
     }
@@ -575,6 +701,39 @@ def format_markdown(result: dict[str, Any]) -> str:
         lines.append(f"- 覆盖文献：{me['coverage']}")
     else:
         lines.append(f"错误：{me.get('error', 'unknown')}")
+    lines.append("")
+
+    # Analysis runs
+    ar = result["analysis_runs"]
+    lines.append("## 分析任务 (analysis_runs)")
+    lines.append("")
+    if ar.get("status") == "table_absent":
+        lines.append("表不存在，跳过。")
+    else:
+        s = ar.get("summary", {})
+        lines.append(f"- 总记录：{s.get('total', 0)}（活跃 {s.get('active', 0)}，已取代 {s.get('superseded', 0)}，待审 {s.get('pending', 0)}）")
+        if ar.get("issues"):
+            lines.append("")
+            for item in ar["issues"]:
+                t = item["type"]
+                if t == "ar_orphan_work":
+                    lines.append(f"- 孤儿 run {item['run_id']}：work_id={item['work_id']} 不存在于 works 表")
+                elif t == "ar_missing_md":
+                    lines.append(f"- run {item['run_id']}：md_path 不存在 `{item['path']}`")
+                elif t == "ar_empty_md":
+                    lines.append(f"- run {item['run_id']}：md_path 文件为空 `{item['path']}`")
+                elif t == "ar_no_md_path":
+                    lines.append(f"- run {item['run_id']}：md_path 为空")
+                elif t == "ar_invalid_status":
+                    lines.append(f"- run {item['run_id']}：非法 review_status=`{item['review_status']}`")
+                elif t == "ar_invalid_json":
+                    lines.append(f"- run {item['run_id']}：extracted_json 非合法 JSON")
+                elif t == "ar_duplicate_active":
+                    lines.append(f"- 重复活跃 run：work={item['work_id']} angle={item['angle']} ver={item['template_version']} ids={item['run_ids']}")
+                elif t == "ar_quarantined_pending":
+                    lines.append(f"- 隔离中 work {item['work_id']} 有待审 run {item['run_id']}")
+                else:
+                    lines.append(f"- {t}：{item}")
     lines.append("")
 
     return "\n".join(lines)

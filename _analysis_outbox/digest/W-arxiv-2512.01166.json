@@ -1,0 +1,69 @@
+{
+  "angle": "digest",
+  "template_version": 1,
+  "work_id": "W-arxiv-2512.01166",
+  "not_addressed": false,
+  "not_addressed_fields": [],
+  "confidence": "high",
+  "confidence_note": "",
+  "fields": {
+    "one_sentence_positioning": {
+      "value": "SaferAI对12家AI公司的前沿安全框架进行系统评估，发现中位得分仅18%，存在显著改进空间。",
+      "evidence": {
+        "quote": "This study assesses 12 Frameworks, using 65 weighted criteria, across four dimensions: risk identification, risk analysis & evaluation, risk treatment, and risk governance.",
+        "location": "Abstract"
+      }
+    },
+    "tldr": {
+      "value": [
+        "评估12家AI公司的安全框架，使用65项加权标准，覆盖风险识别、分析评估、风险处理、风险治理四个维度",
+        "总体得分范围8%-34%，中位数18%；Anthropic(34%)和OpenAI(33%)领先",
+        "'同行天花板'(peer ceiling)为54%，表明采纳同行最佳实践可大幅提升",
+        "三个核心风险输入普遍薄弱：未知风险识别、风险容忍度定义、失控风险缓解",
+        "独立监督机制普遍缺失，12家中7家内部审计参与得分为0%"
+      ],
+      "evidence": {
+        "quote": "Overall scores range from 34% (Anthropic) to 8% (Cohere), with a median of 18%. Many aspects are missing or under-specified... a company adopting all leading practices currently adopted across their peers would score 54%, which is triple the current median.",
+        "location": "Abstract"
+      }
+    },
+    "literature_role": {
+      "value": "报告评测结果",
+      "evidence": {
+        "quote": "We assess each Provider against 65 weighted criteria derived from established risk management standards in AI and other high-risk industries.",
+        "location": "1 Executive Summary"
+      }
+    },
+    "core_artifacts": {
+      "value": ["65项评估标准体系", "同行天花板(peer ceiling)指标", "四维度风险框架评估方法"],
+      "evidence": {
+        "quote": "We derive our 65 weighted criteria explicitly from Campos et al. (2025), which adapts established risk management standards from high-risk industries (e.g. nuclear power and aviation) to the frontier AI context.",
+        "location": "4.3 Criteria Development"
+      }
+    },
+    "relevance_to_autonomy_safety": {
+      "value": {
+        "level": "high",
+        "reason": "直接评估各公司对失控风险(loss-of-control)的框架覆盖情况，发现相关缓解措施'极度不发达'"
+      },
+      "evidence": {
+        "quote": "Third, mitigations for loss-of-control risks remain vastly underdeveloped. Instead, Providers typically describe open research directions.",
+        "location": "Abstract"
+      }
+    },
+    "suggested_reading_priority": {
+      "value": {
+        "priority": "high",
+        "reason": "提供行业安全框架的横向对比基准，识别自主性安全治理的关键缺口，对政策研究和框架设计有直接参考价值"
+      },
+      "evidence": {
+        "quote": "Regulators can evaluate whether Frameworks meet legal requirements and identify gaps warranting additional regulation. Investors can assess exposure to AI-related risks.",
+        "location": "3.3 Benefits of Assessing Frameworks"
+      }
+    }
+  },
+  "open_questions": [
+    "欧盟AI法案和加州SB-53对安全框架的实际约束力如何",
+    "同行天花板如何从54%进一步提升到更高水平"
+  ]
+}

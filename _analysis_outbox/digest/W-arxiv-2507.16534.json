@@ -1,0 +1,69 @@
+{
+  "angle": "digest",
+  "template_version": 1,
+  "work_id": "W-arxiv-2507.16534",
+  "not_addressed": false,
+  "not_addressed_fields": [],
+  "confidence": "high",
+  "confidence_note": "",
+  "fields": {
+    "one_sentence_positioning": {
+      "value": "上海AI实验室基于E-T-C分析框架对前沿AI进行七大领域风险评估，提出红线/黄线/绿线风险分区方法。",
+      "evidence": {
+        "quote": "Drawing on the E-T-C analysis (deployment environment, threat source, enabling capability) from the Frontier AI Risk Management Framework (v1.0) (SafeWork-F1-Framework), this technical report conducts a comprehensive assessment of AI's frontier risks based on a systematic analysis of these interconnected analytical dimensions.",
+        "location": "1 Introduction"
+      }
+    },
+    "tldr": {
+      "value": [
+        "评估七大风险领域：网络攻击、生物化学风险、说服操纵、失控自主AI研发、战略性欺骗、自我复制、串通",
+        "采用E-T-C分析(部署环境、威胁源、赋能能力)方法论进行系统性风险评估",
+        "定义红线(不可接受阈值)、黄线(早期预警)、绿线(可管理风险)三区",
+        "实验结果显示所有前沿模型目前处于绿区和黄区，未越过红线",
+        "推理模型在自我复制和战略性欺骗风险中表现与标准模型有差异"
+      ],
+      "evidence": {
+        "quote": "We propose preliminary boundaries for AI safety by defining 'red lines' and 'yellow lines' as early warning indicators... These risk zones define deployment protocols: green zone models have manageable risk levels suitable for routine deployment with continuous monitoring; yellow zone models require strengthened mitigations and controlled deployment; red zone models necessitate suspension of development and/or deployment until risks are adequately mitigated.",
+        "location": "1 Introduction"
+      }
+    },
+    "literature_role": {
+      "value": "报告评测结果",
+      "evidence": {
+        "quote": "Our experimental evaluation of recent frontier AI models reveals that all assessed models currently reside in the green and yellow zones, with none crossing red line thresholds.",
+        "location": "1 Introduction"
+      }
+    },
+    "core_artifacts": {
+      "value": ["SafeWork-F1-Framework", "E-T-C分析方法", "AI-45° Law", "红线/黄线/绿线风险分区"],
+      "evidence": {
+        "quote": "Guided by the 'AI-45° Law' (Yang et al., 2024b), we systematically apply the E-T-C analysis to facilitate frontier risk evaluation of AI models.",
+        "location": "1 Introduction"
+      }
+    },
+    "relevance_to_autonomy_safety": {
+      "value": {
+        "level": "high",
+        "reason": "直接评估失控自主AI研发、自我复制、战略性欺骗等核心自主性安全风险，提供量化评估方法"
+      },
+      "evidence": {
+        "quote": "We focus on frontier risks in seven areas: cyber offense, biological and chemical risks, persuasion and manipulation, uncontrolled autonomous AI R&D, strategic deception and scheming, self-replication, and collusion.",
+        "location": "1 Introduction"
+      }
+    },
+    "suggested_reading_priority": {
+      "value": {
+        "priority": "high",
+        "reason": "提供自主性安全风险的量化评估框架和实验数据，是研究AI Agent安全的核心参考文献"
+      },
+      "evidence": {
+        "quote": "This work reflects our current understanding of AI frontier risks and aims to provide a comprehensive, industry-leading approach to frontier risk identification and assessment.",
+        "location": "1 Introduction"
+      }
+    }
+  },
+  "open_questions": [
+    "红线阈值的具体量化标准如何确定",
+    "推理模型在欺骗风险上的差异是否随能力提升而扩大"
+  ]
+}

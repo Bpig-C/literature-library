@@ -1,0 +1,69 @@
+{
+  "angle": "digest",
+  "template_version": 1,
+  "work_id": "W-arxiv-2507.06261",
+  "not_addressed": false,
+  "not_addressed_fields": [],
+  "confidence": "high",
+  "confidence_note": "",
+  "fields": {
+    "one_sentence_positioning": {
+      "value": "Google DeepMind发布Gemini 2.5系列模型技术报告，展示先进推理、多模态、长上下文和下一代智能体能力。",
+      "evidence": {
+        "quote": "In this report, we introduce the Gemini 2.X model family: Gemini 2.5 Pro and Gemini 2.5 Flash, as well as our earlier Gemini 2.0 Flash and Flash-Lite models. Gemini 2.5 Pro is our most capable model yet, achieving SoTA performance on frontier coding and reasoning benchmarks.",
+        "location": "Abstract"
+      }
+    },
+    "tldr": {
+      "value": [
+        "Gemini 2.5 Pro是Google最强大的模型，在编程和推理基准上达到SoTA",
+        "模型原生支持多模态输入，可处理长达3小时视频内容，上下文窗口1M+ tokens",
+        "Thinking模型通过强化学习训练，在推理时使用额外计算以获得更准确答案",
+        "Gemini Deep Research智能体在Humanity's Last Exam基准上从7.95%提升到32.4%",
+        "安全评估显示Gemini 2.5 Pro未达到任何关键能力阈值(Critical Capability Levels)"
+      ],
+      "evidence": {
+        "quote": "Gemini 2.5 Pro is our most intelligent thinking model, exhibiting strong reasoning and code capabilities. It excels at producing interactive web applications, is capable of codebase-level understanding and also exhibits emergent multimodal coding abilities.",
+        "location": "1. Introduction"
+      }
+    },
+    "literature_role": {
+      "value": "披露系统信息",
+      "evidence": {
+        "quote": "We also evaluated Gemini 2.5 Pro's Critical Capabilities, including CBRN, cybersecurity, machine learning R&D, and deceptive alignment. While Gemini 2.5 Pro showed a significant increase in some capabilities compared to previous Gemini models, it did not reach any of the Critical Capability Levels in any area.",
+        "location": "1. Introduction"
+      }
+    },
+    "core_artifacts": {
+      "value": ["Gemini 2.5 Pro", "Gemini 2.5 Flash", "Gemini Deep Research", "Gemini Plays Pokémon"],
+      "evidence": {
+        "quote": "Gemini Deep Research (Gemini Team, Google, 2024) is an agent built on top of the Gemini 2.5 Pro model designed to strategically browse the web and provide informed answers to even the most niche user queries.",
+        "location": "Gemini as an Agent: Deep Research"
+      }
+    },
+    "relevance_to_autonomy_safety": {
+      "value": {
+        "level": "medium",
+        "reason": "模型展示了显著的智能体能力(Deep Research、Pokémon游戏通关)，但报告主要聚焦技术性能而非安全风险深度分析"
+      },
+      "evidence": {
+        "quote": "Its unique combination of long context, multimodal and reasoning capabilities can be combined to unlock new agentic workflows.",
+        "location": "Abstract"
+      }
+    },
+    "suggested_reading_priority": {
+      "value": {
+        "priority": "medium",
+        "reason": "了解前沿模型能力边界对自主性安全研究有价值，但需结合安全框架文献交叉阅读"
+      },
+      "evidence": {
+        "quote": "While Gemini 2.5 Pro supports 1M+ token context, making effective use of it for agents presents a new research frontier.",
+        "location": "4.1. Gemini Plays Pokémon"
+      }
+    }
+  },
+  "open_questions": [
+    "Gemini 2.5 Pro的Critical Capabilities评估具体阈值和方法是什么",
+    "智能体在长上下文中重复行为的倾向如何缓解"
+  ]
+}
