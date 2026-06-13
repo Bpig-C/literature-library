@@ -45,10 +45,10 @@ export function getDuplicates() {
   return request('/duplicates')
 }
 
-export function reviewDuplicate(groupId, data) {
+export function reviewDuplicate(groupId, decision, note = '') {
   return request(`/duplicates/${encodeURIComponent(groupId)}/review`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ decision, note }),
   })
 }
 

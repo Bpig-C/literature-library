@@ -55,33 +55,31 @@
       <div v-if="g.auto_confirmed" class="auto-msg">
         ✓ 已自动确认：SHA256 完全相同，属于同一作品的不同来源文件
       </div>
+      <div v-else-if="g.candidates.some(c => c.reviewed)" class="auto-msg">
+        ✓ 已决策
+      </div>
       <div v-else class="decision-section">
-        <div v-for="pair in pairs(g)" :key="pair.key" class="pair-row">
-          <div class="pair-label">{{ pair.label }}</div>
-          <div class="decision-btns">
-            <button
-              v-for="dt in DECISION_TYPES" :key="dt[0]"
-              :class="{ selected: decisions[pair.key]?.type === dt[0] }"
-              @click="setDecision(pair.key, dt[0])"
-            >{{ dt[1] }}</button>
-            <button class="skip-btn" @click="setDecision(pair.key, 'skip')">跳过</button>
-          </div>
+        <div class="decision-btns">
+          <button
+            v-for="dt in DECISION_TYPES" :key="dt[0]"
+            :class="[dt[0], { selected: processing[g.id] === dt[0] }]"
+            :disabled="!!processing[g.id]"
+            @click="setDecision(g, dt[0])"
+          >{{ processing[g.id] === dt[0] ? '处理中...' : dt[1] }}</button>
         </div>
       </div>
     </div>
 
     <div class="empty" v-if="!filtered.length">没有匹配的重复组</div>
-
-    <div class="cmd-bar" v-if="Object.keys(decisions).length">
-      <span class="muted">已决策 {{ Object.keys(decisions).length }} 项</span>
-      <button class="export-btn" @click="exportJSON">导出 dedup_reviews.json</button>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getDuplicates } from '../api'
+import { useMessage } from 'naive-ui'
+import { getDuplicates, reviewDuplicate } from '../api'
+
+const message = useMessage()
 
 const DECISION_TYPES = [
   ['same_work', '同一作品'],
@@ -93,22 +91,11 @@ const DECISION_TYPES = [
   ['quarantine', '隔离'],
 ]
 
-const STORAGE_KEY = 'literature_dedup_decisions'
 const allGroups = ref([])
 const typeFilter = ref('all')
 const statusFilter = ref('needsreview')
 const search = ref('')
-const decisions = ref({})
-
-// Restore from localStorage
-try {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved) decisions.value = JSON.parse(saved)
-} catch {}
-
-function saveDecisions() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(decisions.value)) } catch {}
-}
+const processing = ref({})
 
 const filtered = computed(() => {
   return allGroups.value.filter(g => {
@@ -148,23 +135,28 @@ function pairs(g) {
   return result
 }
 
-function setDecision(key, type) {
-  decisions.value[key] = { type, note: '', timestamp: new Date().toISOString() }
-  saveDecisions()
-}
-
-function badgeClass(g) {
-  if (g.auto_confirmed) return 'confirmed'
-  const keys = pairs(g).map(p => p.key)
-  const allDecided = keys.every(k => decisions.value[k])
-  return allDecided ? 'decided' : 'pending'
-}
-
-function badgeText(g) {
-  if (g.auto_confirmed) return '已自动确认'
-  const keys = pairs(g).map(p => p.key)
-  const allDecided = keys.every(k => decisions.value[k])
-  return allDecided ? '已决策' : '待决策'
+async function setDecision(group, decision) {
+  const groupId = group.id
+  processing.value[groupId] = decision
+  try {
+    const res = await reviewDuplicate(groupId, decision)
+    if (res.ok) {
+      // Mark candidates as reviewed locally
+      for (const c of group.candidates) {
+        c.reviewed = 1
+      }
+      if (res.actions?.merged) {
+        const m = res.actions.merged
+        message.success(`已合并：保留 ${m.primary}，归档 ${m.archived_sources} 个源文件，合并 ${m.merged_tags} 个标签`)
+      } else {
+        message.success('决策已保存')
+      }
+    }
+  } catch (e) {
+    message.error('操作失败: ' + (e.message || e))
+  } finally {
+    delete processing.value[groupId]
+  }
 }
 
 function formatSize(bytes) {
@@ -172,29 +164,6 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-}
-
-function exportJSON() {
-  const items = []
-  for (const [key, d] of Object.entries(decisions.value)) {
-    if (d.type === 'skip') continue
-    const entry = { key, decision_type: d.type, note: d.note || '', timestamp: d.timestamp }
-    if (key.startsWith('group:')) {
-      entry.group_id = key.slice(6)
-    } else if (key.startsWith('pair:')) {
-      const [a, b] = key.slice(5).split('|')
-      entry.work_id_a = a
-      entry.work_id_b = b
-    }
-    items.push(entry)
-  }
-  const blob = new Blob([JSON.stringify({ decisions: items }, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'dedup_reviews.json'
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 onMounted(async () => {
@@ -236,8 +205,13 @@ h1 { margin-bottom: 12px; font-size: 22px; }
 .pair-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 .decision-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .decision-btns button { padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); background: #fff; cursor: pointer; transition: all .15s; }
+.decision-btns button:hover { background: #f3f4f6; }
 .decision-btns button.selected { color: #fff; font-weight: 600; background: var(--accent); border-color: var(--accent); }
-.skip-btn { color: var(--muted) !important; border-style: dashed !important; }
+.decision-btns button:disabled { opacity: 0.5; cursor: wait; }
+.decision-btns button.same_work { color: #15803d; border-color: #15803d; }
+.decision-btns button.same_work:hover { background: #dcfce7; }
+.decision-btns button.quarantine { color: #991b1b; border-color: #991b1b; }
+.decision-btns button.quarantine:hover { background: #fee2e2; }
 .empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 .cmd-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .export-btn { height: 34px; padding: 0 16px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font: inherit; }

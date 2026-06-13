@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -156,6 +157,118 @@ def _create_relation(conn, work_id_a: str, work_id_b: str, relation_type: str, n
         return False
 
 
+def _work_score(conn, work_id: str) -> int:
+    """Score a work for dedup priority. Higher = better to keep.
+
+    Criteria (from user discussion):
+    - Has arxiv_id: +100
+    - Has doi: +100
+    - File size: +log2(size_kb)
+    - Tag count: +count * 2
+    """
+    score = 0
+    w = conn.execute("SELECT arxiv_id, doi FROM works WHERE id=?", (work_id,)).fetchone()
+    if w:
+        if w["arxiv_id"]:
+            score += 100
+        if w["doi"]:
+            score += 100
+
+    sf = conn.execute("SELECT file_size FROM source_files WHERE work_id=? AND status='active'", (work_id,)).fetchall()
+    for s in sf:
+        size_kb = max(1, (s["file_size"] or 0) / 1024)
+        import math
+        score += int(math.log2(size_kb))
+
+    tc = conn.execute(
+        "SELECT COUNT(*) as cnt FROM work_classification_tags WHERE work_id=? AND review_status='approved'",
+        (work_id,)
+    ).fetchone()
+    score += (tc["cnt"] or 0) * 2
+
+    return score
+
+
+def _merge_same_work(conn, work_ids: list[str], note: str) -> dict:
+    """Merge multiple works into one. Keeps the best, archives others.
+
+    Returns actions dict.
+    """
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    actions = {"primary": "", "archived_sources": 0, "merged_tags": 0, "quarantined": []}
+
+    if len(work_ids) < 2:
+        return actions
+
+    # Score and sort
+    scored = [(wid, _work_score(conn, wid)) for wid in work_ids]
+    scored.sort(key=lambda x: -x[1])
+    primary = scored[0][0]
+    secondaries = [s[0] for s in scored[1:]]
+    actions["primary"] = primary
+
+    # Get primary's existing tags
+    primary_tags = set(
+        (t["tag_group"], t["tag_value"])
+        for t in conn.execute(
+            "SELECT tag_group, tag_value FROM work_classification_tags WHERE work_id=? AND review_status='approved'",
+            (primary,)
+        ).fetchall()
+    )
+
+    for sec_id in secondaries:
+        # Merge tags
+        sec_tags = conn.execute(
+            "SELECT tag_group, tag_value, confidence, evidence FROM work_classification_tags WHERE work_id=? AND review_status='approved'",
+            (sec_id,)
+        ).fetchall()
+        for t in sec_tags:
+            if (t["tag_group"], t["tag_value"]) not in primary_tags:
+                tag_id = f"CT-merge-{t['tag_group'][:3]}-{t['tag_value'][:8]}"
+                conn.execute(
+                    "INSERT OR IGNORE INTO work_classification_tags "
+                    "(id, work_id, tag_group, tag_value, source, confidence, evidence, review_status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, 'merged', ?, ?, 'approved', ?, ?)",
+                    (tag_id, primary, t["tag_group"], t["tag_value"],
+                     t["confidence"] or "high", t["evidence"] or "", now, now)
+                )
+                primary_tags.add((t["tag_group"], t["tag_value"]))
+                actions["merged_tags"] += 1
+
+        # Archive secondary's source files
+        sec_sources = conn.execute(
+            "SELECT id, source_path, original_name FROM source_files WHERE work_id=? AND status='active'",
+            (sec_id,)
+        ).fetchall()
+        for s in sec_sources:
+            src_path = Path(s["source_path"])
+            archive_path = None
+            if src_path.exists():
+                archive_dir = LIBRARY_ROOT / "_archive" / "dedup" / sec_id
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                dest = archive_dir / (s["original_name"] or src_path.name)
+                shutil.move(str(src_path), str(dest))
+                archive_path = str(dest)
+            conn.execute(
+                "UPDATE source_files SET status='archived', archived_at=?, archive_path=?, archive_reason=? WHERE id=?",
+                (now, archive_path, f"merged into {primary}", s["id"])
+            )
+            actions["archived_sources"] += 1
+
+        # Create same_work relation
+        _create_relation(conn, primary, sec_id, "same_work", note or f"dedup merge")
+
+        # Quarantine secondary
+        conn.execute("UPDATE works SET read_status='quarantined', updated_at=? WHERE id=?", (now, sec_id))
+        conn.execute(
+            "INSERT OR IGNORE INTO work_codes (work_id, source_file_id, code, reason) VALUES (?, '', 'quarantined', ?)",
+            (sec_id, f"merged into {primary}")
+        )
+        actions["quarantined"].append(sec_id)
+
+    return actions
+
+
 def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
     """Move source_files to _quarantine/{work_id}/ and update DB. Returns moved paths."""
     quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
@@ -204,22 +317,30 @@ def review_duplicate(group_id: str, body: DuplicateReview):
             (group_id,),
         )
 
-        actions = {"relations_created": 0, "sources_removed": 0, "files_moved": []}
+        actions = {"relations_created": 0, "sources_removed": 0, "files_moved": [], "merged": None}
 
-        # 2. Create work_relations for relation-type decisions
-        if body.decision in RELATION_TYPES:
+        # 2. Handle same_work on title_candidate: auto-merge
+        if body.decision == "same_work" and group["duplicate_type"] == "title_candidate":
+            cands = conn.execute(
+                "SELECT DISTINCT work_id FROM duplicate_candidates WHERE group_id = ?",
+                (group_id,),
+            ).fetchall()
+            work_ids = [c["work_id"] for c in cands]
+            merge_result = _merge_same_work(conn, work_ids, body.note or f"dedup review {group_id}")
+            actions["merged"] = merge_result
+
+        # 3. Create work_relations for other relation-type decisions
+        elif body.decision in RELATION_TYPES:
             cands = conn.execute(
                 "SELECT DISTINCT work_id FROM duplicate_candidates WHERE group_id = ?",
                 (group_id,),
             ).fetchall()
             work_ids = [c["work_id"] for c in cands]
 
-            # For same_work on exact_sha256: all candidates share the same work_id,
-            # so no inter-work relation is needed. The relation is implicit.
+            # For same_work on exact_sha256: all candidates share the same work_id
             if body.decision == "same_work" and group["duplicate_type"] == "exact_sha256":
-                pass  # Same work, no relation to create
+                pass
             else:
-                # Create pairwise relations between all work_ids in the group
                 for i in range(len(work_ids)):
                     for j in range(i + 1, len(work_ids)):
                         created = _create_relation(
@@ -230,7 +351,7 @@ def review_duplicate(group_id: str, body: DuplicateReview):
                         if created:
                             actions["relations_created"] += 1
 
-        # 3. Clean up duplicate source_files for same_work on exact_sha256
+        # 4. Clean up duplicate source_files for same_work on exact_sha256
         if body.decision == "same_work" and group["duplicate_type"] == "exact_sha256":
             actions["sources_removed"] = _cleanup_same_work_sources(conn, group_id)
 
