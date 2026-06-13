@@ -96,6 +96,12 @@
               <span v-for="(c, i) in work.contributors" :key="i">
                 <n-tag size="small" :type="contribType(c.type)" round>{{ c.name }}</n-tag>
               </span>
+              <span class="contrib-legend">
+                <n-tag size="tiny" type="info" round>大学</n-tag>
+                <n-tag size="tiny" type="warning" round>公司</n-tag>
+                <n-tag size="tiny" type="error" round>政府</n-tag>
+                <n-tag size="tiny" type="success" round>实验室</n-tag>
+              </span>
             </template>
             <span v-else class="muted">—</span>
           </div>
@@ -817,6 +823,7 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .add-rel { display: flex; gap: 8px; align-items: center; }
 .content-preview { font-size: 12px; font-family: Consolas, monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 
+.contrib-legend { display: inline-flex; gap: 3px; margin-left: 6px; opacity: 0.6; vertical-align: middle; }
 .status-succeeded { color: var(--ok); font-weight: 600; }
 .status-failed { color: var(--bad); font-weight: 600; }
 .status-verified { color: var(--ok); }
