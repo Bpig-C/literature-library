@@ -445,6 +445,15 @@ def restore_work(work_id: str):
         )
 
         conn.commit()
+
+        # Clean up empty quarantine directory
+        quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
+        if quarantine_dir.exists():
+            try:
+                quarantine_dir.rmdir()  # only removes if empty
+            except OSError:
+                pass  # directory not empty, leave it
+
         return {"ok": True, "work_id": work_id, "moved_files": moved_files}
     finally:
         conn.close()

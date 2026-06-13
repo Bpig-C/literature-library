@@ -17,6 +17,8 @@ import pytest
 
 from api.db import DB_PATH
 
+LIBRARY_ROOT = Path(__file__).resolve().parents[1]
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -41,9 +43,18 @@ def conn(tmp_db):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def patch_get_conn(tmp_db, conn):
-    """Patch get_conn in literature_analyze to use the temp DB."""
+def patch_get_conn(tmp_db, conn, tmp_path_factory):
+    """Patch get_conn and LIBRARY_ROOT in literature_analyze to use temp paths."""
     import scripts.literature_analyze as mod
+
+    tmp_library_root = tmp_path_factory.mktemp("litlib_ar_root")
+    (tmp_library_root / "works").mkdir(exist_ok=True)
+    (tmp_library_root / "templates" / "angles").mkdir(parents=True, exist_ok=True)
+
+    # Copy the real template to tmp so find_template works
+    real_tpl = LIBRARY_ROOT / "templates" / "angles" / "digest@v1.md"
+    if real_tpl.exists():
+        shutil.copy2(str(real_tpl), str(tmp_library_root / "templates" / "angles" / "digest@v1.md"))
 
     def _test_get_conn():
         c = sqlite3.connect(str(tmp_db))
@@ -51,10 +62,13 @@ def patch_get_conn(tmp_db, conn):
         c.execute("PRAGMA journal_mode=WAL")
         return c
 
-    original = mod.get_conn
+    original_get_conn = mod.get_conn
+    original_library_root = mod.LIBRARY_ROOT
     mod.get_conn = _test_get_conn
+    mod.LIBRARY_ROOT = tmp_library_root
     yield
-    mod.get_conn = original
+    mod.get_conn = original_get_conn
+    mod.LIBRARY_ROOT = original_library_root
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +234,7 @@ class TestSubmitWritesDB:
 class TestSubmitGeneratesMarkdown:
     def test_submit_creates_md_file(self, conn, tmp_path):
         """After submit, works/{work_id}/analyses/ should contain a .md file."""
-        from scripts.literature_analyze import cmd_submit, LIBRARY_ROOT
+        import scripts.literature_analyze as mod
 
         work_id, _ = _find_eligible_work(conn)
         if not work_id:
@@ -237,9 +251,9 @@ class TestSubmitGeneratesMarkdown:
         json_file = tmp_path / "test_md_gen.json"
         json_file.write_text(json.dumps(envelope), encoding="utf-8")
 
-        cmd_submit(str(json_file), "human", None, False)
+        mod.cmd_submit(str(json_file), "human", None, False)
 
-        analyses_dir = LIBRARY_ROOT / "works" / work_id / "analyses"
+        analyses_dir = mod.LIBRARY_ROOT / "works" / work_id / "analyses"
         assert analyses_dir.exists(), f"analyses dir not created: {analyses_dir}"
         md_files = list(analyses_dir.glob("*_digest@v1.md"))
         assert len(md_files) >= 1, f"No digest md file found in {analyses_dir}"
@@ -248,14 +262,12 @@ class TestSubmitGeneratesMarkdown:
         md_text = md_files[0].read_text(encoding="utf-8")
         assert "# Analysis: digest v1" in md_text
 
-        # Cleanup DB + file
+        # Cleanup DB
         conn.execute(
             "DELETE FROM analysis_runs WHERE work_id = ? AND angle = 'digest'",
             (work_id,),
         )
         conn.commit()
-        for f in md_files:
-            f.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
