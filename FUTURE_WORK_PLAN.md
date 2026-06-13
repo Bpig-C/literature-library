@@ -1,7 +1,7 @@
 # 文献库未来工作计划
 
-> 更新日期：2026-06-13  
-> 最近审核：2026-06-13，分类系统 Phase 1-3 已完成，阶段 0（分类积压清理）已完成；数据库含 138 works、260 metadata_extractions、373 classification_extractions、1374 classification_tags；`python -m pytest tests/test_api.py` 为 81 passed、4 skipped。  
+> 更新日期：2026-06-14  
+> 最近审核：2026-06-14，分类系统 Phase 1-3 已完成，阶段 0（分类积压清理）已完成，去重系统增强已完成；数据库含 138 works（116 未隔离）、260 metadata_extractions、373 classification_extractions、1374 classification_tags；`python -m pytest tests/test_api.py` 为 81 passed、4 skipped。  
 > 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`  
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
@@ -9,41 +9,23 @@
 
 ### 1.1 总体判断
 
-项目已经从外部规划文档中 2026-06-04 的状态继续向前推进。外部文档仍有参考价值，尤其是系统目标、架构原则、目录约定、去重策略、摄入流水线、AnalysisRun 设计和关键约束；但其中关于 Phase 1、Phase 3、Phase 4 的实施状态已经落后于当前项目。
-
-当前项目已具备：
+项目已具备：
 
 - 本地稳定存储：`works/`、`_inbox/`、`_duplicates/`、`_quarantine/`、`_archive/` 已存在。
-- 主数据库：`literature.sqlite` 当前有 138 个 `works`、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1374 条 `work_classification_tags`。
+- 主数据库：`literature.sqlite` 当前有 138 个 `works`（116 未隔离 + 22 隔离）、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1374 条 `work_classification_tags`。
 - 解析账本：`parse_ledger.json` 共 140 条，全部 `succeeded`。
 - 活跃 PDF：`works/*/source/*.pdf` 共 140 个。
 - MinerU 全文：140 条成功解析记录均有 `content_md_path`，实际路径为 `works/{work_id}/parsed/mineru/{source_file_id}/content.md`。
-- API 后端：FastAPI 已提供 `/api` 路由组，包含 works、metadata、classification、relations 等完整 API。
+- API 后端：FastAPI 已提供 `/api` 路由组，包含 works、metadata、classification、relations、duplicates 等完整 API。
 - 前端：Vue 3 SPA 已提供 Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview 七个页面。
 - 摄入 MVP：`scripts/literature_ingest.py` 已存在，并有 `tests/test_literature_ingest.py` 覆盖新 PDF 摄入和精确重复归档。
-- 去重闭环：重复候选已审查，same_work/exact_sha256 冗余源文件已归档，关系型重复已写入 `work_relations`。
-- 元数据增强与审核：`scripts/literature_metadata_extract.py` 已完成基于 MinerU `content.md` 的批量抽取，138 篇文献均已写入 `metadata_extractions`；MetadataReview 已具备风险分级、低风险批量通过、原文/PDF 预览、人机修正闭环和审核页隔离闭环。
-- 分类系统：已完成分类本体 v0.2 实施，包括 `works` 表扩展字段（primary_doc_type、publication_status、ingestion_state、priority 等）、`work_classification_tags` 多值标签表、`classification_extractions` 候选表；`scripts/literature_classification_extract.py` 已完成批量抽取；ClassificationReview 页面已实现审核、编辑、保存草稿、隔离等功能。阶段 0（分类积压清理）已完成：每个 work 有 3 个模型候选（mimo2.5pro、mimo-claude、qwen3:4b），批量通过后每个 work 保留 1 个最优 approved extraction（mimo2.5pro > mimo-claude > qwen3:4b），当前状态：approved 119 / pending 125（缺 evidence）/ rejected 129（含 superseded）。
-
-## 1. 当前状态核对
-
-### 1.1 总体判断
-
-项目已经从外部规划文档中 2026-06-04 的状态继续向前推进。外部文档仍有参考价值，尤其是系统目标、架构原则、目录约定、去重策略、摄入流水线、AnalysisRun 设计和关键约束；但其中关于 Phase 1、Phase 3、Phase 4 的实施状态已经落后于当前项目。
-
-当前项目已具备：
-
-- 本地稳定存储：`works/`、`_inbox/`、`_duplicates/`、`_quarantine/`、`_archive/` 已存在。
-- 主数据库：`literature.sqlite` 当前有 138 个 `works`、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1120 条 `work_classification_tags`。
-- 解析账本：`parse_ledger.json` 共 140 条，全部 `succeeded`。
-- 活跃 PDF：`works/*/source/*.pdf` 共 140 个。
-- MinerU 全文：140 条成功解析记录均有 `content_md_path`，实际路径为 `works/{work_id}/parsed/mineru/{source_file_id}/content.md`。
-- API 后端：FastAPI 已提供 `/api` 路由组，包含 works、metadata、classification、relations 等完整 API。
-- 前端：Vue 3 SPA 已提供 Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview 七个页面。
-- 摄入 MVP：`scripts/literature_ingest.py` 已存在，并有 `tests/test_literature_ingest.py` 覆盖新 PDF 摄入和精确重复归档。
-- 去重闭环：重复候选已审查，same_work/exact_sha256 冗余源文件已归档，关系型重复已写入 `work_relations`。
+- 去重闭环：重复候选已审查，same_work/exact_sha256 冗余源文件已归档，关系型重复已写入 `work_relations`。标题候选扫描脚本 `scan_title_duplicates.py` 已就绪，Duplicates 页面支持辅助信号展示和一键合并。
 - 元数据增强与审核：`scripts/literature_metadata_extract.py` 已完成基于 MinerU `content.md` 的批量抽取，138 篇文献均已写入 `metadata_extractions`；MetadataReview 已具备风险分级、低风险批量通过、原文/PDF 预览、人机修正闭环和审核页隔离闭环。
 - 分类系统：已完成分类本体 v0.2 实施，包括 `works` 表扩展字段（primary_doc_type、publication_status、ingestion_state、priority 等）、`work_classification_tags` 多值标签表、`classification_extractions` 候选表；`scripts/literature_classification_extract.py` 已完成批量抽取；ClassificationReview 页面已实现审核、编辑、保存草稿、隔离等功能。
+- 阶段 0（分类积压清理）已完成：每个 work 有 3 个模型候选（mimo2.5pro、mimo-claude、qwen3:4b），批量通过后每个 work 保留 1 个最优 approved extraction（mimo2.5pro > mimo-claude > qwen3:4b），当前状态：approved 119 / pending 0 / rejected 254。
+- 词汇表已同步：30 个缺失标签值已补全到 `classification_vocab.py` 和 `labels.js`，前后端完全一致。
+- WorkDetail 增强：左右分栏布局、PDF 预览、分类信息内联编辑、贡献方显示、置信度/证据片段、标签管理合并到分类区。
+- 去重系统增强：标题扫描脚本、辅助信号展示（arXiv/DOI/文件大小/标签数）、决策直接写回 DB、same_work 二次确认合并。
 
 仍未落地或明显不足：
 
@@ -629,7 +611,7 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 
 - 新增前端上传页或 Works 页上传入口。
 - 后端实现 `POST /api/works`，但内部仍复用摄入逻辑，不绕过 `_inbox`/DB/ledger 约定。
-- Duplicates 页面决策直接写回 DB，并可选择导出 JSON 作为备份。
+- ~~Duplicates 页面决策直接写回 DB，并可选择导出 JSON 作为备份。~~ ✅ 已完成
 - WorkDetail 增加 `notes/reading.md` 编辑。
 
 验收标准：
@@ -666,14 +648,15 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 5. P1.0e 审核页联动本地文档预览。✅ 第一版已完成
 6. P1.0f 人机共用审核修正闭环。✅ 核心闭环已完成
 7. P1.0g 审核页隔离文献/文件闭环。✅ 已完成并审核通过
-8. P1.0h 文献类型标签重建与确认。✅ 分类系统 Phase 1-3 已完成
+8. P1.0h 文献类型标签重建与确认。✅ 分类系统 Phase 1-3 已完成，阶段 0 已完成
 9. P1.0i 分类结果筛选增强。✅ 已完成
-10. P1.1 分析运行。
-10. P1.2 综述矩阵。
-11. P2 Collections/标签/主题体系。
-12. P3 摄入后解析自动化。
-13. P4 前端上传与操作闭环。
-14. P5 引用导出与外部元数据补全。
+10. 去重系统增强。✅ 已完成（标题扫描、辅助信号、一键合并）
+11. P1.1 分析运行。
+12. P1.2 综述矩阵。
+13. P2 Collections/标签/主题体系。
+14. P3 摄入后解析自动化。
+15. P4 前端上传与操作闭环。（部分完成：Duplicates 决策写回 DB ✅）
+16. P5 引用导出与外部元数据补全。
 
 如果近期会大量新增 PDF，则把 P3 提前到 P0 之后。
 
