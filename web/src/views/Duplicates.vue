@@ -64,10 +64,27 @@
             v-for="dt in DECISION_TYPES" :key="dt[0]"
             :class="[dt[0], { selected: processing[g.id] === dt[0] }]"
             :disabled="!!processing[g.id]"
-            @click="setDecision(g, dt[0])"
+            @click="onDecision(g, dt[0])"
           >{{ processing[g.id] === dt[0] ? '处理中...' : dt[1] }}</button>
         </div>
       </div>
+
+      <!-- Same-work confirmation modal -->
+      <n-modal v-model:show="confirmMerge.show" preset="card" title="确认合并" style="width: 480px">
+        <p class="modal-desc">以下文献将被合并为一篇：</p>
+        <div class="merge-preview">
+          <div v-for="c in confirmMerge.group?.candidates" :key="c.id" class="merge-item">
+            <span class="merge-title">{{ c.work_title || c.work_id }}</span>
+            <span class="muted tiny">{{ c.work_id }}</span>
+            <span class="muted tiny" v-if="c.source_file_size">({{ formatSize(c.source_file_size) }})</span>
+          </div>
+        </div>
+        <p class="modal-warn">合并后：副本文献将被隔离，源文件归档，标签合并到主文献。此操作不可撤销。</p>
+        <template #action>
+          <n-button @click="confirmMerge.show = false">取消</n-button>
+          <n-button type="error" :loading="confirmMerge.loading" @click="executeMerge">确认合并</n-button>
+        </template>
+      </n-modal>
     </div>
 
     <div class="empty" v-if="!filtered.length">没有匹配的重复组</div>
@@ -96,6 +113,7 @@ const typeFilter = ref('all')
 const statusFilter = ref('needsreview')
 const search = ref('')
 const processing = ref({})
+const confirmMerge = ref({ show: false, group: null, decision: null })
 
 const filtered = computed(() => {
   return allGroups.value.filter(g => {
@@ -135,13 +153,28 @@ function pairs(g) {
   return result
 }
 
-async function setDecision(group, decision) {
+function onDecision(group, decision) {
+  // For same_work on title_candidate: require confirmation
+  if (decision === 'same_work' && group.duplicate_type === 'title_candidate') {
+    confirmMerge.value = { show: true, group, decision }
+    return
+  }
+  // For exact_sha256 or other decisions: execute directly
+  executeDecision(group, decision)
+}
+
+async function executeMerge() {
+  const { group, decision } = confirmMerge.value
+  confirmMerge.value.show = false
+  await executeDecision(group, decision)
+}
+
+async function executeDecision(group, decision) {
   const groupId = group.id
   processing.value[groupId] = decision
   try {
     const res = await reviewDuplicate(groupId, decision)
     if (res.ok) {
-      // Mark candidates as reviewed locally
       for (const c of group.candidates) {
         c.reviewed = 1
       }
@@ -213,6 +246,10 @@ h1 { margin-bottom: 12px; font-size: 22px; }
 .decision-btns button.quarantine { color: #991b1b; border-color: #991b1b; }
 .decision-btns button.quarantine:hover { background: #fee2e2; }
 .empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.merge-preview { margin: 12px 0; }
+.merge-item { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.merge-title { font-weight: 600; }
+.modal-warn { margin-top: 12px; font-size: 12px; color: #991b1b; background: #fee2e2; padding: 8px; border-radius: 4px; }
 .cmd-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 .export-btn { height: 34px; padding: 0 16px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font: inherit; }
 </style>
