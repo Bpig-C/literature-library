@@ -200,6 +200,7 @@ def get_work(work_id: str):
 
         work = dict(row)
         work["authors"] = _safe_json(work.get("authors"), [])
+        work["contributors"] = _safe_json(work.get("contributors"), [])
 
         # Source files (active and archived separately)
         sources = [

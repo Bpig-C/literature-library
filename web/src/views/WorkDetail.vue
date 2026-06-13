@@ -90,6 +90,15 @@
           <div>DOI</div><div>{{ work.doi || '' }}</div>
           <div>中文标题</div><div>{{ work.title_zh || '' }}</div>
           <div>发表场所</div><div>{{ work.venue || '' }}</div>
+          <div>贡献方</div>
+          <div>
+            <template v-if="work.contributors?.length">
+              <span v-for="(c, i) in work.contributors" :key="i">
+                <n-tag size="small" :type="contribType(c.type)" round>{{ c.name }}</n-tag>
+              </span>
+            </template>
+            <span v-else class="muted">—</span>
+          </div>
           <div>链接</div><div><a v-if="work.url" :href="work.url" target="_blank">{{ work.url }}</a></div>
           <div>解析状态</div><div :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</div>
           <div>阅读状态</div>
@@ -461,6 +470,14 @@ const uniqueShaCount = computed(() => {
 function isDuplicateSha(s) {
   if (!work.value?.source_files) return false
   return work.value.source_files.filter(f => f.content_sha256 === s.content_sha256).length > 1
+}
+
+function contribType(type) {
+  if (type === 'university') return 'info'
+  if (type === 'company') return 'warning'
+  if (type === 'government') return 'error'
+  if (type === 'lab') return 'success'
+  return 'default'
 }
 
 // Detect tag values not in vocabulary
