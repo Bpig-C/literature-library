@@ -598,7 +598,7 @@ async function saveEditCls() {
     }
     // Create new tags
     for (const v of toAdd) {
-      await createTag(props.id, { tag_group: group, tag_value: v })
+      await createTag(props.id, { tag_group: group, tag_value: v, source: 'human', confidence: 'high' })
     }
   }
 
