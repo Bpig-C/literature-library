@@ -256,6 +256,21 @@
 
     <!-- PDF drawer -->
     <PdfPreviewDrawer v-if="showPdf" :url="pdfUrl(props.id)" :work-id="props.id" @close="showPdf = false" />
+
+    <!-- Quarantine Modal -->
+    <n-modal v-model:show="showQuarantineModal" preset="card" title="隔离文献" style="width: 460px">
+      <p class="modal-desc">隔离后，这篇文献会从默认列表和批量操作中移出。</p>
+      <div class="modal-reasons">
+        <label v-for="r in QUARANTINE_REASONS" :key="r.key" class="reason-option">
+          <input type="radio" v-model="quarantineReason" :value="r.key" />
+          <span>{{ r.label }}</span>
+        </label>
+      </div>
+      <template #action>
+        <n-button @click="showQuarantineModal = false">取消</n-button>
+        <n-button type="error" :disabled="!quarantineReason || quarantineLoading" :loading="quarantineLoading" @click="confirmQuarantine">确认隔离</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -310,6 +325,14 @@ const showPdf = ref(false)
 const showQuarantineModal = ref(false)
 const quarantineReason = ref('')
 const quarantineLoading = ref(false)
+const QUARANTINE_REASONS = [
+  { key: 'bad_source', label: '坏源：PDF 内容为空、反爬页、扫描损坏等' },
+  { key: 'out_of_scope', label: '不在范围：不属于当前研究主题或综述范围' },
+  { key: 'not_literature', label: '非文献：不是论文、报告、标准等目标文献' },
+  { key: 'duplicate_residual', label: '重复残留：已由其他 work 覆盖' },
+  { key: 'needs_rerun', label: '待重跑：主题对，但上传文档本身有问题' },
+  { key: 'user_removed', label: '用户移除：明确不想保留' },
+]
 
 // --- Options ---
 const docTypeOptions = [
@@ -741,6 +764,10 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .modal-box { background: #fff; border-radius: 8px; padding: 24px; width: 420px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
 .modal-box h3 { margin: 0 0 8px; font-size: 16px; }
 .modal-desc { margin: 0 0 16px; font-size: 13px; color: #6b7280; }
+.modal-reasons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.reason-option { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+.reason-option:hover { background: #f3f4f6; }
+.reason-option input { margin-top: 2px; }
 .modal-reason label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
