@@ -242,12 +242,12 @@ def _enrich_extraction(row: dict, conn) -> dict:
                 if isinstance(pdj, dict):
                     parts = []
                     if pdj.get("year"):
-                        parts.append(f"{pdj['year']}年")
+                        parts.append(str(pdj["year"]))
                     if pdj.get("month"):
-                        parts.append(f"{pdj['month']}月")
+                        parts.append(str(pdj["month"]).zfill(2))
                     if pdj.get("day"):
-                        parts.append(f"{pdj['day']}日")
-                    ext["work_date_display"] = "".join(parts) if parts else None
+                        parts.append(str(pdj["day"]).zfill(2))
+                    ext["work_date_display"] = "-".join(parts) if parts else None
                 else:
                     ext["work_date_display"] = None
             except (json.JSONDecodeError, TypeError):

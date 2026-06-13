@@ -546,10 +546,10 @@ const dateDisplay = computed(() => {
     const pdj = work.value.publication_date_json ? JSON.parse(work.value.publication_date_json) : null
     if (pdj && typeof pdj === 'object') {
       const parts = []
-      if (pdj.year) parts.push(pdj.year + '年')
-      if (pdj.month) parts.push(pdj.month + '月')
-      if (pdj.day) parts.push(pdj.day + '日')
-      if (parts.length) return parts.join('')
+      if (pdj.year) parts.push(pdj.year)
+      if (pdj.month) parts.push(String(pdj.month).padStart(2, '0'))
+      if (pdj.day) parts.push(String(pdj.day).padStart(2, '0'))
+      if (parts.length > 1) return parts.join('-')
       if (pdj.raw) return pdj.raw
     }
   } catch {}

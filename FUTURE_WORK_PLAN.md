@@ -1,7 +1,7 @@
 # 文献库未来工作计划
 
 > 更新日期：2026-06-14  
-> 最近审核：2026-06-14，数据一致性检查通过，分类系统、去重系统、WorkDetail 增强已完成。数据库含 138 works（112 未隔离 + 26 隔离）、373 classification_extractions、1842 classification_tags、21 duplicate_groups；`python -m pytest tests/test_api.py` 为 79 passed、6 skipped。  
+> 最近审核：2026-06-14，数据一致性检查通过，分类系统、去重系统、WorkDetail 增强已完成。数据库含 138 works（112 未隔离 + 26 隔离）、373 classification_extractions、1842 classification_tags、21 duplicate_groups（5 组含 10 条待审核候选）；`python -m pytest tests/test_api.py` 为 79 passed、6 skipped。  
 > 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`  
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
