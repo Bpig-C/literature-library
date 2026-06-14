@@ -1,7 +1,7 @@
 # 文献库未来工作计划
 
 > 更新日期：2026-06-14  
-> 最近审核：2026-06-14，数据一致性检查通过，分类系统、去重系统、WorkDetail 增强已完成。数据库含 138 works（112 未隔离 + 26 隔离）、373 classification_extractions、1842 classification_tags、21 duplicate_groups（5 组含 10 条待审核候选）；`python -m pytest tests/test_api.py` 为 79 passed、6 skipped。  
+> 最近审核：2026-06-14，P1.1 AnalysisRun 基础设施已实现（schema/CLI/模板/测试/healthcheck），5 篇 digest 试跑通过。数据库含 138 works（112 未隔离 + 26 隔离）、5 条 analysis_runs、373 classification_extractions、1842 classification_tags、21 duplicate_groups（5 组含 10 条待审核候选）；`uv run pytest` 为 97 passed、6 skipped。  
 > 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`  
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
@@ -12,7 +12,7 @@
 项目已具备：
 
 - 本地稳定存储：`works/`、`_inbox/`、`_duplicates/`、`_quarantine/`、`_archive/` 已存在。
-- 主数据库：`literature.sqlite` 当前有 138 个 `works`（112 未隔离 + 26 隔离）、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1842 条 `work_classification_tags`、21 个 `duplicate_groups`。
+- 主数据库：`literature.sqlite` 当前有 138 个 `works`（112 未隔离 + 26 隔离）、151 条 `source_files`（140 active + 11 archived）、569 条 `parse_artifacts`、140 条 `literature_parse_runs`、260 条 `metadata_extractions`、373 条 `classification_extractions`、1842 条 `work_classification_tags`、21 个 `duplicate_groups`、5 条 `analysis_runs`。
 - 解析账本：`parse_ledger.json` 共 140 条，全部 `succeeded`。
 - 活跃 PDF：`works/*/source/*.pdf` 共 140 个。
 - MinerU 全文：140 条成功解析记录均有 `content_md_path`，实际路径为 `works/{work_id}/parsed/mineru/{source_file_id}/content.md`。
@@ -28,12 +28,12 @@
 - WorkDetail 增强：左右分栏布局、PDF 预览、分类信息内联编辑（含年月日）、贡献方显示（带类型颜色图例）、置信度/证据片段、标签管理合并到分类区。
 - 去重系统增强：标题扫描脚本 `scan_title_duplicates.py`、辅助信号展示（arXiv/DOI/文件大小/标签数）、决策直接写回 DB、same_work 二次确认合并（自动评分选优、归档副本、合并标签、隔离副本）。
 - 摄入批次标题去重 bug 已修复：`source_by_work` 在批次内更新。
-- 数据一致性检查已通过：quarantined works 均有 quarantine code，无空 quarantine 目录，无重复 approved extraction。
+- 数据一致性检查已通过：quarantined works 均有 quarantine code；26 个隔离文献中 24 个有 `_quarantine/{work_id}` 目录（含 active source 文件），2 个为 archived source 状态无 quarantine 目录（W-sha-50c7c11439c3、W-sha-e2a35f439caf）；无重复 approved extraction。
 
 仍未落地或明显不足：
 
-- `analysis_runs`、`collections`、`work_collections` 表尚不存在。
-- 尚无分析运行脚本、分析 API、分析页面、综述矩阵导出。
+- `collections`、`work_collections` 表尚不存在。
+- 尚无综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面。
 - 尚无前端上传/`POST /api/works`，新增文献仍依赖 `_inbox` + 命令行摄入。
 - 摄入脚本只创建 `pending` 解析任务，不自动触发 document-parser/MinerU。
 - 分类系统 Phase 4（废弃旧 `doc_type` + Dashboard 统计升级）未启动，blocked: coverage 48.6% < 95%。
@@ -70,7 +70,7 @@
 
 已存在：`works`、`source_files`、`parse_artifacts`、`duplicate_groups`、`duplicate_candidates`、`work_relations`、`literature_parse_runs`、`work_codes` 等。
 
-缺失：`collections`、`work_collections`、`analysis_runs`。
+缺失：`collections`、`work_collections`。
 
 已扩展：`works` 已包含 `title_zh`、`venue`、`url`、`abstract`，并新增 `metadata_extractions` 保存模型抽取原始结果、证据、置信度和应用状态。后续更稳的结构化落点是 `work_authors`、`work_institutions`、审核状态表或审核字段。
 
@@ -94,8 +94,8 @@ Phase 1 MVP 已实现为命令行脚本。当前能力包括扫描 `_inbox`、sh
 
 目前还没有实际集成。外部规划中关于 `nature-reader`、`nature-citation`、`nature-writing`、`nature-academic-search` 的设计仍有价值，但应从最小闭环开始：
 
-- 先建立 `analysis_runs` 数据结构和本地分析结果写入规范。
-- 再接入具体 reader/writing/citation 工具。
+- ✅ `analysis_runs` 数据结构和本地分析结果写入规范已建立。
+- 下一步：接入具体 reader/writing/citation 工具。
 
 ### 2.9 前端设计
 
@@ -522,29 +522,39 @@ MetadataReview 不仅是元数据质量审核页，也承担“来源是否应�
 - ✅ 点击"已分类"按钮可快速筛选已分类的文献（primary_doc_type 非空）
 - ✅ 多选筛选逻辑为 OR（选多个值 = 匹配任意一个）
 
-#### P1.1：分析运行
+#### P1.1：分析运行 ✅ 基础设施已完成
 
-> **设计已细化**：P1.1/P1.2 的实施以 `docs/superpowers/specs/2026-06-12-reading-methodology-analysis-runs-design.md` 为准（三层阅读模板与 AnalysisRun 设计：digest 速览层 / angle 角度层 / synthesis 综合层，模板版本化，executor 无关提交约定）。本节以下内容保留为原始设计依据；冲突处以设计文档为准（差异：第一版不开 `POST /api/works/{id}/analyses`，写入走 CLI 校验）。
+> **设计已细化**：P1.1/P1.2 的实施以 `docs/superpowers/specs/2026-06-12-reading-methodology-analysis-runs-design.md` 为准（三层阅读模板与 AnalysisRun 设计：digest 速览层 / angle 角度层 / synthesis 综合层，模板版本化，executor 无关提交约定）。
 
-交付物：
+已完成交付物：
 
-- 新增 schema migration：`analysis_runs`。
-- 约定 `works/{work_id}/analyses/{date}_{angle}.md` 的文件命名和 DB 双写。
-- 新增命令行脚本 `scripts/literature_analyze.py`，先支持手动/半自动写入分析结果。
-- 新增 `scripts/literature_matrix.py`，按 `angle` 和 work 子集导出 Markdown/CSV 综述矩阵。
-- 新增 API：
-  - `GET /api/works/{id}/analyses`
-  - `POST /api/works/{id}/analyses`
-  - `GET /api/matrix`
-- 前端 WorkDetail 增加分析列表，新增 Matrix 页面。
+- ✅ `scripts/migrate_add_analysis_runs.py`：幂等迁移，创建 `analysis_runs` 表 + 3 索引（work_id、angle+template_version、review_status）。
+- ✅ `templates/angles/digest@v1.md`：digest 速览层模板，6 字段（one_sentence_positioning、tldr、literature_role、core_artifacts、relevance_to_autonomy_safety、suggested_reading_priority），executor 无关，中文输出。
+- ✅ `scripts/literature_analyze.py`：CLI 支持 `plan` / `submit` / `status` / `review` 四子命令。submit 支持 `--strict` 模式（evidence quote 子串校验）和 `--force`（supersede 旧 run）。submit 双写 DB + Markdown 到 `works/{work_id}/analyses/`。
+- ✅ `tests/test_analysis_runs.py`：16 个测试，覆盖迁移幂等、plan 排除 quarantined、submit 写 DB/写 MD、缺 evidence 拒绝、重复提交拒绝、review 状态流转、status 统计。测试使用临时 DB + 临时 LIBRARY_ROOT，不污染真实数据。
+- ✅ `scripts/literature_healthcheck.py`：扩展 6 项 analysis_runs 检查（orphan work_id、md_path 存在性、唯一未 superseded run、review_status 合法性、extracted_json 合法性、quarantined work 无 pending run）。
+- ✅ 5 篇 digest 试跑通过，evidence quote 全部经真实性验证。
 
-验收标准：
+当前状态：
 
-- 能为至少 3 篇文献、2 个角度写入分析结果。
-- 能导出一个按年份排序的 Markdown 综述矩阵。
-- 分析结果同时存在于 SQLite 和 `works/{id}/analyses/`。
+- `analysis_runs` 表：5 条记录（全部 pending，0 superseded）。
+- 覆盖率：4.5%（5/112 active works）。
+- 测试：97 passed, 6 skipped。
+- healthcheck：healthy=true, total_issues=0。
 
-建议顺序：P0 后优先做。当前全文已经齐备，这是最能转化为论文/综述价值的一步。
+全库 digest 批量生成策略（待执行）：
+
+- 每批 10-20 篇，使用 `submit --strict`。
+- 任何 submit 出现 `quote_warnings` 的条目不得视为 A 级。
+- 分批执行，不一次性跑完 107 篇。
+
+未完成（属于后续阶段）：
+
+- `scripts/literature_matrix.py` 综述矩阵导出。
+- `GET /api/works/{id}/analyses` 分析 API。
+- 前端 WorkDetail 分析列表、Matrix 页面。
+- L2 角度模板（`risk-definition@v1`、`eval-method@v1` 等）。
+- L3 综合层（`synthesis-{angle}@v1`）。
 
 #### P1.2：综述矩阵
 

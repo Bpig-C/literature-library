@@ -1,7 +1,7 @@
 # 文献库技术说明
 
-> 更新时间：2026-06-08
-> 适用版本：Phase 0–4 已完成，P1.0 元数据抽取+审核+分类审核已完成，双模型（Ollama + Mimo 2.5 Pro）支持
+> 更新时间：2026-06-14
+> 适用版本：Phase 0–4 已完成，P1.0 元数据抽取+审核+分类审核已完成，P1.1 AnalysisRun 基础设施已完成（5 篇 digest 试跑），双模型（Ollama + Mimo 2.5 Pro）支持
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
 
 ## 1. 系统目标
@@ -43,6 +43,9 @@ literature_library/
     {work_id}/
       source/                # PDF 源文件
       parsed/mineru/{source_file_id}/content.md  # MinerU 解析产物
+      analyses/              # 分析结果 Markdown（由 literature_analyze.py --submit 双写）
+  _analysis_outbox/          # 分析结果提交暂存区（JSON 待 submit）
+    digest/                  # digest 角度的待提交 JSON
   scripts/                   # 本地维护脚本
   api/                       # FastAPI 后端
   web/                       # Vue 3 前端 SPA
@@ -196,6 +199,40 @@ PDF → MinerU (端口 18200) → document-parser (端口 18201) 封装 → 输�
 
 **必须**：metadata_extractions 是模型原始结果层，works 是稳定层。两者之间必须经过人工审核门禁，不能自动回填。
 
+### analysis_runs
+
+**职责**：文献分析运行记录。每条记录是一次对单篇文献的结构化分析（如 digest 速览卡片），结果先进入此表，审核后才被综述矩阵和综合层采信。
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 主键，格式 `AR-{hex}` |
+| `kind` | 分析类型：`digest` / `angle` / `synthesis` |
+| `angle` | 角度名，如 `digest`、`risk-definition` |
+| `template_version` | 模板版本号（整数） |
+| `work_id` | 关联 works（L1/L2 必填；L3 为 NULL） |
+| `input_work_ids` | L3 输入集合（JSON 数组）；L1/L2 为 NULL |
+| `executor` | 执行工具：`human` / `opencode` / `mimocode` / `ollama` |
+| `model_name` | 使用的模型名 |
+| `input_scope` | 输入范围：`full` / `head:12000` |
+| `input_chars` | 输入字符数 |
+| `extracted_json` | 公共信封 JSON（含 angle、template_version、work_id、fields、evidence、confidence 等） |
+| `confidence` | 整体置信度：`high` / `medium` / `low` |
+| `not_addressed` | 该文献对这个角度是否无话可说（0/1） |
+| `review_status` | 审核状态：`pending` / `approved` / `needs_fix` / `rejected` |
+| `review_note` | 审核备注 |
+| `reviewed_at` | 审核时间 |
+| `review_source` | 审核来源：`human` / `agent` / `batch` |
+| `superseded_by` | 指向新 run id（模板升版重跑时旧 run 标记此字段） |
+| `md_path` | 双写的 Markdown 文件相对路径 |
+| `raw_response` | 模型原始响应 |
+| `created_at` / `updated_at` | 时间戳 |
+
+**索引**：`work_id`、`(angle, template_version)`、`review_status`。
+
+**与 metadata_extractions 的区别**：metadata_extractions 的审核是回填门禁（approved 才写 works）；analysis_runs 的审核是采信标记（run 本身就是产品，没有"应用到 works"动作）。
+
+**唯一性约束**：每个 `(work_id, angle, template_version)` 至多一条未 superseded 的 run。重跑通过 supersede 链追溯。
+
 ## 4. 文件系统约定
 
 ### works/{work_id}/source/
@@ -205,6 +242,10 @@ PDF → MinerU (端口 18200) → document-parser (端口 18201) 封装 → 输�
 ### works/{work_id}/parsed/mineru/{source_file_id}/content.md
 
 MinerU 解析产物。路径记录在 `literature_parse_runs.content_md_path`。后续元数据抽取以此为唯一文本入口，不重新解析 PDF。
+
+### works/{work_id}/analyses/
+
+分析结果 Markdown 文件。由 `scripts/literature_analyze.py --submit` 从 JSON 自动生成，文件名格式 `{date}_{angle}@v{N}.md`。JSON 为机器层真相（`analysis_runs.extracted_json`），Markdown 是人读视图。
 
 ### _archive/
 
@@ -331,38 +372,61 @@ Vue SPA 提供 7 个页面：
 | POST | `/api/metadata/apply-approved` | 批量应用已批准的抽取结果 |
 | POST | `/api/metadata/batch-approve-low-risk` | 批量批准低风险待审抽取（Mimo 优先） |
 
-## 7. 前端页面
+## 7. CLI 工具
+
+### literature_analyze.py
+
+分析运行管理 CLI，支持四个子命令：
+
+```powershell
+# 生成待分析任务清单（排除 quarantined，排除已有未 superseded run）
+uv run python scripts/literature_analyze.py plan --angle digest
+
+# 提交分析结果（校验 envelope + evidence quote，写 DB + 双写 Markdown）
+uv run python scripts/literature_analyze.py submit --input _analysis_outbox/digest/ --strict
+
+# 查看各角度覆盖率和审核状态分布
+uv run python scripts/literature_analyze.py status
+
+# 审核单条 run
+uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note "LGTM"
+```
+
+`--strict` 模式：submit 时校验 evidence quote 是否为 content.md 的子串，不匹配则拒绝提交。
+
+## 8. 前端页面
 
 见第 5 节"前端管理"表格。前端通过 `web/src/api.js` 封装所有 API 调用，所有请求走 `/api` 前缀。
 
 侧边栏导航：总览 → 文献 → 去重 → 关系 → 元数据 → 分类。
 
-## 8. 质量护栏
+## 9. 质量护栏
 
-- **健康检查**：`scripts/literature_healthcheck.py` 一次性检查 DB 记录、PDF 路径、content_md_path、ledger、index 的一致性，输出报告到 `views/healthcheck.md`。
-- **API 测试**：`tests/test_api.py` 使用临时 DB 副本测试核心 API 端点，不会修改真实数据。运行：`uv run python -m pytest tests/test_api.py -v`。
+- **健康检查**：`scripts/literature_healthcheck.py` 一次性检查 DB 记录、PDF 路径、content_md_path、ledger、index、analysis_runs 的一致性，输出报告到 `views/healthcheck.md`。
+- **测试**：`uv run pytest` 运行全部测试（97 passed, 6 skipped）。`tests/test_api.py` 测试核心 API 端点，`tests/test_analysis_runs.py` 测试分析运行闭环，均使用临时 DB + 临时 LIBRARY_ROOT，不污染真实数据。
 - **不直接删除文件**：所有删除操作都是归档（`_archive/`）或隔离（`_quarantine/`）。
 - **不绕过 DB 移动源文件**：文件移动必须同步更新 `source_files.source_path`。
 - **metadata_extractions 先审后回填**：模型抽取结果不自动写入 works，必须经过审核门禁。
+- **analysis_runs 先入库后采信**：模型输出先进入 analysis_runs，审核后才被矩阵和综合层默认采信。
 - **WAL 模式**：SQLite 使用 WAL 日志模式，支持并发读。
 
-## 9. 当前限制
+## 10. 当前限制
 
 - 没有前端上传入口，新增文献仍依赖 `_inbox` + 命令行摄入。
 - 摄入后不自动触发解析，需手动启动 document-parser/MinerU。
 - `year` 暂不自动回填，因为模型容易误提取会议年份或修订日期。
-- `analysis_runs`、`collections`、`work_collections` 表尚不存在，无分析运行和综述矩阵功能。
-- 标签/主题/集合仍未进入可用工作流。
+- `collections`、`work_collections` 表尚不存在，标签/主题/集合未进入可用工作流。
+- 综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面尚未实现。
 - 引用导出（BibTeX/RIS）尚未实现。
-- API 与前端测试覆盖不足，尚无端到端回归。
 - `index.json` 和 `parse_ledger.json` 是历史产物，新功能应优先查询 SQLite。
-- 分类审核（ClassificationReview）支持批量操作（batch-approve-low-risk、batch-approve-with-tag）和自动回填。
-- `analysis_runs` 表尚不存在，分析运行和综述矩阵未启动。
+- 26 个隔离文献中 24 个有 `_quarantine/{work_id}` 目录（含 active source），2 个为 archived source 状态无 quarantine 目录（W-sha-50c7c11439c3、W-sha-e2a35f439caf）。
+- P1.1 全库 digest 尚未批量生成（当前 5/112 覆盖率）。
 
-## 10. 变更记录
+## 11. 变更记录
 
 | 日期 | 变更 |
 |---|---|
+| 2026-06-14 | P1.1 AnalysisRun 基础设施：`analysis_runs` 表、`literature_analyze.py`（plan/submit/status/review）、`digest@v1` 模板、`test_analysis_runs.py`（16 tests）、healthcheck 扩展 6 项检查、5 篇 digest 试跑；测试隔离修复（LIBRARY_ROOT patch）；restore 清理空 quarantine 目录 |
 | 2026-06-14 | 分类积压清空（119 approved / 0 pending）；词汇表同步（1842 tags）；confidence 合并修复；去重系统增强；WorkDetail 重构；数据一致性修复 |
 | 2026-06-08 | 双模型支持（Ollama + Mimo 2.5 Pro）；覆盖式批准+supersede；模型 tab 过滤；works 新增 contributors/publication_date_json/分类字段；TECHNICAL_OVERVIEW 全面更新 |
 | 2026-06-05 | 初始版本。基于 Phase 0–4 完成状态和 P1.0/P1.0c 实现生成。 |
