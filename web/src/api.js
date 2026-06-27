@@ -45,10 +45,16 @@ export function getDuplicates() {
   return request('/duplicates')
 }
 
-export function reviewDuplicate(groupId, decision, note = '') {
+export function getMergePreview(groupId) {
+  return request(`/duplicates/${encodeURIComponent(groupId)}/merge-preview`)
+}
+
+export function reviewDuplicate(groupId, decision, note = '', primaryWorkId = null) {
+  const payload = { decision, note }
+  if (primaryWorkId) payload.primary_work_id = primaryWorkId
   return request(`/duplicates/${encodeURIComponent(groupId)}/review`, {
     method: 'POST',
-    body: JSON.stringify({ decision, note }),
+    body: JSON.stringify(payload),
   })
 }
 

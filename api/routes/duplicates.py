@@ -48,12 +48,21 @@ def list_duplicates():
                 c["work_doi"] = work["doi"] or ""
             # Source file info
             src = conn.execute(
-                "SELECT original_name, relative_source_path, file_size FROM source_files WHERE id = ?",
+                "SELECT original_name, relative_source_path, file_size, content_sha256 FROM source_files WHERE id = ?",
                 (c.get("source_file_id") or "",),
             ).fetchone()
             if src:
                 c["source_original_name"] = src["original_name"] or ""
                 c["source_file_size"] = src["file_size"] or 0
+                c["content_sha256"] = src["content_sha256"] or ""
+            # Fallback: if no sha yet, use the work's first active source_file sha
+            if not c.get("content_sha256") and c.get("work_id"):
+                fb = conn.execute(
+                    "SELECT content_sha256 FROM source_files WHERE work_id = ? AND status = 'active' AND content_sha256 IS NOT NULL AND content_sha256 != '' ORDER BY id LIMIT 1",
+                    (c["work_id"],),
+                ).fetchone()
+                if fb:
+                    c["content_sha256"] = fb["content_sha256"] or ""
             # Tag count
             tag_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM work_classification_tags WHERE work_id = ? AND review_status = 'approved'",
@@ -189,9 +198,11 @@ def _work_score(conn, work_id: str) -> int:
     return score
 
 
-def _merge_same_work(conn, work_ids: list[str], note: str) -> dict:
+def _merge_same_work(conn, work_ids: list[str], note: str, primary_work_id: str | None = None) -> dict:
     """Merge multiple works into one. Keeps the best, archives others.
 
+    If ``primary_work_id`` is provided and is one of ``work_ids``, it is kept as
+    the primary (human override); otherwise the primary is chosen by auto-score.
     Returns actions dict.
     """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -200,11 +211,15 @@ def _merge_same_work(conn, work_ids: list[str], note: str) -> dict:
     if len(work_ids) < 2:
         return actions
 
-    # Score and sort
-    scored = [(wid, _work_score(conn, wid)) for wid in work_ids]
-    scored.sort(key=lambda x: -x[1])
-    primary = scored[0][0]
-    secondaries = [s[0] for s in scored[1:]]
+    # Choose primary: human override if valid, else auto-score
+    if primary_work_id and primary_work_id in work_ids:
+        primary = primary_work_id
+        secondaries = [w for w in work_ids if w != primary_work_id]
+    else:
+        scored = [(wid, _work_score(conn, wid)) for wid in work_ids]
+        scored.sort(key=lambda x: -x[1])
+        primary = scored[0][0]
+        secondaries = [s[0] for s in scored[1:]]
     actions["primary"] = primary
 
     # Get primary's existing tags
@@ -293,6 +308,41 @@ def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
     return moved
 
 
+@router.get("/duplicates/{group_id}/merge-preview")
+def merge_preview(group_id: str):
+    """Preview a same_work merge for a title_candidate group.
+
+    Returns each candidate work's auto-score and the machine-recommended primary,
+    so the UI can show the recommendation and let a human override it.
+    """
+    conn = get_conn()
+    try:
+        group = conn.execute(
+            "SELECT * FROM duplicate_groups WHERE id = ?", (group_id,)
+        ).fetchone()
+        if not group:
+            raise HTTPException(status_code=404, detail="Duplicate group not found")
+
+        rows = conn.execute(
+            "SELECT DISTINCT work_id FROM duplicate_candidates WHERE group_id = ?",
+            (group_id,),
+        ).fetchall()
+        work_ids = [r["work_id"] for r in rows if r["work_id"]]
+
+        scored = [{"work_id": w, "score": _work_score(conn, w)} for w in work_ids]
+        scored.sort(key=lambda x: -x["score"])
+        recommended = scored[0]["work_id"] if scored else ""
+
+        # Enrich with title for display
+        for item in scored:
+            w = conn.execute("SELECT title FROM works WHERE id = ?", (item["work_id"],)).fetchone()
+            item["title"] = w["title"] if w else item["work_id"]
+
+        return {"group_id": group_id, "candidates": scored, "recommended_primary": recommended}
+    finally:
+        conn.close()
+
+
 @router.post("/duplicates/{group_id}/review")
 def review_duplicate(group_id: str, body: DuplicateReview):
     VALID_DECISIONS = {
@@ -326,7 +376,7 @@ def review_duplicate(group_id: str, body: DuplicateReview):
                 (group_id,),
             ).fetchall()
             work_ids = [c["work_id"] for c in cands]
-            merge_result = _merge_same_work(conn, work_ids, body.note or f"dedup review {group_id}")
+            merge_result = _merge_same_work(conn, work_ids, body.note or f"dedup review {group_id}", body.primary_work_id)
             actions["merged"] = merge_result
 
         # 3. Create work_relations for other relation-type decisions

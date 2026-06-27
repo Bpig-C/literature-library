@@ -38,6 +38,7 @@ class RelationCreate(BaseModel):
 class DuplicateReview(BaseModel):
     decision: str
     note: str = ""
+    primary_work_id: str | None = None
 
 
 class QuarantineAction(BaseModel):
