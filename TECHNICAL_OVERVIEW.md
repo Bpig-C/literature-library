@@ -21,8 +21,8 @@
 | 数据库 | SQLite (WAL 模式) | — |
 | 后端 | FastAPI (Python) | 19527 |
 | 前端 | Vue 3 + Vite | 19528 |
-| PDF 解析 | MinerU / document-parser | 18200 / 18201 |
-| 元数据抽取 | Ollama (qwen3:4b) | 11435 |
+| PDF 解析 | MinerU 官网精准 API（cloud，默认）/ 自部署 MinerU（降级） | 经 parser/ 子项目 |
+| 元数据抽取 | Ollama (qwen3:4b) / opencode→MiMo-v2.5-pro（质量裁判） | 11435 |
 
 ### 目录结构
 
@@ -67,7 +67,13 @@ literature_library/
 
 ### MinerU / content.md 解析链路
 
-PDF → MinerU (端口 18200) → document-parser (端口 18201) 封装 → 输出 `content.md` + `content.json`。解析结果路径记录在 `literature_parse_runs.content_md_path`，后续所有文本处理（元数据抽取、全文分析）都以这个路径为入口，不重新解析 PDF。
+PDF → `parser/` 子项目（`core/mineru/`）→ 输出 `content.md` + `content.json`。解析结果路径记录在 `literature_parse_runs.content_md_path`，后续所有文本处理（元数据抽取、全文分析）都以这个路径为入口，不重新解析 PDF。
+
+**后端选择**（`parser/conf.json` `mineru.backend`，默认 `cloud`）：
+- **cloud**（默认）：MinerU 官网「精准解析 API」。`scripts/literature_batch_parse.py` 进程内直连 `parser/core/mineru/cloud_client.py`：预签名上传 → 轮询 → 下载 zip → 解压，`full.md`→`content.md`、`content_list.json`→`content.json`。token 从根目录 `.env` 的 `MinerU_API_KEY` 读（Bearer）。默认 `model_version=pipeline`；数学密集型可按 work 标 `vlm`（pipeline 对公式有间距伪影）。
+- **selfdeploy**（降级）：`MINERU_BACKEND=selfdeploy` + `MINERU_SERVER_URL` → 走原 `WebClient`/`LocalClient`（自部署 MinerU，端口 18200/18201）。
+
+**质量裁判**（`scripts/llm_judge.py`）：opencode→MiMo-v2.5-pro 对每篇 `content.md` 出类型化裁决 `{quality,needs_reparse,issues,completeness,reason}`；`needs_reparse` 触发 vlm 重解析。该模块为后续元数据/主题/分类共用的本地强模型基础设施。
 
 ## 3. 数据模型
 
@@ -413,7 +419,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 ## 10. 当前限制
 
 - 没有前端上传入口，新增文献仍依赖 `_inbox` + 命令行摄入。
-- 摄入后不自动触发解析，需手动启动 document-parser/MinerU。
+- 摄入后不自动触发解析，需手动运行 `python scripts/literature_batch_parse.py --execute`（经 `parser/` 子项目走 MinerU 官网 cloud API）。
 - `year` 暂不自动回填，因为模型容易误提取会议年份或修订日期。
 - `collections`、`work_collections` 表尚不存在，标签/主题/集合未进入可用工作流。
 - 综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面尚未实现。

@@ -619,7 +619,7 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 ### P3.5：文档解析子项目化（document-parser 纳入仓库 + 官网精准解析 API）
 
 > 优先级：**在 P6 collector 之前**。collector 一旦铺量采集，解析链路必须先稳定可靠，否则会堆积 pending。
-> 状态：待办（TODO），尚未启动。
+> 状态：**已完成（2026-06-28）**。设计见 `docs/superpowers/specs/2026-06-27-parser-subproject-design.md`，执行审计见 `docs/superpowers/reviews/2026-06-27-parser-subproject-audit.md`。
 
 **现状**：文档解析依赖仓库外的 `D:\06_tools\document-parser` 项目（本地封装模块 + 远程自部署 MinerU，端口 18200/18201）。这造成两个问题：解析能力不在版本控制内、依赖自部署 MinerU 的运维成本。
 
@@ -722,7 +722,7 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 12. P1.2 综述矩阵。
 13. P2 Collections/标签/主题体系。
 14. P3 摄入后解析自动化。
-15. **P3.5 文档解析子项目化（document-parser 入仓库 + 官网精准解析 API）。← 优先级在 collector 之前**
+15. **P3.5 文档解析子项目化（document-parser 入仓库 + 官网精准解析 API）。← 优先级在 collector 之前。✅ 已完成**
 16. P4 前端上传与操作闭环。（部分完成：Duplicates 决策写回 DB ✅）
 17. P5 引用导出与外部元数据补全。
 18. P6 开源文献收集（collector）集成。

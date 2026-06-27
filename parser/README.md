@@ -1,6 +1,23 @@
 ﻿# 文档解析（Document Parser）
 
+> **本目录是 `literature_library` 仓库的子项目（P3.5，2026-06-28 纳入版本控制）**，
+> 由仓库外 `D:\06_tools\document-parser` 复制而来。文献库通过 `scripts/literature_batch_parse.py`
+> **进程内直连** `core/mineru/` 的解析客户端，无需单独启动 HTTP 服务。
+
 基于 FastAPI 的文档解析服务，支持上传 PDF、Office、HTML/XML 等文件，调用 MinerU 或本地转换流程生成版面识别、内容抽取、标注 PDF、详情结果等解析产物。
+
+## 解析后端（`conf.json` `mineru.backend`）
+
+- **cloud（默认）**：MinerU 官网「精准解析 API」。`core/mineru/cloud_client.py` 走预签名上传→轮询→下载 zip→解压，
+  产出 `content.md`（←`full.md`）+ `content.json`（←`content_list.json`）。**token 从根目录 `.env` 的 `MinerU_API_KEY`
+  读取**（以 `Bearer` 发送，勿入 VCS）。默认 `model_version=pipeline`；数学密集型文献建议按 work 指定 `vlm`
+  （pipeline 对公式渲染存在间距伪影）。
+- **selfdeploy（降级）**：设 `MINERU_BACKEND=selfdeploy` + `MINERU_SERVER_URL`，回退到 `WebClient`/`LocalClient`
+  （自部署 MinerU，端口 18200/18201）。
+
+文献库侧入口：`python scripts/literature_batch_parse.py --execute`（详见仓库根 `TECHNICAL_OVERVIEW.md` §2）。
+质量裁判见仓库根 `scripts/llm_judge.py`（opencode→MiMo-v2.5-pro）。
+
 
 ## 功能概览
 

@@ -84,4 +84,26 @@
 
 **遗留**（非 P3.5 范畴）：`works.parse_status` 与 `literature_parse_runs.status` 不同步（3 篇 parse_runs=succeeded 但 works.parse_status=pending），Phase D 登记。
 
+### Phase C 自审（code-reviewer）
+
+- **CRITICAL**：无。四项安全属性独立复核全过——无永久数据改写（real content.md hash 还原为原始自部署版）、无 DB/ledger 写（仅 SELECT）、无 cloud 产物残留、报告无密钥泄露。
+- **裁定**：PASS-WITH-FINDINGS，可进入 Phase D。
+- **M1/M2**：针对"批量回填工具"的健壮性（restore 需 try/finally、images/ 子树需字节备份）。**不适用于本 P3.5**：已决策不批量回填 145 篇（cloud 面向新 PDF），故无需构建批量回填工具；若未来另立批量任务再硬化。
+- **m3**：parse_status 滞留需独立子任务 → Phase D 处理。
+
+### Phase D 文档与收尾
+
+- **文档**：
+  - `TECHNICAL_OVERVIEW.md` §2 解析链路重写（cloud 默认 / selfdeploy 降级 + 质量裁判）、技术栈表、当前限制更新。
+  - `FUTURE_WORK_PLAN.md` P3.5 状态 TODO → **已完成**；路线图第 15 项标记 ✅。
+  - `parser/README.md` 标注子项目身份 + cloud/selfdeploy 后端说明 + token 来源。
+- **parse_status 滞留修复**：新增 `scripts/migrate_sync_parse_status.py`（dry-run 默认 + `--apply`，幂等、单向 pending→succeeded）。
+  dry-run 定位 5 篇（parse_runs=succeeded 但 works.parse_status=pending），apply 后复核剩余 0。
+- **未做（明确出范围）**：不批量回填既有 145 篇（自部署产出良好 + cloud-pipeline 公式伪影）；批量回填若需要，另立任务并按 Phase C 自审 M1/M2 硬化（restore try/finally + 子树字节备份）。
+
+## P3.5 整体裁定
+
+四阶段全部完成，三道自审（A/B/C）均为 PASS-WITH-FINDINGS，无 CRITICAL。契约（content_md_path 唯一文本入口、输出路径、不删文件、串行、token 仅环境变量）全程未破坏，全程可回滚（feature 分支、隔离试跑、backup/restore）。解析能力已进版本控制；新 PDF 走官网 cloud API；自部署保留降级；质量裁判 + 共享 LLM 基础设施就位。
+
+
 
