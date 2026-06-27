@@ -6,12 +6,13 @@
 
 基于 FastAPI 的文档解析服务，支持上传 PDF、Office、HTML/XML 等文件，调用 MinerU 或本地转换流程生成版面识别、内容抽取、标注 PDF、详情结果等解析产物。
 
-## 解析后端（`conf.json` `mineru.backend`）
+## 解析路由（`scripts/literature_batch_parse.py`，P3.5 Phase E）
 
-- **cloud（默认）**：MinerU 官网「精准解析 API」。`core/mineru/cloud_client.py` 走预签名上传→轮询→下载 zip→解压，
-  产出 `content.md`（←`full.md`）+ `content.json`（←`content_list.json`）。**token 从根目录 `.env` 的 `MinerU_API_KEY`
-  读取**（以 `Bearer` 发送，勿入 VCS）。默认 `model_version=pipeline`；数学密集型文献建议按 work 指定 `vlm`
-  （pipeline 对公式渲染存在间距伪影）。
+- **文本层 PDF（born-digital）** → `core/mineru/pymupdf_client.py` 本地直抽（精准公式/免费/快）；
+  三层质检（乱码率 / 字符率 / 双栏阅读顺序）任一不合格 → 回退 cloud vlm。
+- **扫描型 PDF（无文本层）** → `core/mineru/cloud_client.py` 走 MinerU 官网精准 API（`model_version=vlm`），
+  预签名上传→轮询→下载 zip→解压，`full.md`→`content.md`、`content_list.json`→`content.json`。
+  **token 从根目录 `.env` 的 `MinerU_API_KEY` 读取**（`Bearer`，勿入 VCS）。`pipeline` 后端已弃用（公式间距伪影）。
 - **selfdeploy（降级）**：设 `MINERU_BACKEND=selfdeploy` + `MINERU_SERVER_URL`，回退到 `WebClient`/`LocalClient`
   （自部署 MinerU，端口 18200/18201）。
 
