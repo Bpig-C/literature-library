@@ -55,6 +55,33 @@
 | 2511.18397 | 42s | +2021 (212197/210176) | 136/136 | 有/有 | good(0.95)→acceptable(0.92) |
 | 2105.14111 | 24s | +254 (63006/62752) | 24/24 | 有/有 | acceptable(0.9)→acceptable(0.88) |
 
-**结论**：官网 API 与原自部署 MinerU 产出**高度一致**——字符差均在 ~1% 内、章节数完全相同、abstract/refs 均在、裁判等级一致（新旧均为 good/acceptable，差异仅 issue 措辞级别如 formula_spacing/garbled，属模型正常波动，非系统性劣化）。**契约路径、隔离、token 仅环境读取均成立**。可进入 Phase C（写真实契约路径）。
+**结论**：官网 API 与原自部署 MinerU 产出**结构高度一致**（字符差 ~1% 内、章节数相同、abstract/refs 均在）。但 Phase B 自审（见下节）发现一个**可复现的已知差异**：cloud 的 pipeline 后端对数学公式渲染存在**公式间距伪影**（如 `$3 3 . 7$` 数字间多空格），2/3 样本裁判因此出现 formula_spacing/garbled_formulas issue、completeness 略降。这不是随机噪声，而是 cloud-pipeline 渲染器特性。
+
+**对路由的影响（落实 D3 两段闸门）**：数学密集型文献走 pipeline 会有公式间距伪影 → 这类 work 应走 `vlm` 后端，或经质检闸门（裁判 needs_reparse）自动升级。已解析的 145 篇不必批量回填（自部署产出本身良好）；cloud 主要面向**新入库 PDF**。
+
+**契约路径、隔离、token 仅环境读取均成立**。可进入 Phase C（写真实契约路径）。
+
+### Phase B 自审（code-reviewer）
+
+- **CRITICAL**：无。隔离（仅写 `_cloud_trial/`，真实 content.md mtime 仍 06-17 未动）、token 安全（仅环境读取，报告无 `eyJ` 泄露）、无 DB 写（仅 SELECT）、`_cloud_trial/` 已 gitignore 且未入库——四项全过。
+- **裁定**：PASS-WITH-FINDINGS，可进入 Phase C。
+- **M1（重要）**：上述公式间距伪影——审计原"高度一致"措辞高估，已据实修正为"结构一致 + 已知公式渲染差异"。
+- **m1**：`md_stats.has_references` 启发式过松（`[1]` 命中任何引用标记，refs 章节被丢也判 true）→ Phase C 跑批脚本不复用此启发式；如需 gates 改用标题正则。
+- **m2**：试跑报告未记 `model_version` → Phase C 报告补记 model_version/language 以便复现。
+
+### Phase C 真实契约路径验证（backup/restore，不污染既有数据）
+
+**执行**：样本 `W-arxiv-2406.10162` / `SF-13d4293ad314-00158`。因 Phase B 发现 cloud-pipeline 公式间距伪影（M1），且该篇已由自部署良好解析，故采用**保守 backup/restore**：把 Phase B 的 cloud 试跑产物临时放到真实路径，校验全链路后**按 hash 还原原始文件**，不永久改写既有良好数据。报告：`docs/superpowers/reviews/phase_c_validate_report.json`。
+
+**结果**（全链路成立）：
+- `db_path_resolves=True`：DB `content_md_path` 指向真实文件。
+- `is_cloud_version=True`：放置 cloud 产物后，DB 路径所指即为 cloud 版本。
+- `downstream_read`：复刻 metadata_extract 读前 8000 字成功（has_abstract=True）。
+- `metadata_extract --no-write` 真实运行：成功读取 `content.md`（"输入：8000 字符 → 2967 tokens"），仅在 Ollama 连接处失败（`localhost:11435` 离线，`WinError 10061`）——属模型服务基础设施问题，**非 P3.5 契约问题**；证明下游正确以 `content_md_path` 为唯一文本入口消费 cloud 产出。
+- `restored_matches_before=True`：真实目录按 hash 完全还原（real content.md hash `e51bdcda587f3371` ≠ cloud `c5538cff69ba7a6d`，确认已还原为原始自部署产出）。
+
+**结论**：cloud→真实路径→DB→下游读取 全链路验证通过，契约不破坏、可回滚。**既有 145 篇不批量回填**（自部署产出良好 + cloud-pipeline 对数学公式有间距伪影）；cloud 面向新入库 PDF，数学密集型走 `vlm`（D3 闸门）。
+
+**遗留**（非 P3.5 范畴）：`works.parse_status` 与 `literature_parse_runs.status` 不同步（3 篇 parse_runs=succeeded 但 works.parse_status=pending），Phase D 登记。
 
 

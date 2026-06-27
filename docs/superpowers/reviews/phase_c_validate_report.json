@@ -1,0 +1,28 @@
+{
+  "work_id": "W-arxiv-2406.10162",
+  "sf_id": "SF-13d4293ad314-00158",
+  "model_version": "pipeline",
+  "language": "en",
+  "placed": [
+    "content.md",
+    "content.json",
+    "package.zip",
+    "images/"
+  ],
+  "db_content_md_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2406.10162\\parsed\\mineru\\SF-13d4293ad314-00158\\content.md",
+  "db_path_resolves": true,
+  "is_cloud_version": true,
+  "downstream_read": {
+    "ok": true,
+    "head_chars": 8000,
+    "has_abstract": true,
+    "sample_line": "# SYCOPHANCY TO SUBTERFUGE: INVESTIGATING REWARD TAMPERING IN LANGUAGE MODELS"
+  },
+  "metadata_extract": {
+    "returncode": 0,
+    "read_content_md": true,
+    "reached_model_call": true,
+    "tail": "待处理：1 篇文献\n模型：qwen3:4b-instruct-2507-q4_K_M\nOllama：http://localhost:11435\n\n[1/1] W-arxiv-2406.10162 — content.md\n  输入：8000 字符 ≈ 2967 tokens\n  ERROR: Cannot connect to Ollama: <urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>\n\n完成：0 成功，1 失败，共 1 篇\n"
+  },
+  "restored_matches_before": true
+}
