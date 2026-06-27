@@ -144,7 +144,7 @@ v1 的三个来源**全部 API-first，不需要 web-access skill / CDP 动态�
 | GitHub | REST/GraphQL API（repo 元数据、README、releases）+ raw URL 取 PDF | 否 |
 | Semantic Scholar | Graph API（`/paper/{id}/citations`、`/references`） | 否 |
 
-**前提（auth，非渲染）**：GitHub API 未认证限 60 次/小时，采集规模下不够——需配 GitHub token（认证后 5000 次/小时），作为 collector 配置项。web-access skill 仅在将来加入"机构官网 / webpage_blog 类来源"（集成 spec 非目标）时才启用。
+**前提（auth，非渲染）**：GitHub API 未认证限 60 次/小时，采集规模下不够。**复用本机已有的 gh 认证，不另配 token**——已验证：`gh` 2.89.0 已登录（账号 `Bpig-C`，token 存 OS keyring，scopes 含 `repo`，`gh auth token` 可用；`GH_TOKEN`/`GITHUB_TOKEN` 环境变量未设）。推荐 collector 的 GitHub 调用直接走 `gh api ...`（gh 自动带认证 + 处理 5000 次/小时限流 + 随 gh 轮换），保持单一真相源；备选运行时 `gh auth token` 取 token 喂 HTTP 客户端。web-access skill 仅在将来加入"机构官网 / webpage_blog 类来源"（集成 spec 非目标）时才启用。
 
 ## 4. 问题 2：GitHub 资产边界
 
