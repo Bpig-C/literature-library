@@ -105,5 +105,27 @@
 
 四阶段全部完成，三道自审（A/B/C）均为 PASS-WITH-FINDINGS，无 CRITICAL。契约（content_md_path 唯一文本入口、输出路径、不删文件、串行、token 仅环境变量）全程未破坏，全程可回滚（feature 分支、隔离试跑、backup/restore）。解析能力已进版本控制；新 PDF 走官网 cloud API；自部署保留降级；质量裁判 + 共享 LLM 基础设施就位。
 
+## Phase E：路由重构 + 本地模型统一（用户追加需求，2026-06-28）
+
+### 决策登记（追加）
+- D13：解析路由改为二元——**文本层(born-digital) PDF → PyMuPDF 本地直抽**（精准公式/免费/快），**扫描型 → cloud vlm**；**pipeline 弃用**（其公式间距伪影见 Phase B M1）。PyMuPDF 抽取后做轻量质检，不合格回退 cloud vlm。
+- D14：**所有本地模型调用弃用 ollama:11435(qwen3:4b)，统一走 opencode→MiMo-v2.5-pro**（经 `scripts/llm_judge.py`）。迁移范围：metadata_extract / classification_extract / metadata_rerun。
+
+### Phase E1：PyMuPDF 文本层路径 + 二元路由
+- 新增 `parser/core/mineru/pymupdf_client.py`：`PyMuPDFClient.parse_pdf`（文本层→content.md/content.json）+ `has_text_layer()` 文本层判定 + `quality_ok()` 质检（garble_ratio≤0.15 且 avg≥200 字符/页）。
+- `scripts/literature_batch_parse.py`：`parse_one` → `route_and_parse`（文本层→PyMuPDF→质检→不合格回退 vlm；扫描型→vlm）；`update_db` 增写 `backend`（pymupdf/vlm）；DB backend 列落库。
+- cloud 默认 `model_version` 由 pipeline 改 **vlm**（config.py + conf.json）。
+- 实测：文本层 PDF（2406.10162）→ backend=pymupdf，93207 字符 / garble=0.0 / quality_ok=True，**cloud 未被调用**（DummyCloud 断言）。
+
+### Phase E2：三脚本迁移到 opencode→MiMo
+- `llm_judge.py` 新增 `chat(messages)->{"message":{"content":<json文本>}}` drop-in（拼 system+user → judge → 序列化回 JSON，兼容原 `parse_llm_json` 流程；失败抛 RuntimeError）。
+- metadata_extract / classification_extract：`DEFAULT_MODEL=llm_judge.DEFAULT_MODEL`、调用点 `ollama_chat(...)`→`llm_judge.chat(messages, model=, timeout=)`。
+- metadata_rerun：`import llm_judge` + 调用点替换（DEFAULT_MODEL 经 metadata_extract 继承已为 mimo）。
+- 实测：`metadata_extract --work-id W-arxiv-2406.10162 --no-write` 经 MiMo 成功抽取标题/5 作者/contributors(Anthropic/Redwood/Oxford)/置信度，1 成功 0 失败。无活跃 ollama_chat 调用残留。
+
+### Phase E 自审（code-reviewer）
+（执行后填充）
+
+
 
 

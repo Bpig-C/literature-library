@@ -33,9 +33,10 @@ DB_PATH = LIBRARY_ROOT / "literature.sqlite"
 # Import risk computation from api package
 sys.path.insert(0, str(LIBRARY_ROOT))
 from api.risk import compute_risk  # noqa: E402
+import llm_judge  # noqa: E402  本地强模型走 opencode→MiMo（P3.5，弃用 ollama:11435）
 
-DEFAULT_MODEL = "qwen3:4b-instruct-2507-q4_K_M"
-DEFAULT_URL = "http://localhost:11435"
+DEFAULT_MODEL = llm_judge.DEFAULT_MODEL  # mimo/mimo-v2.5-pro
+DEFAULT_URL = "opencode→MiMo（经 llm_judge；--url 仅作占位，不再使用）"
 INPUT_CHAR_BUDGET = 8000
 
 
@@ -621,9 +622,9 @@ def run_extraction(args: argparse.Namespace) -> None:
                 "temperature": 0.2,
             }
 
-            # Call Ollama
+            # Call opencode→MiMo（经 llm_judge；原 ollama:11435 已弃用）
             try:
-                resp = ollama_chat(args.url, args.model, messages, options, args.timeout)
+                resp = llm_judge.chat(messages, model=args.model, timeout=args.timeout)
                 raw_response = resp.get("message", {}).get("content", "")
             except Exception as e:
                 print(f"  ERROR: {e}")

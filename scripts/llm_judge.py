@@ -288,6 +288,28 @@ def judge(
             pass
 
 
+def chat(
+    messages: list[dict],
+    *,
+    model: str = DEFAULT_MODEL,
+    timeout: float = DEFAULT_TIMEOUT,
+    retries: int = DEFAULT_RETRIES,
+) -> dict[str, Any]:
+    """ollama_chat 的 drop-in 替换：messages=[{"role":..,"content":..},...] → {"message":{"content": <json 文本>}}。
+
+    供 literature_metadata_extract / classification_extract / metadata_rerun 等
+    原走 ollama:11435 的脚本迁移到 opencode→MiMo 用。把 system+user 拼成一个 prompt
+    走 judge()，再把解析出的 dict 序列化回 JSON 文本，使调用方原有的
+    `resp["message"]["content"]` + parse_llm_json 流程无需改动。
+    judge 失败时抛 RuntimeError（被调用方 try/except 捕获 → status=error）。
+    """
+    prompt = "\n\n".join(str(m.get("content", "")) for m in messages if m.get("content"))
+    data = judge(prompt, model=model, timeout=timeout, retries=retries)
+    if not isinstance(data, dict) or "error" in data:
+        raise RuntimeError(f"llm_judge 调用失败：{data.get('reason') if isinstance(data, dict) else data}")
+    return {"message": {"content": json.dumps(data, ensure_ascii=False)}}
+
+
 def quality_verdict(
     content_md_path: str | Path,
     *,

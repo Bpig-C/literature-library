@@ -1,7 +1,10 @@
-"""Batch parse pending PDFs via MinerU 官网精准解析 API (cloud_client).
+"""Batch parse pending PDFs via 二元路由（P3.5 Phase E）。
 
-P3.5 后默认走 parser/ 子项目的 CloudClient（官网 API，token 从根目录 .env 的
-MinerU_API_KEY 读取）。max_workers=1 串行，保守并发。
+路由策略（pipeline 弃用）：
+- **文本层 PDF（born-digital）** → `parser/core/mineru/pymupdf_client.py` 本地直抽
+  （精准公式/免费/快）；轻量质检不合格则回退 cloud。
+- **扫描型 PDF（无文本层）** → `parser/core/mineru/cloud_client.py` 走 MinerU 官网精准 API（vlm）。
+  token 从根目录 .env 的 MinerU_API_KEY 读取。max_workers=1 串行。
 
 Usage:
     python scripts/literature_batch_parse.py              # dry-run: list pending
@@ -98,19 +101,55 @@ def work_language(work_id: str) -> str:
         return "en"
 
 
-def parse_one(client: Any, source_path: str, output_dir: Path, backend: str, language: str) -> tuple[bool, str]:
-    """调用 CloudClient 解析单个 PDF；成功后 output_dir 下产出 content.md/content.json/package.zip。"""
+def route_and_parse(
+    cloud_client: Any,
+    pymupdf_client: Any,
+    source_path: str,
+    output_dir: Path,
+    language: str,
+) -> tuple[bool, str, str]:
+    """二元路由（P3.5 Phase E）：
+    - 有文本层(born-digital) → PyMuPDF 本地抽取；质检不合格 → 回退 cloud vlm。
+    - 无文本层(扫描型) → cloud vlm。
+    返回 (ok, msg, backend_used ∈ {"pymupdf","vlm"})。pipeline 不再使用。
+    """
     from core.mineru.base_client import ParseRequest  # noqa: PLC0415
+    from core.mineru.pymupdf_client import has_text_layer  # noqa: PLC0415
 
-    req = ParseRequest(
-        pdf_path=Path(source_path),
-        output_dir=Path(output_dir),
-        backend=backend or "pipeline",
-        lang_list=language or "en",
-        formula_enable=True,
-        table_enable=True,
-    )
-    return client.parse_pdf(req)
+    pdf_path = Path(source_path)
+
+    def _cloud_vlm() -> tuple[bool, str]:
+        req = ParseRequest(
+            pdf_path=pdf_path,
+            output_dir=Path(output_dir),
+            backend="vlm",
+            lang_list=language or "en",
+            formula_enable=True,
+            table_enable=True,
+        )
+        return cloud_client.parse_pdf(req)
+
+    # 1) 文本层 → PyMuPDF
+    if has_text_layer(pdf_path):
+        ok, msg = pymupdf_client.parse_pdf(
+            ParseRequest(pdf_path=pdf_path, output_dir=Path(output_dir))
+        )
+        if ok and PyMuPDFClient_quality_ok(pymupdf_client):
+            return True, msg, "pymupdf"
+        # 质检不合格 → 回退 cloud vlm
+        print(f"  PyMuPDF 质检不合格({pymupdf_client.last_metrics})，回退 cloud vlm")
+        ok2, msg2 = _cloud_vlm()
+        return ok2, msg2, "vlm"
+
+    # 2) 扫描型 → cloud vlm
+    ok, msg = _cloud_vlm()
+    return ok, msg, "vlm"
+
+
+def PyMuPDFClient_quality_ok(client: Any) -> bool:
+    """薄封装，避免顶层 import 循环。"""
+    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
+    return PyMuPDFClient.quality_ok(getattr(client, "last_metrics", {}))
 
 
 def update_db(
@@ -122,16 +161,26 @@ def update_db(
     content_md_path: str = "",
     content_json_path: str = "",
     package_path: str = "",
+    backend: str = "",
 ) -> None:
     conn = sqlite3.connect(str(DB_PATH))
     try:
-        conn.execute(
-            """UPDATE literature_parse_runs
-               SET status=?, task_id=?, finished_at=?, error=?,
-                   content_md_path=?, content_json_path=?, package_path=?
-               WHERE id=?""",
-            (status, task_id, now, error, content_md_path, content_json_path, package_path, f"LPR-{sf_id}"),
-        )
+        if backend:
+            conn.execute(
+                """UPDATE literature_parse_runs
+                   SET status=?, task_id=?, finished_at=?, error=?,
+                       content_md_path=?, content_json_path=?, package_path=?, backend=?
+                   WHERE id=?""",
+                (status, task_id, now, error, content_md_path, content_json_path, package_path, backend, f"LPR-{sf_id}"),
+            )
+        else:
+            conn.execute(
+                """UPDATE literature_parse_runs
+                   SET status=?, task_id=?, finished_at=?, error=?,
+                       content_md_path=?, content_json_path=?, package_path=?
+                   WHERE id=?""",
+                (status, task_id, now, error, content_md_path, content_json_path, package_path, f"LPR-{sf_id}"),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -164,24 +213,25 @@ def main() -> int:
         print("No pending parse tasks.")
         return 0
 
-    backend_default = os.getenv("MINERU_MODEL_VERSION", "pipeline")
-    print(f"{'[DRY-RUN] ' if not args.execute else ''}Pending: {len(pending)} files (backend=cloud)")
+    print(f"{'[DRY-RUN] ' if not args.execute else ''}Pending: {len(pending)} files (route: 文本层→PyMuPDF / 扫描型→cloud vlm)")
     for sf_id, run in pending:
         print(f"  {sf_id}: {run['source_path']}")
 
     if not args.execute:
         return 0
 
+    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
+    pymupdf_client = PyMuPDFClient()
+
     success = 0
     failed = 0
     for sf_id, run in pending:
         source_path = run["source_path"]
         output_dir = Path(run["output_dir"])
-        backend = run.get("backend") or backend_default
         language = work_language(run.get("work_id", ""))
-        print(f"\n[{sf_id}] cloud parse: {Path(source_path).name} (model={backend}, lang={language})")
+        print(f"\n[{sf_id}] route+parse: {Path(source_path).name} (lang={language})")
         try:
-            ok, msg = parse_one(client, source_path, output_dir, backend, language)
+            ok, msg, backend_used = route_and_parse(client, pymupdf_client, source_path, output_dir, language)
             now = utc_now()
             if ok:
                 content_md = output_dir / "content.md"
@@ -190,6 +240,7 @@ def main() -> int:
                 md_text = content_md.read_text(encoding="utf-8") if content_md.exists() else ""
                 batch_id = getattr(client, "last_batch_id", "") or run.get("task_id", "")
                 run["status"] = "succeeded"
+                run["backend"] = backend_used
                 run["task_id"] = batch_id
                 run["finished_at"] = now
                 run["updated_at"] = now
@@ -202,16 +253,18 @@ def main() -> int:
                     content_md_path=str(content_md),
                     content_json_path=str(content_json),
                     package_path=run["package_path"],
+                    backend=backend_used,
                 )
                 success += 1
-                print(f"  OK ({len(md_text)} chars md) batch_id={batch_id}")
+                print(f"  OK ({len(md_text)} chars md) backend={backend_used} batch_id={batch_id}")
             else:
                 run["status"] = "failed"
+                run["backend"] = "vlm"
                 run["task_id"] = getattr(client, "last_batch_id", "") or run.get("task_id", "")
                 run["finished_at"] = now
                 run["updated_at"] = now
                 run["error"] = msg
-                update_db(sf_id, "failed", run["task_id"], now, msg)
+                update_db(sf_id, "failed", run["task_id"], now, msg, backend="vlm")
                 failed += 1
                 print(f"  FAILED: {msg}")
             # 每条落盘，避免中途崩溃丢失进度/重复消耗配额

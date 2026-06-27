@@ -31,6 +31,7 @@ sys.path.insert(0, str(LIBRARY_ROOT))
 
 from api.db import DB_PATH, ensure_metadata_review_columns  # noqa: E402
 from api.risk import compute_risk  # noqa: E402
+import llm_judge  # noqa: E402  本地强模型走 opencode→MiMo（P3.5，弃用 ollama:11435）
 from scripts.literature_metadata_extract import (  # noqa: E402
     DEFAULT_MODEL,
     DEFAULT_URL,
@@ -212,7 +213,8 @@ def build_new_extraction(
         "temperature": 0.2,
     }
 
-    response = ollama_chat(url, model, messages, options, timeout)
+    # opencode→MiMo（经 llm_judge；原 ollama:11435 已弃用；url/options 不再使用）
+    response = llm_judge.chat(messages, model=model, timeout=timeout)
     raw_response = response.get("message", {}).get("content", "")
     parsed = parse_llm_json(raw_response)
     if not parsed:

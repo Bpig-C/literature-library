@@ -1,4 +1,4 @@
-﻿{
+{
   "注释👇": "项目运行配置。说明字段仅用于注释👇，可被当前配置加载逻辑忽略。",
   "server": {
     "注释👇": "本地 HTTP 服务配置。生产环境可用 DOC_PARSER_HOST、DOC_PARSER_PORT、DOC_PARSER_SHARE_DIR 覆盖。",
@@ -29,7 +29,7 @@
     "cloud": {
       "注释👇": "官网精准解析 API。token 仅从环境变量 MinerU_API_KEY 读取，不在此落盘。",
       "api_base": "https://mineru.net",
-      "model_version": "pipeline",
+      "model_version": "vlm",
       "language": "en",
       "is_ocr_auto": true,
       "poll_interval": 10,

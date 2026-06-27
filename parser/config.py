@@ -63,7 +63,7 @@ class Config:
     # 官网精准解析 API 配置（token 强制走环境变量 MinerU_API_KEY，不在此落盘）
     cloud: dict = field(default_factory=lambda: {
         "api_base": "https://mineru.net",
-        "model_version": "pipeline",
+        "model_version": "vlm",
         "language": "en",
         "is_ocr_auto": True,
         "poll_interval": 10,
@@ -143,7 +143,7 @@ class Config:
         cloud_cfg = mnu.get("cloud", {}) or {}
         # 语言默认英文论文；允许环境变量覆盖
         cloud_cfg.setdefault("api_base", "https://mineru.net")
-        cloud_cfg.setdefault("model_version", os.getenv("MINERU_MODEL_VERSION", "pipeline"))
+        cloud_cfg.setdefault("model_version", os.getenv("MINERU_MODEL_VERSION", "vlm"))
         cloud_cfg.setdefault("language", os.getenv("MINERU_LANGUAGE", "en"))
         cloud_cfg.setdefault("is_ocr_auto", True)
         cloud_cfg.setdefault("poll_interval", 10)
