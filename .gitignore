@@ -63,3 +63,6 @@ docs/issues/screenshots/
 
 # LLM 裁判调用日志（运行时，含 token 计数）
 llm_judge_calls.jsonl
+
+# Phase B 隔离试跑产物（运行时，不入 VCS）
+_cloud_trial/

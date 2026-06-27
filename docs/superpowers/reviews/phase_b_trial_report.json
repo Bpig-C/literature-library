@@ -1,0 +1,135 @@
+{
+  "samples": [
+    {
+      "work_id": "W-arxiv-2406.10162",
+      "sf_id": "SF-13d4293ad314-00158",
+      "source": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2406.10162\\source\\2406.10162v3-Sycophancy to Subterfuge_Investigating Reward-Tampering in Large Language Models.pdf",
+      "out_dir": "D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2406.10162\\SF-13d4293ad314-00158",
+      "parse_ok": true,
+      "parse_msg": "✅ 官网 API 解析完成，输出目录：D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2406.10162\\SF-13d4293ad314-00158",
+      "batch_id": "0f4320b5-5f21-4ccb-b123-4685d1b91f42",
+      "elapsed_s": 32.2,
+      "old_stats": {
+        "exists": true,
+        "chars": 91221,
+        "h_headers": 48,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 577
+      },
+      "new_stats": {
+        "exists": true,
+        "chars": 91368,
+        "h_headers": 48,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 577
+      },
+      "judge_old": {
+        "quality": "good",
+        "needs_reparse": false,
+        "issues": [
+          "garbled"
+        ],
+        "completeness": 0.98,
+        "reason": "文档结构完整，摘要、正文、参考文献、附录均齐全，公式和表格解析良好；仅有个别Unicode字符损坏（如作者名Lukošiūtė显示异常）和一处重复文本（line 534）。"
+      },
+      "judge_new": {
+        "quality": "good",
+        "needs_reparse": false,
+        "issues": [],
+        "completeness": 0.98,
+        "reason": "文档解析质量优秀：结构完整（含摘要、正文、参考文献、附录A-I），公式用LaTeX正确渲染，表格完整，无乱码或断行错误。仅缺少部分图片文件本身（但图片引用路径正确）。"
+      }
+    },
+    {
+      "work_id": "W-arxiv-2511.18397",
+      "sf_id": "SF-312b50556c2c-00159",
+      "source": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2511.18397\\source\\2511.18397v1-NATURAL EMERGENT MISALIGNMENT FROM REWARD HACKING IN PRODUCTION RL.pdf",
+      "out_dir": "D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2511.18397\\SF-312b50556c2c-00159",
+      "parse_ok": true,
+      "parse_msg": "✅ 官网 API 解析完成，输出目录：D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2511.18397\\SF-312b50556c2c-00159",
+      "batch_id": "e66d6c43-9020-4cb4-abd1-71c2ddd5e05a",
+      "elapsed_s": 42.3,
+      "old_stats": {
+        "exists": true,
+        "chars": 210176,
+        "h_headers": 136,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 1910
+      },
+      "new_stats": {
+        "exists": true,
+        "chars": 212197,
+        "h_headers": 136,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 1903
+      },
+      "judge_old": {
+        "quality": "good",
+        "needs_reparse": false,
+        "issues": [],
+        "completeness": 0.95,
+        "reason": "解析质量良好，摘要完整，正文结构清晰，表格和公式基本保留，无明显乱码或断行错误，参考文献在正文引用中体现但未单独列出完整参考文献列表"
+      },
+      "judge_new": {
+        "quality": "acceptable",
+        "needs_reparse": false,
+        "issues": [
+          "formula_spacing"
+        ],
+        "completeness": 0.92,
+        "reason": "Mathematical formulas have systematic digit spacing artifacts (e.g. $3 3 . 7$ instead of $33.7$), but all sections including abstract, references, tables, code blocks, and appendices A-H are present and readable."
+      }
+    },
+    {
+      "work_id": "W-arxiv-2105.14111",
+      "sf_id": "SF-c156771fa2f9-00160",
+      "source": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2105.14111\\source\\2105.14111v7-Goal Misgeneralization in Deep Reinforcement Learning.pdf",
+      "out_dir": "D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2105.14111\\SF-c156771fa2f9-00160",
+      "parse_ok": true,
+      "parse_msg": "✅ 官网 API 解析完成，输出目录：D:\\02_academic\\doctoral\\literature_library\\_cloud_trial\\W-arxiv-2105.14111\\SF-c156771fa2f9-00160",
+      "batch_id": "a378c681-fded-4e31-9e41-b382c785ae59",
+      "elapsed_s": 23.7,
+      "old_stats": {
+        "exists": true,
+        "chars": 62752,
+        "h_headers": 24,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 422
+      },
+      "new_stats": {
+        "exists": true,
+        "chars": 63006,
+        "h_headers": 24,
+        "has_abstract": true,
+        "has_references": true,
+        "lines": 423
+      },
+      "judge_old": {
+        "quality": "acceptable",
+        "needs_reparse": false,
+        "issues": [
+          "formula_spacing",
+          "unicode_artifact"
+        ],
+        "completeness": 0.9,
+        "reason": "All sections complete including references and appendices; minor LaTeX spacing artifacts and isolated Unicode rendering issues do not impair comprehension."
+      },
+      "judge_new": {
+        "quality": "acceptable",
+        "needs_reparse": false,
+        "issues": [
+          "garbled_formulas",
+          "table_formatting"
+        ],
+        "completeness": 0.88,
+        "reason": "摘要和参考文献完整，但LaTeX公式多处渲染不一致或片段化，表格格式混乱，部分特殊符号显示异常"
+      }
+    }
+  ],
+  "ts": "2026-06-27T23:51:13"
+}

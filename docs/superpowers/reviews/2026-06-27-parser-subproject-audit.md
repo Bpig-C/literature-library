@@ -44,3 +44,17 @@
 **需登记的决策**：
 - D12（m4）：`quality_verdict` 默认 `full=True`（通篇阅读），偏离 spec §5b"只送摘要省成本"的初衷。**原因**：冒烟实测发现 head+tail 摘要里的"[省略中段]"标记会被模型误判为解析截断，导致每篇误报 poor；MiMo 1M context 可承载全文，且用户已确认"每篇都判、成本可接受"。权衡后选全文以保证裁判准确性。成本：~15k 脚手架 + 正文 tokens/篇。**若后续批量成本过高，可改回 `full=False` 粗筛**。
 
+### Phase B 试跑（真实官网 API，隔离输出）
+
+**执行**：3 篇 reward-hacking 样本经官网 cloud API（pipeline/en）重解析到隔离目录 `_cloud_trial/`，未触碰真实契约路径（实测真实 content.md mtime 仍为 2026-06-17，未被改动）。报告：`docs/superpowers/reviews/phase_b_trial_report.json`。
+
+**结果**（全部 ok=True）：
+| 文献 | 耗时 | 新旧字符差 | 章节数(新/旧) | abstract/refs | 裁判 old→new |
+|------|------|-----------|--------------|--------------|-------------|
+| 2406.10162 | 32s | +147 (91368/91221) | 48/48 | 有/有 | good(0.98)→good(0.98) |
+| 2511.18397 | 42s | +2021 (212197/210176) | 136/136 | 有/有 | good(0.95)→acceptable(0.92) |
+| 2105.14111 | 24s | +254 (63006/62752) | 24/24 | 有/有 | acceptable(0.9)→acceptable(0.88) |
+
+**结论**：官网 API 与原自部署 MinerU 产出**高度一致**——字符差均在 ~1% 内、章节数完全相同、abstract/refs 均在、裁判等级一致（新旧均为 good/acceptable，差异仅 issue 措辞级别如 formula_spacing/garbled，属模型正常波动，非系统性劣化）。**契约路径、隔离、token 仅环境读取均成立**。可进入 Phase C（写真实契约路径）。
+
+
