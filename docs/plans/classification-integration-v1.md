@@ -1,7 +1,7 @@
 # 分类本体 v0.2 落地实施方案 v1
 
 > 文档用途：供本地模型优化与审核，通过后作为正式实施依据
-> 对应规范：文献库分类方法规范 v0.2
+> 对应规范：../methodology/classification-methodology.md（文献库分类方法规范 v0.2）
 > 当前代码基准：LiteratureLib_2026-06-07（FastAPI + SQLite + Vue 3）
 > 撰写时间：2026-06-07
 
@@ -1119,7 +1119,7 @@ python scripts/migrate_backfill_doc_type.py --dry-run
 **Phase 1 第二轮审核提示词（Domain Classification Review Agent）**
 
 ```text
-你是第二轮分类语义审核 agent。请审核 Phase 1 迁移规则是否符合《文献库分类方法规范.md》。
+你是第二轮分类语义审核 agent。请审核 Phase 1 迁移规则是否符合《classification-methodology.md》。
 
 重点检查：
 1. primary_doc_type 是否被用于文献身份，而不是发布状态/主题/阅读用途。

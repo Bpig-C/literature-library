@@ -1,8 +1,8 @@
 # 文献库未来工作计划
 
-> 更新日期：2026-06-14  
-> 最近审核：2026-06-14，P1.1 AnalysisRun 基础设施已实现（schema/CLI/模板/测试/healthcheck），5 篇 digest 试跑通过。数据库含 138 works（112 未隔离 + 26 隔离）、5 条 analysis_runs、373 classification_extractions、1842 classification_tags、21 duplicate_groups（5 组含 10 条待审核候选）；`uv run pytest` 为 97 passed、6 skipped。  
-> 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`  
+> 更新日期：2026-06-27
+> 最近审核：2026-06-27，数据库实测核对：143 works（117 活跃 + 26 隔离）、5 篇 pending-parse（reward hacking / goal misgeneralization 主题新摄入未解析）、156 source_files、145 literature_parse_runs、260 metadata_extractions（applied 119）、373 classification_extractions（approved 119）、1842 classification_tags、21 duplicate_groups / 46 candidates（10 未审）、5 analysis_runs（全 pending）。healthcheck 通过，系统一致。新增 P6 collector 集成（设计 spec 已完成）。`uv run pytest` 为 97 passed、6 skipped。
+> 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
 ## 1. 当前状态核对
@@ -449,7 +449,7 @@ MetadataReview 不仅是元数据质量审核页，也承担“来源是否应�
 当前 `works.doc_type` 是摄入阶段基于文件名/PDF 元数据关键词的弱规则猜测，不是小模型确认结果，也没有记录来源、置信度或人工审核状态。它已经被 Dashboard、Works 筛选和后续矩阵规划使用，因此在进入 P1.1 分析运行和 P1.2 综述矩阵之前，需要先把 `doc_type` 从"临时筛选字段"升级为可追踪、可审核的核心元数据。
 
 
-已完成实现（详见 `classification_integration_plan_v1.md`）：
+已完成实现（详见 `docs/plans/classification-integration-v1.md`）：
 
 - ✅ 新增 `works` 表扩展字段：`primary_doc_type`、`publication_status`、`ingestion_state`、`priority`、`is_core_literature`、`primary_source_actor_type`、`region`、`canonical_file_format`、`secondary_doc_type`、`contributors`。
 - ✅ 新建 `work_classification_tags` 表（1374 条标签），支持多值标签（reading_lane、artifact_focus、risk_domain、method_tags 等）。
@@ -616,6 +616,36 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 
 建议顺序：如果近期会持续新增 PDF，则提前到 P1 之前也可以。
 
+### P3.5：文档解析子项目化（document-parser 纳入仓库 + 官网精准解析 API）
+
+> 优先级：**在 P6 collector 之前**。collector 一旦铺量采集，解析链路必须先稳定可靠，否则会堆积 pending。
+> 状态：待办（TODO），尚未启动。
+
+**现状**：文档解析依赖仓库外的 `D:\06_tools\document-parser` 项目（本地封装模块 + 远程自部署 MinerU，端口 18200/18201）。这造成两个问题：解析能力不在版本控制内、依赖自部署 MinerU 的运维成本。
+
+**目标**：
+
+1. 把 `document-parser` **复制一份拉到本仓库作为子项目**（与 collector 同样的子项目形态，如 `parser/` 或 `document_parser/`），让解析能力进入版本控制、与文献库同仓库演进。
+2. 远程解析从**自部署 MinerU** 改为 **MinerU 官网精准解析 API**。
+   - 官网 API 文档：https://mineru.net/apiManage/docs
+   - 需接入官网 API 的鉴权（API token）、任务提交/轮询/下载流程、配额与限流处理。
+3. 保留本地封装层对文献库的契约不变：仍输出 `content.md` + `content.json` 到 `works/{work_id}/parsed/mineru/{source_file_id}/`，路径写入 `literature_parse_runs.content_md_path`，不破坏现有元数据/分类/分析链路。
+
+**交付物（待细化）**：
+
+- 子项目目录结构、与现有 `scripts/literature_batch_parse.py` 的衔接方式。
+- 官网 API 适配层（替换原 MINERU_SERVER_URL 自部署调用）。
+- 配置：API token、并发限制、失败降级（官网 API 不可用时回退策略）。
+- 迁移验证：用现有 5 篇 pending（reward hacking / goal misgeneralization）+ 抽样已解析文献做一致性比对。
+
+**验收标准（待细化）**：
+
+- 解析能力在本仓库内，不再依赖 `D:\06_tools\document-parser`。
+- 新 PDF 走官网精准解析 API 成功产出 content.md，路径契约与现有一致。
+- 配额/限流/失败有明确处理，不污染 pending 状态。
+
+**待决问题**：官网 API 的计费/配额是否足以支撑批量回填；自部署 MinerU 是否完全停用还是保留作降级。
+
 ### P4：前端上传与操作闭环
 
 目标：把日常管理从命令行进一步收敛到 SPA。
@@ -650,6 +680,30 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 - 可从当前筛选结果导出 BibTeX。
 - `metadata_status` 能反映人工确认进度。
 
+### P6：开源文献收集（collector）集成
+
+> 设计已细化，见 `docs/superpowers/specs/2026-06-27-collector-integration-design.md`。
+
+目标：把"开源文献/项目收集"作为本仓库的子模块接入，补上目前缺失的**入库前去重**能力，让"是否新文献"的判别前移到入库前。
+
+核心设计（已讨论确认）：
+
+- **collector 作为子模块**（同仓库、同机、共享 `literature.sqlite`），只采集 + 投递候选，**不直接写 `works`**。
+- 新增 `intake_candidates` 表作为候选队列（队列在库，单一真相源）。
+- **两段式预去重闸门**：轻量闸门（采集时用 arXiv/DOI/标题元数据查 works，决定是否下载）+ 重量闸门（下载后 SHA256 查 source_files，复用现有 exact_sha256 逻辑）。
+- **四态判别**：exact_hit / title_candidate（复用 duplicate_groups）/ needs_better_copy（命中隔离 work，激活"坏副本≠坏文献"再获取）/ sha256_duplicate。
+- 第一版：**A2 人工批量晋升**（验证后再开 A1 自动化）、来源只做 **arXiv + GitHub**。
+
+与现有路线的衔接：
+
+- 吸收并扩展 P3：候选晋升后复用 parse pending 链路，建议与 P3 同步推进。
+- 复用 P4 上传 API 基础（第二版 intake API）。
+- 与 P5 协同：arXiv 适配器采集的元数据天然补全 arXiv/CrossRef 增强。
+
+检索实施层的三个待决问题（已搁置，留待专门会话讨论，见记忆 `collector-retrieval-implementation-open-questions`）：检索驱动方式、GitHub 资产边界、采集与闸门执行节奏。
+
+**实施参考**：采集/抓取环节可参考 **`web-access` 技能包**（搜索、网页抓取、登录后操作、动态渲染页面等流程），其中应有不少可直接复用的采集与浏览器自动化流程。
+
 ## 4. 推荐实施路线
 
 如果没有更强的近期需求，建议顺序如下：
@@ -668,8 +722,10 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 12. P1.2 综述矩阵。
 13. P2 Collections/标签/主题体系。
 14. P3 摄入后解析自动化。
-15. P4 前端上传与操作闭环。（部分完成：Duplicates 决策写回 DB ✅）
-16. P5 引用导出与外部元数据补全。
+15. **P3.5 文档解析子项目化（document-parser 入仓库 + 官网精准解析 API）。← 优先级在 collector 之前**
+16. P4 前端上传与操作闭环。（部分完成：Duplicates 决策写回 DB ✅）
+17. P5 引用导出与外部元数据补全。
+18. P6 开源文献收集（collector）集成。
 
 如果近期会大量新增 PDF，则把 P3 提前到 P0 之后。
 
