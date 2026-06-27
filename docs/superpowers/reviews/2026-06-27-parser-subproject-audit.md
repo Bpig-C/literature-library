@@ -124,7 +124,13 @@
 - 实测：`metadata_extract --work-id W-arxiv-2406.10162 --no-write` 经 MiMo 成功抽取标题/5 作者/contributors(Anthropic/Redwood/Oxford)/置信度，1 成功 0 失败。无活跃 ollama_chat 调用残留。
 
 ### Phase E 自审（code-reviewer）
-（执行后填充）
+
+- **CRITICAL**：无。四项核验全过——契约（PyMuPDF/cloud 都写 contract output_dir，content_md_path 唯一入口）、无双重 cloud 调用（route_and_parse fallback 仅调一次）、无密钥泄露、三脚本无活跃 ollama:11435 调用（DEFAULT_MODEL=mimo）。
+- **裁定**：PASS-WITH-FINDINGS。
+- **M1**（cloud_client 残留 `"pipeline"` 默认）→ **已修**：改 `"vlm"`。
+- **M2**（metadata_rerun 死 import `ollama_chat`）→ **已修**：移除。
+- **m6**（路由层无测试）→ **已修**：新增 `parser/tests/test_routing.py`，锁定三条不变量（文本层合格→pymupdf 且 cloud 不调；质检不合格→cloud 恰好一次且覆盖 content.md；扫描型→cloud）。共 9 测全过。
+- 其余 MINOR（options 丢弃/--url 占位/短文档质检阈值/失败 backend 归属）记存，低风险不阻塞。
 
 
 

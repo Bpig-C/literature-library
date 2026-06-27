@@ -38,7 +38,6 @@ from scripts.literature_metadata_extract import (  # noqa: E402
     INPUT_CHAR_BUDGET,
     SYSTEM_PROMPT,
     USER_PROMPT_TEMPLATE,
-    ollama_chat,
     parse_llm_json,
     rough_token_count,
     validate_extraction,

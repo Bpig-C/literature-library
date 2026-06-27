@@ -116,7 +116,7 @@ class CloudClient(PdfParseClient):
         self.last_batch_id = ""
         cloud = getattr(config, "cloud", {}) or {}
         self.api_base = (cloud.get("api_base") or "https://mineru.net").rstrip("/")
-        self.model_version = cloud.get("model_version", "pipeline")
+        self.model_version = cloud.get("model_version", "vlm")
         self.language = cloud.get("language", "en")
         self.is_ocr_auto = bool(cloud.get("is_ocr_auto", True))
         self.poll_interval = int(cloud.get("poll_interval", 10))
