@@ -188,8 +188,9 @@ def main() -> int:
                 content_json = output_dir / "content.json"
                 package = output_dir / "package.zip"
                 md_text = content_md.read_text(encoding="utf-8") if content_md.exists() else ""
+                batch_id = getattr(client, "last_batch_id", "") or run.get("task_id", "")
                 run["status"] = "succeeded"
-                run["task_id"] = run.get("task_id", "")
+                run["task_id"] = batch_id
                 run["finished_at"] = now
                 run["updated_at"] = now
                 run["error"] = ""
@@ -197,21 +198,24 @@ def main() -> int:
                 run["content_json_path"] = str(content_json)
                 run["package_path"] = str(package) if package.exists() else ""
                 update_db(
-                    sf_id, "succeeded", run["task_id"], now,
+                    sf_id, "succeeded", batch_id, now,
                     content_md_path=str(content_md),
                     content_json_path=str(content_json),
                     package_path=run["package_path"],
                 )
                 success += 1
-                print(f"  OK ({len(md_text)} chars md)")
+                print(f"  OK ({len(md_text)} chars md) batch_id={batch_id}")
             else:
                 run["status"] = "failed"
+                run["task_id"] = getattr(client, "last_batch_id", "") or run.get("task_id", "")
                 run["finished_at"] = now
                 run["updated_at"] = now
                 run["error"] = msg
-                update_db(sf_id, "failed", run.get("task_id", ""), now, msg)
+                update_db(sf_id, "failed", run["task_id"], now, msg)
                 failed += 1
                 print(f"  FAILED: {msg}")
+            # 每条落盘，避免中途崩溃丢失进度/重复消耗配额
+            save_ledger(ledger)
         except Exception as exc:  # noqa: BLE001
             now = utc_now()
             run["status"] = "failed"

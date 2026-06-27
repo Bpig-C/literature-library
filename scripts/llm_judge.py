@@ -247,7 +247,8 @@ def judge(
     形如：opencode run "<短指令>" --pure -m <model> --format json -f <prompt文件>
     """
     exe = find_opencode()
-    prompt_file = LIBRARY_ROOT / f"_judge_prompt_{os.getpid()}_{int(time.time())}.md"
+    judge._counter = getattr(judge, "_counter", 0) + 1
+    prompt_file = LIBRARY_ROOT / f"_judge_prompt_{os.getpid()}_{judge._counter}_{time.time_ns()}.md"
     prompt_file.write_text(prompt, encoding="utf-8")
     short_msg = (
         "阅读附件文件的完整内容，并严格按其中的指示完成任务。"

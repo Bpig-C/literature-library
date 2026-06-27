@@ -152,5 +152,49 @@ def test_helpers():
     assert cc._extract_json_from_text('{"b":2}') == {"b": 2}
 
 
+def test_safe_extract_zip_blocks_traversal(tmp_path):
+    """_safe_extract_zip 必须拒绝 ../../../etc/passwd 这类路径穿越条目。"""
+    import zipfile as _zf
+    target = tmp_path / "unpack"
+    target.mkdir()
+    zip_path = tmp_path / "evil.zip"
+    with _zf.ZipFile(zip_path, "w") as zf:
+        zf.writestr("ok.txt", "fine")
+        zf.writestr("../escaped.txt", "should-be-skipped")  # 穿越条目
+    with _zf.ZipFile(zip_path, "r") as zf:
+        cc.CloudClient._safe_extract_zip(zf, target)
+    # 合法条目解压
+    assert (target / "ok.txt").read_text() == "fine"
+    # 穿越条目不得落到 target 之外
+    assert not (tmp_path.parent / "escaped.txt").exists()
+    # 也不应在 target 内出现 escaped.txt（被跳过）
+    assert not (target / "escaped.txt").exists()
+
+
+def test_missing_full_md_fails_with_zip_retained(monkeypatch, tmp_path):
+    """结果包里没有 full.md 时应失败，且保留原始 zip 供排查。"""
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("only_content_list.json", "[]")  # 故意缺 full.md
+
+    monkeypatch.setattr(cc.requests, "request", lambda method, url, **kw: (
+        _FakeResp(200, {"code": 0, "data": {"batch_id": "b", "file_urls": ["u"]}})
+        if url.endswith("/api/v4/file-urls/batch")
+        else _FakeResp(200, {"code": 0, "data": {"extract_result": [
+            {"file_name": "x.pdf", "state": "done", "full_zip_url": "https://x.zip"}]}})))
+    monkeypatch.setattr(cc.requests, "put", lambda url, **kw: _FakeResp(200))
+    monkeypatch.setattr(cc.requests, "get", lambda url, **kw: _FakeResp(200, content=buf.getvalue()))
+    monkeypatch.setattr(cc, "_detect_is_ocr", lambda p, **kw: False)
+
+    client = cc.CloudClient()
+    client.poll_interval = 0
+    ok, msg = client.parse_pdf(ParseRequest(pdf_path=pdf, output_dir=tmp_path / "o"))
+    assert not ok
+    assert "full.md" in msg
+    assert (tmp_path / "o" / "package.zip").exists()  # 原始 zip 保留
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

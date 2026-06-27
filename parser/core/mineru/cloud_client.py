@@ -112,6 +112,8 @@ class CloudClient(PdfParseClient):
     def __init__(self):
         from config import config
         self._config = config
+        # 最近一次解析的 batch_id（供调用方记录为 task_id，便于回溯/重试）
+        self.last_batch_id = ""
         cloud = getattr(config, "cloud", {}) or {}
         self.api_base = (cloud.get("api_base") or "https://mineru.net").rstrip("/")
         self.model_version = cloud.get("model_version", "pipeline")
@@ -159,6 +161,9 @@ class CloudClient(PdfParseClient):
                 logger.warning("队列已满，退避重试 (%s/%s)", i + 1, attempts)
                 time.sleep(2 ** i)
                 continue
+            if code == -60018:  # 每日解析任务数已达上限 → 明确不重试，直接返回（由上层判失败）
+                logger.error("每日解析任务数已达上限（-60018），不重试")
+                return resp
             return resp
         raise RuntimeError(f"请求多次失败：{url} last_error={last_exc}")
 
@@ -269,6 +274,7 @@ class CloudClient(PdfParseClient):
         file_urls = d.get("file_urls") or []
         if not batch_id or not file_urls:
             raise RuntimeError(f"返回缺字段：{data}")
+        self.last_batch_id = batch_id
         return batch_id, file_urls[0]
 
     def _upload_file(self, upload_url: str, pdf_path: Path) -> None:
