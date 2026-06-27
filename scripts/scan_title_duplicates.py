@@ -24,7 +24,9 @@ def normalize_title(text: str) -> str:
     text = re.sub(r"\[[^\]]+\]", " ", text)
     text = re.sub(r"【[^】]+】", " ", text)
     text = re.sub(r"arxiv[-_: ]*\d{4}\.\d{4,5}(v\d+)?", " ", text)
-    text = re.sub(r"\b\d{4,8}\b", " ", text)
+    # Strip only year-like 4-digit numbers (1900-2099). Keep standard/version numbers
+    # (e.g. ISO/IEC 23894 vs 42005) \u2014 they are the strongest distinguishing signal.
+    text = re.sub(r"\b(?:19|20)\d{2}\b", " ", text)
     text = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", " ", text)
     tokens = [t for t in text.split() if t not in STOPWORDS]
     return " ".join(tokens)
@@ -75,6 +77,12 @@ def scan(dry_run: bool = False):
     for i in range(n):
         for j in range(i + 1, n):
             wi, wj = work_data[i], work_data[j]
+            # Strong-key pre-filter: if both have a confirmed arXiv or DOI and they
+            # differ, they are NOT the same work — skip regardless of title similarity.
+            if wi["arxiv_id"] and wj["arxiv_id"] and wi["arxiv_id"] != wj["arxiv_id"]:
+                continue
+            if wi["doi"] and wj["doi"] and wi["doi"] != wj["doi"]:
+                continue
             score = jaccard(wi["norm"], wj["norm"])
             if score >= 0.9:
                 # Check if already exists
