@@ -132,6 +132,23 @@
 - **m6**（路由层无测试）→ **已修**：新增 `parser/tests/test_routing.py`，锁定三条不变量（文本层合格→pymupdf 且 cloud 不调；质检不合格→cloud 恰好一次且覆盖 content.md；扫描型→cloud）。共 9 测全过。
 - 其余 MINOR（options 丢弃/--url 占位/短文档质检阈值/失败 backend 归属）记存，低风险不阻塞。
 
+### Phase E 扩展：双栏阅读顺序检测（方案 B，2026-06-28）
+
+**背景**：用户抽检双栏论文（Goal Misgeneralization 2105.14111）确认 PyMuPDF 阅读顺序正确（列顺序读取、无左右交错），但质检门原本只查 garble/字符率，**检测不到阅读顺序错乱**（列交错不产生乱码字符）。用户选方案 B：加一层列交错检测。
+
+**实现**（`parser/core/mineru/pymupdf_client.py`）：
+- 纯函数 `column_switch_count(blocks, width)`：按 PyMuPDF 给出的阅读顺序统计文本块的列切换次数（L/R，跨中线 M 忽略）。正常双栏≈1 次；列交错(L,R,L,R…)很多次。
+- `reading_order_ok(pages_blocks)`：对双栏页（同时有≥2 左栏块和≥2 右栏块）判别，单页切换 > 6 视为乱序；双栏页中乱序占比 ≥ 50% → 整篇不可接受。
+- 接入 `parse_pdf`（与文本抽取同遍历收集 blocks）+ `quality_ok`（`reading_order_ok=False` → 回退 cloud vlm）。
+- 指标落 `last_metrics`：`reading_order_ok / two_col_pages / two_col_bad_pages / max_column_switches`。
+
+**验证**：
+- 实测 Goal Misgeneralization：11 个双栏页 / 0 乱序 / max_switches=3 / `quality_ok=True`（正确放行干净双栏论文）。
+- 单测 `test_reading_order.py`（6 项）：顺序 1 切换、交错 15 切换、单栏不判、多数乱序判整篇不过——全过。
+- 全 parser 相关测试 15 项（cloud_client+routing+reading_order）全过。`test_api.py` 26 项 ERROR 系 `./html` 静态目录缺失（复制时剔除；文献库不跑该 FastAPI 服务，无关）。
+
+**残留**（轻度，不阻塞）：PyMuPDF 的逐行断行/去连字符(`outof-distribution`)/脚注插队——影响精读美观，不影响下游文本可用性。
+
 
 
 

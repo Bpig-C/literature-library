@@ -31,6 +31,65 @@ MIN_AVG_CHARS_PER_PAGE = 200
 # 视为“乱码/不可读”的字符（控制字符、替换符等；不含常见空白）
 _GARBLE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f�]")
 
+# 双栏阅读顺序检测：单页列切换次数超过此值视为“列交错”（阅读顺序乱）
+_COLUMN_SWITCH_LIMIT = 6
+# 双栏页中“顺序乱”页占比超过此值 → 整篇视为阅读顺序不可接受
+_BAD_2COL_PAGE_RATIO = 0.5
+
+
+def column_switch_count(blocks: list[tuple], width: float) -> int:
+    """统计一页文本块的列切换次数（纯函数，便于测试）。
+
+    blocks: [(x0,y0,x1,y1,text), ...]，按 PyMuPDF 给出的阅读顺序。
+    列归属：x1<width*0.55 → L；x0>width*0.45 → R；跨中线 → M(忽略)。
+    列交错(L,R,L,R...)会产生大量切换；正常双栏(L...L,R...R)约 1 次。
+    """
+    seq = []
+    for b in blocks:
+        x0, y0, x1, y1 = b[0], b[1], b[2], b[3]
+        txt = b[4] if len(b) > 4 else ""
+        if not (str(txt).strip()) or len(str(txt).strip()) < 2:
+            continue
+        if x1 < width * 0.55:
+            seq.append("L")
+        elif x0 > width * 0.45:
+            seq.append("R")
+        # else: 跨中线 M，忽略
+    return sum(1 for i in range(1, len(seq)) if seq[i] != seq[i - 1])
+
+
+def reading_order_ok(pages_blocks: list[tuple[list, float]]) -> tuple[bool, dict]:
+    """判断全文双栏阅读顺序是否可接受。
+
+    pages_blocks: [(blocks, width), ...] 每页一块列表 + 页宽。
+    返回 (ok, {two_col_pages, bad_pages, max_switches})。
+    只对“同时有左右栏块”的双栏页判别；单栏页不参与。
+    """
+    two_col = 0
+    bad = 0
+    max_sw = 0
+    for blocks, width in pages_blocks:
+        cols = []
+        for b in blocks:
+            txt = b[4] if len(b) > 4 else ""
+            if not str(txt).strip() or len(str(txt).strip()) < 2:
+                continue
+            if b[2] < width * 0.55:
+                cols.append("L")
+            elif b[0] > width * 0.45:
+                cols.append("R")
+        if not (cols.count("L") >= 2 and cols.count("R") >= 2):
+            continue  # 非双栏页
+        two_col += 1
+        sw = column_switch_count(blocks, width)
+        max_sw = max(max_sw, sw)
+        if sw > _COLUMN_SWITCH_LIMIT:
+            bad += 1
+    if two_col == 0:
+        return True, {"two_col_pages": 0, "bad_pages": 0, "max_switches": max_sw}
+    ok = (bad / two_col) < _BAD_2COL_PAGE_RATIO
+    return ok, {"two_col_pages": two_col, "bad_pages": bad, "max_switches": max_sw}
+
 
 def avg_chars_per_page(pdf_path: Path) -> tuple[int, float]:
     """返回 (页数, 平均每页可提取字符数)。打不开/无文本层返回 (0, 0.0)。"""
@@ -87,7 +146,13 @@ class PyMuPDFClient(PdfParseClient):
 
         doc = fitz.open(str(req.pdf_path))
         try:
-            page_texts = [(i + 1, (page.get_text() or "")) for i, page in enumerate(doc)]
+            page_texts: list[tuple[int, str]] = []
+            pages_blocks: list[tuple[list, float]] = []
+            for i, page in enumerate(doc):
+                page_texts.append((i + 1, page.get_text() or ""))
+                width = page.rect.width
+                raw_blocks = [tuple(b) for b in page.get_text("blocks") if b[6] == 0]
+                pages_blocks.append((raw_blocks, width))
         finally:
             doc.close()
 
@@ -100,12 +165,19 @@ class PyMuPDFClient(PdfParseClient):
         garble_ratio = garble / max(total_chars, 1)
         avg_now = total_chars / max(pages, 1)
 
+        # 双栏阅读顺序检测（方案 B）
+        order_ok, order_info = reading_order_ok(pages_blocks)
+
         metrics = {
             "ok": True,
             "pages": pages,
             "chars": total_chars,
             "avg_chars_per_page": round(avg_now, 1),
             "garble_ratio": round(garble_ratio, 4),
+            "reading_order_ok": order_ok,
+            "two_col_pages": order_info["two_col_pages"],
+            "two_col_bad_pages": order_info["bad_pages"],
+            "max_column_switches": order_info["max_switches"],
         }
         self.last_metrics = metrics
 
@@ -122,12 +194,18 @@ class PyMuPDFClient(PdfParseClient):
 
     @staticmethod
     def quality_ok(metrics: dict[str, Any]) -> bool:
-        """根据抽取指标判断质量是否可接受（供路由层决定是否回退 vlm）。"""
+        """根据抽取指标判断质量是否可接受（供路由层决定是否回退 vlm）。
+
+        三重门：乱码率、字符率、双栏阅读顺序。任一不合格 → 回退 cloud vlm。
+        """
         if not metrics.get("ok"):
             return False
         if metrics.get("garble_ratio", 1) > GARBLE_RATIO_LIMIT:
             return False
         if metrics.get("avg_chars_per_page", 0) < MIN_AVG_CHARS_PER_PAGE:
+            return False
+        # 双栏阅读顺序（仅当文档含双栏页时才判；reading_order_ok 缺省 True 容错旧指标）
+        if metrics.get("reading_order_ok", True) is False:
             return False
         return True
 
