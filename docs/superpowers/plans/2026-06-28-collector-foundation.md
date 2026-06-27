@@ -27,6 +27,7 @@
 - **本计划 Task 7 创建** `scripts/literature_intake.py`，含 `list` / `promote` 子命令（A2）。
 - 检索层计划 Task 6 **修改**同一文件，追加 `topic` / `collect` / `resolve` 子命令。
 - 因此检索层 Task 6 的"Create"应理解为"Modify"——执行检索层时合并到本计划创建的文件，勿覆盖。
+- **候选插入统一走 `collector.candidate_store.insert_candidate`**（本计划 Task 2.5）：检索层 discovery 适配器（`discovery_explicit`/`discovery_citation`/`github`）插入候选时**必须调用此 helper**，勿裸 INSERT——否则丢失候选层去重（跨源同篇、跨 run 重复）。检索层相应 task 的"raw INSERT + 捕获 UNIQUE"实现应替换为调用 `insert_candidate`，只统计 `status=='created'` 的为新增。
 
 ## 文件结构
 
@@ -35,6 +36,7 @@
 | `scripts/migrate_add_intake_candidates.py` | 幂等迁移：建 `intake_candidates` 表 |
 | `collector/__init__.py` | 包标记 |
 | `collector/normalize.py` | 规范化（薄封装 `literature_ingest` 的 arxiv/doi 函数 + URL 规范化） |
+| `collector/candidate_store.py` | 候选层去重 `insert_candidate`（强键→url 兜底，跨源同篇去重） |
 | `collector/gate.py` | 两段闸门：`light_gate`（元数据四态）+ `heavy_gate`（SHA256） |
 | `collector/adapters/__init__.py` | 包标记 |
 | `collector/adapters/arxiv.py` | arXiv API 元数据 + PDF URL（新网络代码） |
@@ -283,6 +285,153 @@ Expected: PASS（3 passed）
 ```bash
 git add collector/__init__.py collector/normalize.py tests/test_normalize.py
 git commit -m "feat(collector): normalize 薄封装(复用 literature_ingest) + URL 规范化"
+```
+
+---
+
+## Task 2.5: 候选层去重 helper（`insert_candidate`）
+
+**Files:**
+- Create: `collector/candidate_store.py`
+- Create: `tests/test_candidate_store.py`
+
+> 收集层自己的去重责任：插入候选前查队列，避免**候选 vs 候选**重复（尤其跨源同篇：arXiv + GitHub）。
+> 分层兜底：强键(arxiv_id/doi) → url_canonical → 都没有则**不跳过**（交给闸门 title_candidate + work_id + SHA256 兜底，避免标题误杀）。
+> **检索层 discovery 适配器必须经此 helper 插入候选，勿裸 INSERT**（见顶部衔接说明）。
+> 仅对 `status IN ('pending','resolved')` 的活跃候选去重；已 `ingested` 的不跳过（交给闸门 vs works）。
+
+- [ ] **Step 1: 写失败测试**
+
+```python
+# tests/test_candidate_store.py
+import sqlite3
+from collector import candidate_store as cs
+
+def _db(tmp_path):
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    c = sqlite3.connect(db_path)
+    c.execute("""CREATE TABLE intake_candidates (id TEXT PRIMARY KEY, source_type TEXT,
+        url_canonical TEXT, arxiv_id TEXT, doi TEXT, title TEXT, status TEXT, raw_meta TEXT,
+        collection_topic_id TEXT, resolution TEXT, review_status TEXT, collected_at TEXT,
+        UNIQUE(source_type, url_canonical))""")
+    c.commit(); c.close()
+    return db_path
+
+def test_insert_new(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cid, status = cs.insert_candidate(source_type="arxiv",
+        url_canonical="https://arxiv.org/abs/2501.17805", arxiv_id="2501.17805", title="X")
+    assert status == "created" and cid.startswith("IC-")
+
+def test_skip_cross_source_same_arxiv(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cid1, _ = cs.insert_candidate(source_type="arxiv", url_canonical="u1", arxiv_id="2501.17805")
+    cid2, st = cs.insert_candidate(source_type="github", url_canonical="u2", arxiv_id="2501.17805")
+    assert st == "skipped_dup" and cid2 == cid1   # 跨源同篇 → 跳过，返回已有
+
+def test_skip_same_doi(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cs.insert_candidate(source_type="arxiv", url_canonical="u1", doi="10.1/x")
+    _, st = cs.insert_candidate(source_type="github", url_canonical="u2", doi="10.1/x")
+    assert st == "skipped_dup"
+
+def test_skip_same_url(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cs.insert_candidate(source_type="arxiv", url_canonical="u", title="X")
+    _, st = cs.insert_candidate(source_type="arxiv", url_canonical="u", title="X")
+    assert st == "skipped_dup"
+
+def test_no_strong_key_different_title_creates(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cs.insert_candidate(source_type="arxiv", url_canonical="u1", title="Reward Hacking")
+    _, st = cs.insert_candidate(source_type="arxiv", url_canonical="u2", title="Interpretability")
+    assert st == "created"   # 无强键、不同标题 → 不误杀
+
+def test_does_not_skip_against_ingested(tmp_path, monkeypatch):
+    db = _db(tmp_path); monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db))
+    cs.insert_candidate(source_type="arxiv", url_canonical="u1", arxiv_id="2501.17805")
+    c = sqlite3.connect(db)
+    c.execute("UPDATE intake_candidates SET status='ingested' WHERE arxiv_id='2501.17805'"); c.commit(); c.close()
+    _, st = cs.insert_candidate(source_type="arxiv", url_canonical="u2", arxiv_id="2501.17805")
+    assert st == "created"   # 已晋升的不在候选层跳过（交给闸门 vs works）
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+Run: `pytest tests/test_candidate_store.py -v`
+Expected: FAIL（`No module named 'collector.candidate_store'`）
+
+- [ ] **Step 3: 实现 `collector/candidate_store.py`**
+
+```python
+# collector/candidate_store.py
+"""Candidate-layer dedup. Collector's own responsibility to avoid candidate-vs-candidate dups
+(esp. cross-source: arXiv + GitHub same paper). Discovery adapters MUST route inserts through here.
+
+Tiered backstop: strong key (arxiv_id/doi) -> url_canonical -> else create
+(no title auto-skip; rely on gate title_candidate + work_id + SHA256 downstream).
+Only dedups against status IN ('pending','resolved'); ingested ones are left to the gate vs works.
+"""
+from __future__ import annotations
+import json, secrets
+from datetime import datetime, timezone
+from api.db import get_conn
+
+def _existing(conn, *, arxiv_id=None, doi=None, url_canonical=None):
+    """Return id of an active candidate matching strong key or url, else None."""
+    if arxiv_id:
+        row = conn.execute(
+            "SELECT id FROM intake_candidates WHERE arxiv_id=? AND status IN ('pending','resolved')",
+            (arxiv_id,)).fetchone()
+        if row:
+            return row[0]
+    if doi:
+        row = conn.execute(
+            "SELECT id FROM intake_candidates WHERE doi=? AND status IN ('pending','resolved')",
+            (doi,)).fetchone()
+        if row:
+            return row[0]
+    if url_canonical:
+        row = conn.execute(
+            "SELECT id FROM intake_candidates WHERE url_canonical=? AND status IN ('pending','resolved')",
+            (url_canonical,)).fetchone()
+        if row:
+            return row[0]
+    return None
+
+def insert_candidate(*, source_type, url_canonical, arxiv_id=None, doi=None, title=None,
+                     raw_meta=None, collection_topic_id=None):
+    """Insert a candidate with tiered dedup. Returns (candidate_id, status in {created, skipped_dup})."""
+    conn = get_conn()
+    try:
+        existing = _existing(conn, arxiv_id=arxiv_id, doi=doi, url_canonical=url_canonical)
+        if existing:
+            return existing, "skipped_dup"
+        cid = "IC-" + secrets.token_hex(4)
+        conn.execute(
+            """INSERT INTO intake_candidates
+               (id, source_type, url_canonical, arxiv_id, doi, title, resolution,
+                status, review_status, raw_meta, collection_topic_id, collected_at)
+               VALUES (?,?,?,?,?,?, 'pending','pending','pending',?,?,?)""",
+            (cid, source_type, url_canonical, arxiv_id, doi, title,
+             json.dumps(raw_meta, ensure_ascii=False) if raw_meta else None,
+             collection_topic_id, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+        return cid, "created"
+    finally:
+        conn.close()
+```
+
+- [ ] **Step 4: 跑测试确认通过**
+
+Run: `pytest tests/test_candidate_store.py -v`
+Expected: PASS（6 passed）
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add collector/candidate_store.py tests/test_candidate_store.py
+git commit -m "feat(collector): 候选层去重 insert_candidate(强键→url 兜底，跨源同篇去重)"
 ```
 
 ---
@@ -1067,6 +1216,7 @@ git commit -m "test(collector): 边界约束——collector 不直接写 works(�
 ## 验收对齐（集成 spec §11）
 
 - [x] `intake_candidates` 表 + 迁移（幂等）—— Task 1
+- [x] 候选层去重（强键→url 兜底，跨源同篇不重复投递）—— Task 2.5
 - [x] arXiv 适配器：采集元数据 + 写候选 + 轻量闸门 —— Task 5 +（检索层 collect 编排）
 - [x] 轻量闸门：exact_hit / title_candidate / needs_better_copy —— Task 3
 - [x] 重量闸门：SHA256 → sha256_duplicate —— Task 4
@@ -1080,4 +1230,4 @@ git commit -m "test(collector): 边界约束——collector 不直接写 works(�
 1. **Spec 覆盖**：§4 表→T1；§5 两段闸门+四态→T3/T4；§6 复用机制（exact/title/sha/needs_better_copy/晋升）→T3/T4/T6/T8；§7 A2→T7；§8 arXiv adapter→T5；§9 结构→文件结构表；§11 验收→上表。✓
 2. **占位符**：无 TBD；所有复用函数（`sha256_file`/`choose_work_id`/`build_ingest_plan`/`execute_plan`/`normalize_title`/`jaccard`/`utc_now`/`extract_arxiv_id`/`arxiv_work_key`/`normalize_doi`）均经代码勘察确认存在并标注 file:line。✓
 3. **类型一致**：`light_gate(candidate)->(resolution, matched_work_id)`、`heavy_gate(candidate_id)->resolution`、`promote(candidate_id, library_root)->work_id`、`replace_quarantined_source(work_id, good_pdf, library_root)->sf_id` 全程一致。✓
-4. **衔接**：与检索层计划共用 `scripts/literature_intake.py`（本计划 Create list/promote，检索层 Modify 追加 topic/collect/resolve），已在顶部声明。✓
+4. **衔接**：与检索层计划共用 `scripts/literature_intake.py`（本计划 Create list/promote，检索层 Modify 追加 topic/collect/resolve），已在顶部声明；检索层 discovery 插入统一走本计划 Task 2.5 的 `insert_candidate`。✓
