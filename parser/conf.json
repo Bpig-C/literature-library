@@ -1,0 +1,63 @@
+﻿{
+  "注释👇": "项目运行配置。说明字段仅用于注释👇，可被当前配置加载逻辑忽略。",
+  "server": {
+    "注释👇": "本地 HTTP 服务配置。生产环境可用 DOC_PARSER_HOST、DOC_PARSER_PORT、DOC_PARSER_SHARE_DIR 覆盖。",
+    "ip": "127.0.0.1",
+    "url": "",
+    "port": 18201,
+    "share_dir": "./Datas",
+    "expose_datas_static": false,
+    "api_clients": {
+      "test_client": "test_key"
+    },
+    "cors_origins": [
+      "http://localhost",
+      "http://localhost:3000",
+      "http://127.0.0.1",
+      "http://127.0.0.1:3000"
+    ]
+  },
+  "mineru": {
+    "注释👇": "解析后端选择：cloud=官网精准API（默认，token 走环境变量 MinerU_API_KEY）；selfdeploy=本地/远程自部署 MinerU（需配 url/ip/port）。",
+    "backend": "cloud",
+    "localcommand_mineru": false,
+    "mineru_worker_count": 4,
+    "ip": "",
+    "url": "",
+    "port": 18200,
+    "timeout": 1200,
+    "cloud": {
+      "注释👇": "官网精准解析 API。token 仅从环境变量 MinerU_API_KEY 读取，不在此落盘。",
+      "api_base": "https://mineru.net",
+      "model_version": "pipeline",
+      "language": "en",
+      "is_ocr_auto": true,
+      "poll_interval": 10,
+      "timeout": 1800,
+      "submit_rate_per_min": 30
+    }
+  },
+  "parse_request": {
+    "return_middle_json": true,
+    "return_model_output": true,
+    "return_md": true,
+    "return_images": true,
+    "return_content_list": true,
+    "start_page_id": 0,
+    "end_page_id": 99999,
+    "parse_method": "auto",
+    "lang_list": "ch",
+    "output_dir": "./output",
+    "server_url": "",
+    "backend": "pipeline",
+    "table_enable": true,
+    "formula_enable": true,
+    "response_format_zip": true
+  },
+  "libreoffice": {
+    "path": "libreoffice",
+    "extra_args": []
+  }
+}
+
+

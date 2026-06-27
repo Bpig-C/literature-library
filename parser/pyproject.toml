@@ -1,0 +1,31 @@
+[project]
+name = "document-parser"
+version = "0.1.0"
+description = "文档解析：FastAPI-based document parsing service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "annotated-doc==0.0.4",
+    "fastapi==0.136.0",
+    "httpx==0.28.1",
+    "matplotlib==3.10.5",
+    "numpy==2.2.6",
+    "pillow==11.3.0",
+    "pydantic==2.13.1",
+    "pymupdf==1.27.2.2",
+    "pypdf==6.10.2",
+    "python-multipart==0.0.26",
+    "requests==2.33.1",
+    "sympy==1.14.0",
+    "tqdm==4.66.0",
+    "uvicorn==0.44.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

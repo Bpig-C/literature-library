@@ -1,0 +1,43 @@
+[
+  {
+    "type": "text",
+    "text": "第一段正文。",
+    "page_idx": 0,
+    "bbox": [72.0, 100.0, 400.0, 120.0]
+  },
+  {
+    "type": "header",
+    "text": "标题一",
+    "page_idx": 0,
+    "bbox": [72.0, 50.0, 300.0, 75.0]
+  },
+  {
+    "type": "table",
+    "table_body": "<table><tr><td>A</td><td>B</td></tr></table>",
+    "table_caption": ["表1 示例表格"],
+    "table_footnote": [],
+    "img_path": "images/table_1.png",
+    "page_idx": 1,
+    "bbox": [72.0, 80.0, 500.0, 200.0]
+  },
+  {
+    "type": "image",
+    "img_path": "images/fig_1.png",
+    "image_caption": ["图1 示例图片"],
+    "image_footnote": [],
+    "page_idx": 1,
+    "bbox": [72.0, 220.0, 400.0, 350.0]
+  },
+  {
+    "type": "list",
+    "list_items": ["item A", "item B", "item C"],
+    "page_idx": 2,
+    "bbox": [72.0, 100.0, 300.0, 160.0]
+  },
+  {
+    "type": "unknown_type",
+    "text": "带 text 的未知类型节点",
+    "page_idx": 2,
+    "bbox": [72.0, 200.0, 300.0, 220.0]
+  }
+]

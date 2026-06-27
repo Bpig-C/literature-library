@@ -57,3 +57,9 @@ scripts/_scan_results.json
 
 # Documentation assets
 docs/issues/screenshots/
+
+# Secrets (MinerU API token etc.)
+.env
+
+# LLM 裁判调用日志（运行时，含 token 计数）
+llm_judge_calls.jsonl

@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# 编辑器
+.vscode
+.codex
+
+# Python 缓存
+__pycache__
+*.pyc
+*.pyo
+
+# 虚拟环境
+.venv
+venv
+env
+
+# 项目索引（开发工具）
+PROJECT_INDEX/
+init_index.sh
+update_index.sh
+repomix.config.json
+
+# 文档
+*.md
+unified_merge_schema_v4.md
+
+# 测试
+tests/
+test.py
+test.json
+
+# 运行时数据（容器启动后自动创建）
+Datas/
+logs/
+
+# 冗余依赖文件（镜像使用 requirements.minimal.txt）
+requirements.txt
+
+# 临时 / 测试文件
+1.pdf
+*.tar
+*.tar.gz

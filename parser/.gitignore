@@ -1,0 +1,48 @@
+# 忽略 node_modules 文件夹
+node_modules/
+third_party/
+
+# 忽略 build 或 dist 构建目录
+build/
+dist/
+
+# 忽略日志文件夹
+logs/
+
+# 忽略缓存文件夹
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 本地/内部文档与镜像包
+*.docx
+*.tar
+*.tar.gz
+
+
+# 忽略数据文件夹
+data/
+Datas/
+
+# 项目索引（自动生成，不提交）
+PROJECT_INDEX/history/
+
+# 编辑器与本地工具
+.vscode/
+.codex
+.codex_tmp/
+
+# 环境变量（含密钥）
+.env
+
+# 归档文档（历史文件，不追踪）
+docs/archive/
+
+# cloud client 解析产物（官网 API 下载的 zip 与解压目录）
+output/
+*.zip
