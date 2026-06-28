@@ -19,6 +19,10 @@ def cli_module(tmp_path, monkeypatch):
         shutil.copy(src, db)
     mod = importlib.import_module("scripts.literature_batch_parse")
     monkeypatch.setattr(mod, "DB_PATH", db)
+    # hermetic：run_pending(execute=True) 在调用 stub 的 route_and_parse 之前有
+    # token 闸门。设一个 dummy key 让闸门通过（key 永不真用——CloudClient/
+    # route_and_parse 均被各测试 stub）。避免依赖真实 .env（CI/干净检出无 .env）。
+    monkeypatch.setenv("MinerU_API_KEY", "test-dummy-not-used")
     return mod
 
 
