@@ -541,24 +541,24 @@ def _title_match(conn, title):
         return best, best_status
     return None, None
 
-def _classify(match_status):
-    """Map a matched work's read_status to resolution."""
-    if match_status == "quarantined":
-        return "needs_better_copy"
-    return "exact_hit"
-
 def light_gate(candidate: dict):
-    """Return (resolution, matched_work_id). No download. Candidate keys: arxiv_id, doi, title."""
+    """Return (resolution, matched_work_id). No download. Four states:
+    exact_hit (强键命中 active work) / needs_better_copy (任一匹配命中 quarantined work) /
+    title_candidate (仅标题命中 active work) / new (无匹配)。
+    注意：不能共用一个 _classify——强键命中与仅标题命中必须区分(exact_hit vs title_candidate)，
+    故在各 return 点内联分类。"""
     conn = get_conn()
     try:
         aid = normalize_arxiv_id(candidate.get("arxiv_id") or "")
         doi = normalize_doi(candidate.get("doi") or "")
+        # 强键路径：arxiv 先于 doi
         wid, status = _find_by_strong_key(conn, aid, doi)
         if wid:
-            return _classify(status), wid
+            return ("needs_better_copy" if status == "quarantined" else "exact_hit"), wid
+        # 仅标题回退：与 exact_hit 区分（无强键）
         wid, status = _title_match(conn, candidate.get("title") or "")
         if wid:
-            return _classify(status), wid
+            return ("needs_better_copy" if status == "quarantined" else "title_candidate"), wid
         return "new", None
     finally:
         conn.close()
