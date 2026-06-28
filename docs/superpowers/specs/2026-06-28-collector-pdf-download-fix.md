@@ -127,7 +127,7 @@ def _set_resolution(conn, cid, resolution):
 1. **单核三适配器**：下载逻辑只在 `heavy_gate`（core）里写一次。CLI（`resolve`）和 API（`POST /intake/resolve`）已委托 `resolve_pending` → `heavy_gate`，**不用改**。
 2. **collector 不直接写 works**：下载只写 `intake_candidates.local_pdf_path` + 缓存文件；晋升仍只走 `ingest_bridge.promote`。
 3. **保守并发**：`download_pdf` 已是单文件 30s 超时；`resolve_pending` 串行调即可。批量并发下载留 future（参考 document-parser 的并发约束）。
-4. **缓存路径**：`local_pdf_path` 存**相对 library root** 的路径（与 schema 注释一致），缓存目录 `_collector_cache/`。promote 后由 `ingest_bridge._do_ingest` `shutil.copy2` 到 inbox 接管；缓存幂等（重 download 同 id 可跳过已存在文件）。
+4. **缓存路径**：`local_pdf_path` 存**相对 library root** 的路径（与 schema 注释一致），缓存目录 `_collector_cache/`。promote 后由 `ingest_bridge._do_ingest` `shutil.copy2` 到 inbox 接管；重入保护在 heavy_gate 入口的 `if not pdf_path` 守卫——已 resolve 的候选不会重复下载；`download_pdf` 本身覆盖写，这是安全的且允许 `fetch_failed` 候选被重试 resolve。
 5. **`_quarantine` 不受影响**：下载的是新候选 PDF，不碰隔离体系。`needs_better_copy` 的替换流程（`replace_source`）是另一条路径，本次不动。
 
 ## 7. 测试要求（TDD，参照 `tests/test_gate_resolve_pending.py` 既有风格）

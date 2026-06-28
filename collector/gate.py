@@ -2,12 +2,15 @@
 """Two-stage pre-ingest dedup gate. Reuses literature_ingest normalization + jaccard.
 
 light_gate: metadata-only, decides whether to download. No file IO.
-heavy_gate: after download, SHA256 against source_files. (added in a later task)
+heavy_gate: download (if needed) + SHA256 against source_files.
 """
 from __future__ import annotations
-from pathlib import Path
+import api.db                                       # 惰性读 LIBRARY_ROOT（测试可 patch，避免 import 期绑定真实库目录）
 from api.db import get_conn
+from collector.fetch import download_pdf
+from collector.adapters import arxiv as arxiv_adapter
 from collector.normalize import normalize_arxiv_id, normalize_doi
+from collector.paths import resolve_pdf_path        # 共享：local_pdf_path 绝对/相对统一解析（gate + ingest_bridge）
 from scripts.literature_ingest import normalize_title, jaccard, sha256_file, utc_now
 
 TITLE_THRESHOLD = 0.9
@@ -71,18 +74,40 @@ def light_gate(candidate: dict):
 
 
 def heavy_gate(candidate_id: str):
-    """Download-bound SHA256 check. Reads candidate.local_pdf_path, hashes, looks up source_files.
-    Updates candidate.resolution + fetched_sha256. Returns resolution."""
+    """Download-bound SHA256 check. If the candidate has no local PDF yet, derive a PDF URL
+    by source and download it (arXiv only in v1) before hashing. Persists local_pdf_path,
+    fetched_sha256, resolution, resolved_at. Returns resolution in
+    {new, sha256_duplicate, fetch_failed}."""
     conn = get_conn()
     try:
-        row = conn.execute("SELECT local_pdf_path FROM intake_candidates WHERE id=?",
-                           (candidate_id,)).fetchone()
-        if not row or not row["local_pdf_path"]:
+        row = conn.execute("SELECT * FROM intake_candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not row:
             return "fetch_failed"
-        pdf = Path(row["local_pdf_path"])
-        if not pdf.exists():
+        pdf_path = row["local_pdf_path"]
+
+        # —— 补：缺 PDF 先下载（让 download-bound 名副其实）——
+        if not pdf_path:
+            url = _pdf_url_for(row)
+            if not url:
+                _set_resolution(conn, candidate_id, "fetch_failed")   # 无可用 PDF 源（如 github v1）
+                return "fetch_failed"
+            cache_dir = api.db.LIBRARY_ROOT / "_collector_cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            dest = cache_dir / f"{candidate_id}.pdf"
+            if not download_pdf(url, dest):
+                _set_resolution(conn, candidate_id, "fetch_failed")   # 下载失败要落库
+                return "fetch_failed"
+            pdf_path = dest.relative_to(api.db.LIBRARY_ROOT).as_posix()  # schema 约定：相对 library root，POSIX 分隔符可移植
+            conn.execute("UPDATE intake_candidates SET local_pdf_path=? WHERE id=?",
+                         (pdf_path, candidate_id))
+            conn.commit()
+
+        # —— SHA256 查 source_files（原逻辑，路径统一经 resolve_pdf_path）——
+        resolved = resolve_pdf_path(pdf_path)
+        if not resolved.exists():
+            _set_resolution(conn, candidate_id, "fetch_failed")
             return "fetch_failed"
-        digest = sha256_file(pdf)
+        digest = sha256_file(resolved)
         hit = conn.execute("SELECT 1 FROM source_files WHERE content_sha256=?", (digest,)).fetchone()
         resolution = "sha256_duplicate" if hit else "new"
         conn.execute(
@@ -92,6 +117,25 @@ def heavy_gate(candidate_id: str):
         return resolution
     finally:
         conn.close()
+
+
+def _pdf_url_for(row):
+    """按候选来源派生 PDF 直链。arxiv 用 arxiv.pdf_url；github v1 不支持（留 follow-up）。"""
+    if row["source_type"] == "arxiv" and row["arxiv_id"]:
+        return arxiv_adapter.pdf_url(row["arxiv_id"])
+    return None
+
+
+def _set_resolution(conn, candidate_id, resolution):
+    """落库 resolution + resolved_at（修掉旧 heavy_gate 缺 PDF 时不落库、resolve 谎报的 bug）。
+
+    fetch_failed 分支同时清掉 fetched_sha256，防止行出现 fetch_failed + 残留非空 sha
+    （成功路径的 sha 由 heavy_gate 主 UPDATE 写入，不经此函数）。
+    """
+    conn.execute(
+        "UPDATE intake_candidates SET resolution=?, resolved_at=?, fetched_sha256=NULL WHERE id=?",
+        (resolution, utc_now(), candidate_id))
+    conn.commit()
 
 
 def resolve_pending(ids=None, limit=None):
