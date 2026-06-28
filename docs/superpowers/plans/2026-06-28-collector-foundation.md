@@ -245,7 +245,12 @@ Expected: FAIL（`No module named 'collector'`）
 """Normalization helpers. Reuses literature_ingest logic (DRY); adds URL normalization."""
 from __future__ import annotations
 import re
-from scripts.literature_ingest import extract_arxiv_id, arxiv_work_key, normalize_doi
+# 别名导入避免与下方同名 wrapper 递归遮蔽
+from scripts.literature_ingest import (
+    extract_arxiv_id,
+    arxiv_work_key,
+    normalize_doi as _ingest_normalize_doi,
+)
 
 _GH_RE = re.compile(r"github\.com/([^/]+)/([^/#?]+?)(?:\.git|/)?$")
 
@@ -259,8 +264,8 @@ def normalize_arxiv_id(value: str):
     return arxiv_work_key(raw)  # strips trailing v\d+
 
 def normalize_doi(value: str):
-    """Delegate to literature_ingest.normalize_doi."""
-    return normalize_doi(value)
+    """Delegate to literature_ingest.normalize_doi (strips scheme/dx.doi.org, lowercases)."""
+    return _ingest_normalize_doi(value)
 
 def normalize_github_url(url: str):
     """Return 'owner/repo' canonical or None."""
