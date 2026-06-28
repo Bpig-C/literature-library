@@ -5,12 +5,12 @@ light_gate: metadata-only, decides whether to download. No file IO.
 heavy_gate: download (if needed) + SHA256 against source_files.
 """
 from __future__ import annotations
-from pathlib import Path
 import api.db                                       # 惰性读 LIBRARY_ROOT（测试可 patch，避免 import 期绑定真实库目录）
 from api.db import get_conn
 from collector.fetch import download_pdf
 from collector.adapters import arxiv as arxiv_adapter
 from collector.normalize import normalize_arxiv_id, normalize_doi
+from collector.paths import resolve_pdf_path        # 共享：local_pdf_path 绝对/相对统一解析（gate + ingest_bridge）
 from scripts.literature_ingest import normalize_title, jaccard, sha256_file, utc_now
 
 TITLE_THRESHOLD = 0.9
@@ -102,8 +102,8 @@ def heavy_gate(candidate_id: str):
                          (pdf_path, candidate_id))
             conn.commit()
 
-        # —— SHA256 查 source_files（原逻辑，路径统一经 _resolve_pdf_path）——
-        resolved = _resolve_pdf_path(pdf_path)
+        # —— SHA256 查 source_files（原逻辑，路径统一经 resolve_pdf_path）——
+        resolved = resolve_pdf_path(pdf_path)
         if not resolved.exists():
             _set_resolution(conn, candidate_id, "fetch_failed")
             return "fetch_failed"
@@ -119,15 +119,6 @@ def heavy_gate(candidate_id: str):
         conn.close()
 
 
-def _resolve_pdf_path(pdf_path):
-    """local_pdf_path 可能是绝对路径（旧候选/既有测试）或相对 library root（本次新下载）。
-    统一解析为可读路径。LIBRARY_ROOT 惰性读，测试可 patch。"""
-    p = Path(pdf_path)
-    if p.is_absolute():
-        return p
-    return api.db.LIBRARY_ROOT / p
-
-
 def _pdf_url_for(row):
     """按候选来源派生 PDF 直链。arxiv 用 arxiv.pdf_url；github v1 不支持（留 follow-up）。"""
     if row["source_type"] == "arxiv" and row["arxiv_id"]:
@@ -136,9 +127,13 @@ def _pdf_url_for(row):
 
 
 def _set_resolution(conn, candidate_id, resolution):
-    """落库 resolution + resolved_at（修掉旧 heavy_gate 缺 PDF 时不落库、resolve 谎报的 bug）。"""
+    """落库 resolution + resolved_at（修掉旧 heavy_gate 缺 PDF 时不落库、resolve 谎报的 bug）。
+
+    fetch_failed 分支同时清掉 fetched_sha256，防止行出现 fetch_failed + 残留非空 sha
+    （成功路径的 sha 由 heavy_gate 主 UPDATE 写入，不经此函数）。
+    """
     conn.execute(
-        "UPDATE intake_candidates SET resolution=?, resolved_at=? WHERE id=?",
+        "UPDATE intake_candidates SET resolution=?, resolved_at=?, fetched_sha256=NULL WHERE id=?",
         (resolution, utc_now(), candidate_id))
     conn.commit()
 

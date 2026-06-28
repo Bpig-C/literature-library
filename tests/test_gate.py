@@ -175,3 +175,41 @@ def test_heavy_gate_existing_pdf_does_not_redownload(tmp_path, monkeypatch):
     res = gate.heavy_gate("IC-1")
     assert res == "sha256_duplicate"
     assert called == []                         # 未重复下载
+
+
+# --- heavy_gate 边界分支测试（M5 行不存在 / M6 路径已设但文件缺失）---
+
+def test_heavy_gate_row_not_found_returns_fetch_failed(tmp_path, monkeypatch):
+    """候选 id 在库里不存在 → 不应 raise，直接返回 fetch_failed（无行可落库）。"""
+    db = _db_for_download(tmp_path)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    # 不调 download_pdf（无行不应触发下载）
+    monkeypatch.setattr(gate, "download_pdf", lambda url, dest: None)
+    res = gate.heavy_gate("IC-nonexistent")
+    assert res == "fetch_failed"
+
+def test_heavy_gate_path_set_but_file_missing_persists_fetch_failed(tmp_path, monkeypatch):
+    """local_pdf_path 已设（相对路径）但磁盘文件不存在 → 落库 fetch_failed，不谎报。"""
+    db = _db_for_download(tmp_path)
+    # 候选已有相对路径，但磁盘上没有对应文件（不创建 _collector_cache/missing.pdf）
+    c = sqlite3.connect(db)
+    c.execute("UPDATE intake_candidates SET local_pdf_path=? WHERE id='IC-1'",
+              ("_collector_cache/missing.pdf",))
+    c.commit(); c.close()
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    # 路径已设不应触发下载
+    called = []
+    monkeypatch.setattr(gate, "download_pdf", lambda url, dest: called.append(url))
+    res = gate.heavy_gate("IC-1")
+    assert res == "fetch_failed"
+    assert called == []                         # 路径已设，不下载
+    row = _fetch_row(db)
+    assert row["resolution"] == "fetch_failed"
+    assert row["resolved_at"]                    # 落库，不谎报
+    # I3：fetch_failed 应清掉 fetched_sha256（即便之前有残留）
+    assert row["fetched_sha256"] is None
+

@@ -13,6 +13,7 @@ import shutil
 import secrets
 from pathlib import Path
 from api.db import get_conn
+from collector.paths import resolve_pdf_path     # local_pdf_path 可能相对 library root（heavy_gate 现在这么写）
 import scripts.literature_ingest as ingest
 
 
@@ -30,7 +31,10 @@ def _do_ingest(candidate_id: str, library_root: Path) -> str:
         if not row:
             raise KeyError(candidate_id)
         local_pdf, arxiv_id, title = row["local_pdf_path"], row["arxiv_id"], row["title"]
-        if not local_pdf or not Path(local_pdf).exists():
+        if not local_pdf:
+            raise FileNotFoundError(f"candidate pdf missing: {local_pdf}")
+        resolved_pdf = resolve_pdf_path(local_pdf)
+        if not resolved_pdf.exists():
             raise FileNotFoundError(f"candidate pdf missing: {local_pdf}")
     finally:
         conn.close()
@@ -40,7 +44,7 @@ def _do_ingest(candidate_id: str, library_root: Path) -> str:
     inbox.mkdir(parents=True, exist_ok=True)
     fname = f"{arxiv_id or candidate_id}.pdf"
     staged = inbox / fname
-    shutil.copy2(local_pdf, staged)
+    shutil.copy2(resolved_pdf, staged)
 
     plan = ingest.build_ingest_plan(library_root, inbox_dir=inbox, dry_run=False)
     ingest.execute_plan(plan, no_backup=False, leave_inbox=False)
