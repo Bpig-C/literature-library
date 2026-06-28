@@ -6,7 +6,7 @@
 
         <div class="filter-bar">
           <label>审核态：
-            <select v-model="reviewFilter" @change="reload">
+            <select v-model="reviewFilter" @change="resetAndReload">
               <option value="pending">待审 ({{ stats.review?.pending || 0 }})</option>
               <option value="approved">已批准 ({{ stats.review?.approved || 0 }})</option>
               <option value="rejected">已拒绝 ({{ stats.review?.rejected || 0 }})</option>
@@ -14,14 +14,14 @@
             </select>
           </label>
           <label>判别：
-            <select v-model="resolutionFilter" @change="reload">
+            <select v-model="resolutionFilter" @change="resetAndReload">
               <option value="">全部</option>
               <option v-for="r in RESOLUTIONS" :key="r.key" :value="r.key">
                 {{ r.label }} ({{ stats.resolution?.[r.key] || 0 }})
               </option>
             </select>
           </label>
-          <input v-model="search" placeholder="搜标题/arXiv/ID" @keyup.enter="reload" class="search-input" />
+          <input v-model="search" placeholder="搜标题/arXiv/ID" @keyup.enter="resetAndReload" class="search-input" />
           <button @click="reload">刷新</button>
         </div>
 
@@ -66,7 +66,7 @@
         <table class="kv">
           <tr><th>arXiv</th><td>{{ selected.arxiv_id || '—' }}</td></tr>
           <tr><th>DOI</th><td>{{ selected.doi || '—' }}</td></tr>
-          <tr><th>来源 URL</th><td><a :href="selected.url_canonical" target="_blank">{{ selected.url_canonical }}</a></td></tr>
+          <tr><th>来源 URL</th><td><a :href="selected.url_canonical" target="_blank" rel="noopener noreferrer">{{ selected.url_canonical }}</a></td></tr>
           <tr><th>命中 work</th><td>
             <router-link v-if="selected.matched_work_id" :to="`/works/${selected.matched_work_id}`">{{ selected.matched_work_id }}</router-link>
             <span v-else>—</span>
@@ -135,6 +135,11 @@ const reviewLabel = k => REVIEW_LABEL[k] || k
 const promotableCount = computed(() =>
   candidates.value.filter(c => c.review_status === 'approved' && !c.ingested_work_id).length
 )
+
+function resetAndReload() {
+  page.value = 1
+  return reload()
+}
 
 async function reload() {
   const body = await getIntakeCandidates({
