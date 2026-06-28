@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..db import get_conn, LIBRARY_ROOT
 from collector import candidate_store, gate, ingest_bridge, topics
+from collector.collect import collect_once
 
 router = APIRouter()
 
@@ -199,3 +200,27 @@ def intake_topics_transition(body: TopicTransitionBody):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "topic": updated}
+
+
+class CollectBody(BaseModel):
+    topic_id: str | None = None
+    explicit_ids: list[str] | None = None
+    seed_paper_ids: list[str] | None = None
+    github_urls: list[str] | None = None
+
+
+@router.post("/intake/collect")
+def intake_collect(body: CollectBody):
+    """按主题/显式 ID/种子/GitHub 发起一次采集（委托 collect_once 单一 nucleus）。
+
+    触达网络。UI 的'按主题发起一次采集'入口；持续 loop 留 CLI。零编排逻辑——
+    全部委托 collector.collect.collect_once（§2 单核）。
+    """
+    if not (body.topic_id or body.explicit_ids or body.seed_paper_ids or body.github_urls):
+        raise HTTPException(400, "provide topic_id / explicit_ids / seed_paper_ids / github_urls")
+    try:
+        result = collect_once(topic_id=body.topic_id, explicit_ids=body.explicit_ids,
+                              seed_paper_ids=body.seed_paper_ids, github_urls=body.github_urls)
+    except ValueError as e:  # unknown topic 等
+        raise HTTPException(400, str(e))
+    return result

@@ -113,3 +113,24 @@ def test_amend_mapped_tags_without_status_change(tmp_path, monkeypatch):
     assert out["map_status"] == "mapped"
     assert out["mapped_tags"] == [{"group": "risk_domain", "value": "a"},
                                   {"group": "risk_domain", "value": "b"}]
+
+
+def test_list_topics_additive_columns(tmp_path, monkeypatch):
+    """list_topics 返回 additive 全列(UI 展示主题详情/4 判据/映射标签所需)。
+    既有 key(id/name/map_status/lifecycle)不变,另含 description/axis_hint 等。"""
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    topics.create(name="A", description="d1", explicit_ids=["2501.1"], axis_hint="risk_domain")
+    rows = topics.list_topics()
+    assert len(rows) == 1
+    r = rows[0]
+    # 既有 key 不破
+    for k in ("id", "name", "map_status", "lifecycle"):
+        assert k in r
+    # additive 新列
+    assert r["description"] == "d1"
+    assert r["axis_hint"] == "risk_domain"
+    assert r["query_def"] == {"explicit_ids": ["2501.1"], "seed_paper_ids": []}
+    assert "proposed_note" in r
+    assert "mapped_tags" in r

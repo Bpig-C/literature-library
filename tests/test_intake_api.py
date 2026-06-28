@@ -275,3 +275,41 @@ def test_topics_transition_bad_transition_400(monkeypatch):
     monkeypatch.setattr(t, "transition", boom)
     r = client.post("/api/intake/topics", json={"id": "CT-1", "to_map_status": "seedling"})
     assert r.status_code == 400
+
+
+# ---- POST /intake/collect (§2 薄适配: 委托 collector.collect.collect_once) ----
+def test_intake_collect_delegates(monkeypatch):
+    import api.routes.intake as intake_route
+    called = {}
+
+    def fake_once(*, topic_id=None, explicit_ids=None, seed_paper_ids=None, github_urls=None):
+        called["args"] = dict(topic_id=topic_id, explicit_ids=explicit_ids,
+                              seed_paper_ids=seed_paper_ids, github_urls=github_urls)
+        return {"created": 3}
+
+    # 路由侧 import 的 collect_once 需指向同桩
+    monkeypatch.setattr(intake_route, "collect_once", fake_once)
+
+    resp = client.post("/api/intake/collect",
+                       json={"topic_id": "T-seed", "explicit_ids": ["2501.1"]})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["created"] == 3
+    assert called["args"]["topic_id"] == "T-seed"
+    assert called["args"]["explicit_ids"] == ["2501.1"]
+
+
+def test_intake_collect_requires_selector():
+    # 必须给 topic_id / explicit_ids / seed_paper_ids / github_urls 之一
+    resp = client.post("/api/intake/collect", json={})
+    assert resp.status_code == 400
+
+
+def test_intake_collect_unknown_topic_400(monkeypatch):
+    import api.routes.intake as intake_route
+
+    def boom(**kw):
+        raise ValueError("unknown topic CT-nope")
+    monkeypatch.setattr(intake_route, "collect_once", boom)
+    resp = client.post("/api/intake/collect", json={"topic_id": "CT-nope"})
+    assert resp.status_code == 400
