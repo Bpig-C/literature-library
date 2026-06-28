@@ -7,7 +7,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from collector.normalize import normalize_arxiv_id
 
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"
 NS = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 
 def _http_get(url: str) -> bytes:
