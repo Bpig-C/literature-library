@@ -135,13 +135,32 @@ class PromoteBody(BaseModel):
 
 @router.post("/intake/promote")
 def promote_candidates(body: PromoteBody):
-    """A2 batch promote → reuse ingest_bridge (single nucleus). Collector never
-    writes works directly. Returns per-id results; a single failure does not
-    abort the batch."""
+    """A2 batch promote → only review_status='approved' candidates are promoted,
+    via ingest_bridge (single nucleus). Collector never writes works directly.
+    Returns per-id results; a single failure does not abort the batch.
+
+    The approved-guard enforces the human review gate: programmatic callers
+    cannot bypass A2 by promoting pending/rejected candidates directly."""
     if not body.ids:
         raise HTTPException(400, "ids is required and must be non-empty")
+    # A2 guard: resolve which of the requested ids are actually approved.
+    conn = get_conn()
+    try:
+        placeholders = ",".join("?" * len(body.ids))
+        approved = {
+            r["id"] for r in conn.execute(
+                f"SELECT id FROM intake_candidates "
+                f"WHERE id IN ({placeholders}) AND review_status='approved'",
+                list(body.ids),
+            ).fetchall()
+        }
+    finally:
+        conn.close()
     promoted, failed = [], []
     for cid in body.ids:
+        if cid not in approved:
+            failed.append({"id": cid, "error": "not approved (review_status != 'approved')"})
+            continue
         try:
             work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT)
             promoted.append({"id": cid, "work_id": work_id})
