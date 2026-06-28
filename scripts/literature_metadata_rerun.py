@@ -31,7 +31,7 @@ sys.path.insert(0, str(LIBRARY_ROOT))
 
 from api.db import DB_PATH, ensure_metadata_review_columns  # noqa: E402
 from api.risk import compute_risk  # noqa: E402
-import llm_judge  # noqa: E402  本地强模型走 opencode→MiMo（P3.5，弃用 ollama:11435）
+from scripts import llm_judge  # noqa: E402  opencode→MiMo；scripts 是包，勿裸 import（pytest 包导入会 ModuleNotFoundError）
 from scripts.literature_metadata_extract import (  # noqa: E402
     DEFAULT_MODEL,
     DEFAULT_URL,

@@ -31,7 +31,7 @@ DB_PATH = LIBRARY_ROOT / "literature.sqlite"
 sys.path.insert(0, str(LIBRARY_ROOT))
 from api.classification_ambiguity import compute_ambiguity  # noqa: E402
 from api.classification_vocab import VOCAB, validate_tag_value  # noqa: E402
-import llm_judge  # noqa: E402  本地强模型走 opencode→MiMo（P3.5，弃用 ollama:11435）
+from scripts import llm_judge  # noqa: E402  opencode→MiMo；scripts 是包，勿裸 import（pytest 包导入会 ModuleNotFoundError）
 
 DEFAULT_MODEL = llm_judge.DEFAULT_MODEL  # mimo/mimo-v2.5-pro
 DEFAULT_URL = "opencode→MiMo（经 llm_judge；--url 仅作占位，不再使用）"
