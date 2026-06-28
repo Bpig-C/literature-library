@@ -57,6 +57,8 @@ def _migrate_and_seed():
     """collection_topics is absent from live DB; create it on the temp copy + seed."""
     import scripts.migrate_add_collection_topics as mct
     mct.run(_tmp_db)
+    # Uses _conn() directly (not the patched get_conn symbol) so seeding is
+    # independent of the function-scoped _patch_get_conn fixture's ordering.
     conn = _conn()
     now = "2026-06-28T00:00:00"
     conn.execute("DELETE FROM intake_candidates")
@@ -149,3 +151,30 @@ def test_stats_counts():
     assert s["review"]["pending"] == 2
     assert s["review"]["approved"] == 1
     assert s["review"]["rejected"] == 1
+
+
+def test_resolve_delegates_to_core(monkeypatch):
+    import collector.gate as gate
+    called = []
+    def fake_resolve_pending(ids=None, limit=None):
+        called.append((ids, limit))
+        return [("IC-aaaa", "new")]
+    monkeypatch.setattr(gate, "resolve_pending", fake_resolve_pending)
+    r = client.post("/api/intake/resolve", json={})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["resolved"] == 1
+    assert body["results"] == [{"id": "IC-aaaa", "resolution": "new"}]
+    assert called[0] == (None, None)
+
+
+def test_resolve_with_ids_and_limit(monkeypatch):
+    import collector.gate as gate
+    seen = {}
+    def fake_resolve_pending(ids=None, limit=None):
+        seen["ids"], seen["limit"] = ids, limit
+        return []
+    monkeypatch.setattr(gate, "resolve_pending", fake_resolve_pending)
+    r = client.post("/api/intake/resolve", json={"ids": ["IC-aaaa"], "limit": 5})
+    assert r.status_code == 200
+    assert seen == {"ids": ["IC-aaaa"], "limit": 5}

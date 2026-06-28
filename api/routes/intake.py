@@ -96,3 +96,18 @@ def intake_stats():
         }
     finally:
         conn.close()
+
+
+class ResolveBody(BaseModel):
+    ids: list[str] | None = None
+    limit: int | None = None
+
+
+@router.post("/intake/resolve")
+def intake_resolve(body: ResolveBody):
+    """Trigger the heavy (SHA256) gate. Delegates entirely to gate.resolve_pending."""
+    results = gate.resolve_pending(ids=body.ids, limit=body.limit)
+    return {
+        "resolved": len(results),
+        "results": [{"id": cid, "resolution": res} for cid, res in results],
+    }
