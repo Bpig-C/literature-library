@@ -34,8 +34,8 @@ def _patch_get_conn():
 @pytest.fixture(autouse=True, scope="function")
 def _seed():
     """Function-scoped on purpose: trigger tests mutate rows (flip pending→succeeded/
-    failed), and `test_trigger_failure_does_not_abort_batch` uses all_pending=True
-    which needs BOTH seed rows still pending to satisfy failed>=1 AND succeeded>=1.
+    failed), and `test_trigger_failure_does_not_abort_batch` triggers BOTH seed rows
+    (explicit work_ids) and needs them still pending to satisfy failed==1 AND succeeded==1.
     INSERT OR REPLACE re-inserts before each test, resetting any prior mutation.
     Session-scoped _cleanup still tears down last (session teardown follows function)."""
     conn = _test_get_conn()

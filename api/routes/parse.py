@@ -179,6 +179,8 @@ def parse_trigger(body: TriggerBody):
                                 "status": "failed", "backend": "", "content_md_path": "",
                                 "error": str(e)})
                 fail += 1
+        # 单次事务提交（区别于 CLI 的逐条提交）：API 触发为交互式小批量，
+        # 失败由客户端重试 + list_pending_runs 只返回 pending 行兜底，无需逐条落盘。
         conn.commit()
         return {"triggered": len(results), "succeeded": succ, "failed": fail, "results": results}
     finally:
