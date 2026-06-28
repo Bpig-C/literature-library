@@ -18,14 +18,11 @@ parser/core/mineru/mineru_op 会改用 WebClient/LocalClient。
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sqlite3
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 LIBRARY_ROOT = Path(__file__).resolve().parents[1]
 PARSER_ROOT = LIBRARY_ROOT / "parser"
@@ -33,8 +30,8 @@ if str(PARSER_ROOT) not in sys.path:
     sys.path.insert(0, str(PARSER_ROOT))
 
 from core.mineru.router import route_and_parse  # noqa: E402  (language 映射在 nucleus 内)
+from scripts.migrate_sync_parse_status import sync_work_parse_status  # noqa: E402
 
-LEDGER_PATH = LIBRARY_ROOT / "parse_ledger.json"
 DB_PATH = LIBRARY_ROOT / "literature.sqlite"
 ENV_PATH = LIBRARY_ROOT / ".env"
 
@@ -61,22 +58,30 @@ def load_env_file() -> None:
             os.environ[key] = value
 
 
-def load_ledger() -> dict[str, Any]:
-    return json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
-
-
-def save_ledger(ledger: dict[str, Any]) -> None:
-    tmp = LEDGER_PATH.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(LEDGER_PATH)
-
-
-def get_pending(ledger: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    return [
-        (sf_id, run)
-        for sf_id, run in ledger.get("runs", {}).items()
-        if run.get("status") == "pending"
-    ]
+def get_pending_db(limit: int | None = None) -> list[dict]:
+    """从 literature_parse_runs 读 status='pending' 的待解析任务（DB 唯一源）。"""
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT pr.source_file_id, pr.work_id, pr.source_path, pr.output_dir,
+                      w.language AS language
+               FROM literature_parse_runs pr
+               LEFT JOIN works w ON w.id = pr.work_id
+               WHERE pr.status = 'pending'
+               ORDER BY pr.id"""
+        ).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["output_dir"] = d["output_dir"] or ""
+        d["language"] = d.get("language") or ""
+        out.append(d)
+    if limit:
+        out = out[:limit]
+    return out
 
 
 def work_language(work_id: str) -> str:
@@ -92,38 +97,112 @@ def work_language(work_id: str) -> str:
         return ""
 
 
-def update_db(
-    sf_id: str,
-    status: str,
-    task_id: str,
-    now: str,
-    error: str = "",
-    content_md_path: str = "",
-    content_json_path: str = "",
-    package_path: str = "",
-    backend: str = "",
-) -> None:
-    conn = sqlite3.connect(str(DB_PATH))
-    try:
-        if backend:
-            conn.execute(
-                """UPDATE literature_parse_runs
-                   SET status=?, task_id=?, finished_at=?, error=?,
-                       content_md_path=?, content_json_path=?, package_path=?, backend=?
-                   WHERE id=?""",
-                (status, task_id, now, error, content_md_path, content_json_path, package_path, backend, f"LPR-{sf_id}"),
-            )
-        else:
-            conn.execute(
-                """UPDATE literature_parse_runs
-                   SET status=?, task_id=?, finished_at=?, error=?,
-                       content_md_path=?, content_json_path=?, package_path=?
-                   WHERE id=?""",
-                (status, task_id, now, error, content_md_path, content_json_path, package_path, f"LPR-{sf_id}"),
-            )
-        conn.commit()
-    finally:
-        conn.close()
+def _open_conn() -> sqlite3.Connection:
+    return sqlite3.connect(str(DB_PATH))
+
+
+def _update_run_db(conn, sf_id, status, task_id, now, error="", content_md_path="",
+                   content_json_path="", package_path="", backend="") -> None:
+    """写 parse_runs 单行。"""
+    if backend:
+        conn.execute(
+            """UPDATE literature_parse_runs
+               SET status=?, task_id=?, finished_at=?, error=?,
+                   content_md_path=?, content_json_path=?, package_path=?, backend=?
+               WHERE id=?""",
+            (status, task_id, now, error, content_md_path, content_json_path,
+             package_path, backend, f"LPR-{sf_id}"),
+        )
+    else:
+        conn.execute(
+            """UPDATE literature_parse_runs
+               SET status=?, task_id=?, finished_at=?, error=?,
+                   content_md_path=?, content_json_path=?, package_path=?
+               WHERE id=?""",
+            (status, task_id, now, error, content_md_path, content_json_path,
+             package_path, f"LPR-{sf_id}"),
+        )
+
+
+def run_pending(execute: bool, limit: int | None = None) -> int:
+    """解析所有 status='pending' 的 parse_run。DB 唯一状态源。
+
+    execute=False → dry-run 仅列出；execute=True → 串行 route_and_parse，
+    逐条 UPDATE parse_runs + sync_work_parse_status。
+    """
+    load_env_file()
+    from core.mineru.cloud_client import CloudClient  # noqa: PLC0415
+    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
+
+    pending = get_pending_db(limit=limit)
+    if not pending:
+        print("No pending parse tasks.")
+        return 0
+
+    print(f"{'[DRY-RUN] ' if not execute else ''}Pending: {len(pending)} files "
+          f"(route: 文本层→PyMuPDF / 扫描型→cloud vlm)")
+    for p in pending:
+        print(f"  {p['source_file_id']}: {p['source_path']}")
+
+    if not execute:
+        return 0
+
+    token_present = bool(os.getenv("MinerU_API_KEY") or os.getenv("MINERU_API_TOKEN"))
+    if not token_present:
+        print("ERROR: MinerU_API_KEY 未在环境/根目录 .env 中找到，无法执行 cloud 解析。")
+        return 2
+
+    client = CloudClient()
+    pymupdf_client = PyMuPDFClient()
+    success = failed = 0
+    for p in pending:
+        source_path = p["source_path"]
+        output_dir = Path(p["output_dir"])
+        language = p.get("language") or work_language(p.get("work_id", ""))
+        print(f"\n[{p['source_file_id']}] route+parse: {Path(source_path).name} (lang={language})")
+        conn = _open_conn()
+        try:
+            try:
+                ok, msg, backend_used = route_and_parse(
+                    client, pymupdf_client, source_path, output_dir, language
+                )
+                now = utc_now()
+                if ok:
+                    content_md = output_dir / "content.md"
+                    content_json = output_dir / "content.json"
+                    package = output_dir / "package.zip"
+                    md_text = content_md.read_text(encoding="utf-8") if content_md.exists() else ""
+                    batch_id = getattr(client, "last_batch_id", "") or ""
+                    _update_run_db(
+                        conn, p["source_file_id"], "succeeded", batch_id, now,
+                        content_md_path=str(content_md),
+                        content_json_path=str(content_json),
+                        package_path=str(package) if package.exists() else "",
+                        backend=backend_used,
+                    )
+                    success += 1
+                    print(f"  OK ({len(md_text)} chars md) backend={backend_used} batch_id={batch_id}")
+                else:
+                    batch_id = getattr(client, "last_batch_id", "") or ""
+                    _update_run_db(
+                        conn, p["source_file_id"], "failed", batch_id, now,
+                        error=msg, backend="vlm",
+                    )
+                    failed += 1
+                    print(f"  FAILED: {msg}")
+            except Exception as exc:  # noqa: BLE001
+                now = utc_now()
+                _update_run_db(conn, p["source_file_id"], "failed", "", now, error=str(exc))
+                failed += 1
+                print(f"  ERROR: {exc}")
+            # 同步 works.parse_status（复用既有 helper，状态源统一）
+            sync_work_parse_status(conn, p["work_id"])
+            conn.commit()
+        finally:
+            conn.close()
+
+    print(f"\nDone: {success} succeeded, {failed} failed")
+    return 0 if failed == 0 else 1
 
 
 def main() -> int:
@@ -131,97 +210,7 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="Actually parse. Default is dry-run.")
     parser.add_argument("--limit", type=int, default=None, help="Max number of files to parse.")
     args = parser.parse_args()
-
-    load_env_file()
-
-    # 延迟导入：确保 .env 已载入（token 进入 os.environ）后再构造 client
-    from core.mineru.cloud_client import CloudClient  # noqa: PLC0415
-
-    token_present = bool(os.getenv("MinerU_API_KEY") or os.getenv("MINERU_API_TOKEN"))
-    if args.execute and not token_present:
-        print("ERROR: MinerU_API_KEY 未在环境/根目录 .env 中找到，无法执行 cloud 解析。")
-        return 2
-
-    client = CloudClient()
-
-    ledger = load_ledger()
-    pending = get_pending(ledger)
-    if args.limit:
-        pending = pending[: args.limit]
-
-    if not pending:
-        print("No pending parse tasks.")
-        return 0
-
-    print(f"{'[DRY-RUN] ' if not args.execute else ''}Pending: {len(pending)} files (route: 文本层→PyMuPDF / 扫描型→cloud vlm)")
-    for sf_id, run in pending:
-        print(f"  {sf_id}: {run['source_path']}")
-
-    if not args.execute:
-        return 0
-
-    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
-    pymupdf_client = PyMuPDFClient()
-
-    success = 0
-    failed = 0
-    for sf_id, run in pending:
-        source_path = run["source_path"]
-        output_dir = Path(run["output_dir"])
-        language = work_language(run.get("work_id", ""))
-        print(f"\n[{sf_id}] route+parse: {Path(source_path).name} (lang={language})")
-        try:
-            ok, msg, backend_used = route_and_parse(client, pymupdf_client, source_path, output_dir, language)
-            now = utc_now()
-            if ok:
-                content_md = output_dir / "content.md"
-                content_json = output_dir / "content.json"
-                package = output_dir / "package.zip"
-                md_text = content_md.read_text(encoding="utf-8") if content_md.exists() else ""
-                batch_id = getattr(client, "last_batch_id", "") or run.get("task_id", "")
-                run["status"] = "succeeded"
-                run["backend"] = backend_used
-                run["task_id"] = batch_id
-                run["finished_at"] = now
-                run["updated_at"] = now
-                run["error"] = ""
-                run["content_md_path"] = str(content_md)
-                run["content_json_path"] = str(content_json)
-                run["package_path"] = str(package) if package.exists() else ""
-                update_db(
-                    sf_id, "succeeded", batch_id, now,
-                    content_md_path=str(content_md),
-                    content_json_path=str(content_json),
-                    package_path=run["package_path"],
-                    backend=backend_used,
-                )
-                success += 1
-                print(f"  OK ({len(md_text)} chars md) backend={backend_used} batch_id={batch_id}")
-            else:
-                run["status"] = "failed"
-                run["backend"] = "vlm"
-                run["task_id"] = getattr(client, "last_batch_id", "") or run.get("task_id", "")
-                run["finished_at"] = now
-                run["updated_at"] = now
-                run["error"] = msg
-                update_db(sf_id, "failed", run["task_id"], now, msg, backend="vlm")
-                failed += 1
-                print(f"  FAILED: {msg}")
-            # 每条落盘，避免中途崩溃丢失进度/重复消耗配额
-            save_ledger(ledger)
-        except Exception as exc:  # noqa: BLE001
-            now = utc_now()
-            run["status"] = "failed"
-            run["finished_at"] = now
-            run["updated_at"] = now
-            run["error"] = str(exc)
-            update_db(sf_id, "failed", run.get("task_id", ""), now, str(exc))
-            failed += 1
-            print(f"  ERROR: {exc}")
-
-    save_ledger(ledger)
-    print(f"\nDone: {success} succeeded, {failed} failed")
-    return 0 if failed == 0 else 1
+    return run_pending(execute=args.execute, limit=args.limit)
 
 
 # ---- LEGACY: 自部署 MinerU :18200 /tasks 异步 API（降级参考，cloud 模式不使用）----
