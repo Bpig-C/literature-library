@@ -7,6 +7,7 @@ import Relations from './views/Relations.vue'
 import MetadataReview from './views/MetadataReview.vue'
 import ClassificationReview from './views/ClassificationReview.vue'
 import IntakeReview from './views/IntakeReview.vue'
+import TopicsReview from './views/TopicsReview.vue'
 
 const routes = [
   { path: '/', component: Dashboard },
@@ -17,6 +18,7 @@ const routes = [
   { path: '/metadata', component: MetadataReview },
   { path: '/classification', component: ClassificationReview },
   { path: '/intake', component: IntakeReview },
+  { path: '/topics', component: TopicsReview },
 ]
 
 export default createRouter({

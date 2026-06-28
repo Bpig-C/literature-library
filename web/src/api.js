@@ -210,6 +210,20 @@ export function getIntakeTopics(params = {}) {
   return request(`/intake/topics${q ? '?' + q : ''}`)
 }
 
+// 主题成熟度闸门(seedling→proposed→mapped): POST /intake/topics
+// body 形状对齐 api/routes/intake.py 的 TopicTransitionBody(id + to_map_status/...)
+export function transitionTopic(id, body) {
+  return request('/intake/topics', {
+    method: 'POST',
+    body: JSON.stringify({ id, ...body }),
+  })
+}
+
+// 按主题发起一次采集(委托 collect_once): POST /intake/collect
+export function collectIntake(body) {
+  return request('/intake/collect', { method: 'POST', body: JSON.stringify(body) })
+}
+
 // ---- Parse (P3.5 document-parser trigger) ----
 export function parseTrigger(payload) {
   return request('/parse/trigger', { method: 'POST', body: JSON.stringify(payload) })
