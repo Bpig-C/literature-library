@@ -622,7 +622,8 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 
 > 优先级：**在 P6 collector 之前**。collector 一旦铺量采集，解析链路必须先稳定可靠，否则会堆积 pending。
 > 状态：**已完成（2026-06-28）**。设计见 `docs/superpowers/specs/2026-06-27-parser-subproject-design.md`，执行审计见 `docs/superpowers/reviews/2026-06-27-parser-subproject-audit.md`。
-> **Phase B 追加（2026-06-28，merge `d42455a`）**：parser 子项目此前仅 CLI 可用，现已补齐 API+UI 两链——`POST /api/parse/trigger` + `GET /api/parse/status`（薄适配器，键控 `literature_parse_runs`）+ WorkDetail 触发按钮。D13 路由提升为单核 `parser/core/mineru/router.py`（CLI/API/UI 三收敛）。真实 cloud vlm smoke 跑通（W-arxiv-2506.19248 → 112KB content.md）。见总规划 `docs/superpowers/specs/2026-06-28-three-chain-completeness-plan.md` 矩阵 parser-E/F（CLI/API/UI 全 ✅）。**遗留 → Phase D**：CLI 读 `parse_ledger.json` 而 API/UI 读 `literature_parse_runs` 的状态源不一致，待统一。
+> **Phase B 追加（2026-06-28，merge `d42455a`）**：parser 子项目此前仅 CLI 可用，现已补齐 API+UI 两链——`POST /api/parse/trigger` + `GET /api/parse/status`（薄适配器，键控 `literature_parse_runs`）+ WorkDetail 触发按钮。D13 路由提升为单核 `parser/core/mineru/router.py`（CLI/API/UI 三收敛）。真实 cloud vlm smoke 跑通（W-arxiv-2506.19248 → 112KB content.md）。见总规划 `docs/superpowers/specs/2026-06-28-three-chain-completeness-plan.md` 矩阵 parser-E/F（CLI/API/UI 全 ✅）。
+> **遗留 → Phase D ✅ 已解决（2026-06-28，分支 `fix/phaseD-status-unify`，待合并）**：原"CLI 读 `parse_ledger.json` 而 API/UI 读 `literature_parse_runs` 的状态源不一致"已统一——新 CLI 改 DB-only（删 ledger 读写、新增 `get_pending_db`/`run_pending`、复用 `sync_work_parse_status`），ingest 删 `update_ledger` 停止双写，healthcheck/dashboard 脱离 ledger，旧自部署 CLI 归档，`parse_ledger.json` 移至 `_archive/`。`literature_parse_runs` 成为唯一状态源。
 
 **现状**：文档解析依赖仓库外的 `D:\06_tools\document-parser` 项目（本地封装模块 + 远程自部署 MinerU，端口 18200/18201）。这造成两个问题：解析能力不在版本控制内、依赖自部署 MinerU 的运维成本。
 
