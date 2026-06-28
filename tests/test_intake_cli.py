@@ -62,11 +62,14 @@ def test_resolve_default_only_handles_new_and_better_copy(tmp_path, monkeypatch)
     c.execute("INSERT INTO intake_candidates (id,resolution) VALUES ('IC-2','exact_hit')")
     c.execute("INSERT INTO intake_candidates (id,resolution) VALUES ('IC-3','needs_better_copy')")
     c.commit(); c.close()
-    monkeypatch.setattr(cli, "get_conn", lambda: sqlite3.connect(db_path))
+    # CLI resolve 现委托 gate.resolve_pending（内部用 gate.get_conn + gate.heavy_gate）。
+    # 用 Row factory 以匹配 api.db.get_conn 语义。
+    from collector import gate
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db_path))
     resolved = []
-    def fake_resolve_one(cid):
+    def fake_heavy_gate(cid):
         resolved.append(cid); return "new"
-    monkeypatch.setattr(cli, "resolve_one", fake_resolve_one)
+    monkeypatch.setattr(gate, "heavy_gate", fake_heavy_gate)
     cli.resolve()
     assert set(resolved) == {"IC-1", "IC-3"}   # exact_hit 不下载
 

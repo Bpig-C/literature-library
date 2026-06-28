@@ -92,3 +92,35 @@ def heavy_gate(candidate_id: str):
         return resolution
     finally:
         conn.close()
+
+
+def resolve_pending(ids=None, limit=None):
+    """Run the heavy (SHA256) gate on candidates. Returns list of (candidate_id, resolution).
+
+    Selection (when ids is None): only candidates whose resolution is
+    'new' or 'needs_better_copy' — the ones worth downloading. exact_hit /
+    sha256_duplicate need no download.
+
+    This is the single nucleus for resolve scheduling; CLI and API both
+    delegate here. heavy_gate manages its own connection and commit.
+    """
+    conn = get_conn()
+    try:
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            rows = conn.execute(
+                f"SELECT id FROM intake_candidates WHERE id IN ({placeholders})", list(ids)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id FROM intake_candidates WHERE resolution IN ('new','needs_better_copy')"
+            ).fetchall()
+        if limit:
+            rows = rows[:limit]
+        ids_to_run = [r["id"] for r in rows]
+    finally:
+        conn.close()
+    results = []
+    for cid in ids_to_run:
+        results.append((cid, heavy_gate(cid)))
+    return results
