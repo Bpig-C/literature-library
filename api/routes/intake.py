@@ -148,3 +148,35 @@ def promote_candidates(body: PromoteBody):
         except Exception as e:  # noqa: BLE001 — batch must not abort on one failure
             failed.append({"id": cid, "error": str(e)})
     return {"promoted": promoted, "failed": failed}
+
+
+@router.get("/intake/topics")
+def intake_topics(map_status: str | None = Query(None), lifecycle: str | None = Query(None)):
+    return {"topics": topics.list_topics(map_status=map_status, lifecycle=lifecycle)}
+
+
+class TopicTransitionBody(BaseModel):
+    id: str
+    to_map_status: str | None = None
+    to_lifecycle: str | None = None
+    mapped_tags: list | None = None
+    proposed_note: str | None = None
+
+
+@router.post("/intake/topics")
+def intake_topics_transition(body: TopicTransitionBody):
+    """Maturity transition (seedling→proposed→mapped). Delegates to topics.transition;
+    collector never writes the ontology vocab — it only records intent/mapping."""
+    try:
+        updated = topics.transition(
+            body.id,
+            to_map_status=body.to_map_status,
+            to_lifecycle=body.to_lifecycle,
+            mapped_tags=body.mapped_tags,
+            proposed_note=body.proposed_note,
+        )
+    except KeyError:
+        raise HTTPException(404, f"topic not found: {body.id}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "topic": updated}

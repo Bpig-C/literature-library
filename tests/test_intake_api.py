@@ -242,3 +242,37 @@ def test_promote_collects_failures(monkeypatch):
 def test_promote_empty_ids_400():
     r = client.post("/api/intake/promote", json={"ids": []})
     assert r.status_code == 400
+
+
+def test_topics_list_delegates(monkeypatch):
+    import collector.topics as t
+    monkeypatch.setattr(t, "list_topics",
+                        lambda *, map_status=None, lifecycle=None: [
+                            {"id": "CT-1", "name": "测试主题", "map_status": "seedling", "lifecycle": "active"}])
+    r = client.get("/api/intake/topics", params={"map_status": "seedling"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["topics"][0]["id"] == "CT-1"
+
+
+def test_topics_transition_delegates(monkeypatch):
+    import collector.topics as t
+    seen = {}
+    def fake_transition(tid, *, to_map_status=None, to_lifecycle=None,
+                        mapped_tags=None, proposed_note=None):
+        seen.update(tid=tid, to_map_status=to_map_status, proposed_note=proposed_note)
+        return {"id": tid, "map_status": to_map_status}
+    monkeypatch.setattr(t, "transition", fake_transition)
+    r = client.post("/api/intake/topics", json={"id": "CT-1", "to_map_status": "proposed",
+                                                "proposed_note": "criteria..."})
+    assert r.status_code == 200
+    assert seen == {"tid": "CT-1", "to_map_status": "proposed", "proposed_note": "criteria..."}
+
+
+def test_topics_transition_bad_transition_400(monkeypatch):
+    import collector.topics as t
+    def boom(tid, **kw):
+        raise ValueError("forbidden map_status transition mapped->seedling")
+    monkeypatch.setattr(t, "transition", boom)
+    r = client.post("/api/intake/topics", json={"id": "CT-1", "to_map_status": "seedling"})
+    assert r.status_code == 400
