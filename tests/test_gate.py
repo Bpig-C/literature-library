@@ -77,3 +77,101 @@ def test_heavy_gate_new_confirmed(tmp_path, monkeypatch):
     monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
     res = gate.heavy_gate("IC-1")
     assert res == "new"
+
+
+# --- heavy_gate download-branch tests ---
+import api.db
+from pathlib import Path
+
+def _db_for_download(tmp_path, *, source_type="arxiv", arxiv_id="2212.08073", source_shas=()):
+    db = tmp_path / "literature.sqlite"; sqlite3.connect(db).close()
+    c = sqlite3.connect(db)
+    c.execute("""CREATE TABLE source_files (id TEXT PRIMARY KEY, content_sha256 TEXT)""")
+    c.execute("""CREATE TABLE intake_candidates (id TEXT PRIMARY KEY, source_type TEXT, arxiv_id TEXT,
+        local_pdf_path TEXT, fetched_sha256 TEXT, resolution TEXT, resolved_at TEXT)""")
+    c.execute("INSERT INTO intake_candidates (id, source_type, arxiv_id, resolution) VALUES ('IC-1', ?, ?, 'new')",
+              (source_type, arxiv_id))
+    for i, sha in enumerate(source_shas):
+        c.execute("INSERT INTO source_files VALUES (?,?)", (f"SF-{i}", sha))
+    c.commit(); c.close()
+    return db
+
+def _fetch_row(db, cid="IC-1"):
+    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+    row = c.execute("SELECT * FROM intake_candidates WHERE id=?", (cid,)).fetchone()
+    c.close(); return row
+
+def test_heavy_gate_downloads_arxiv_then_new(tmp_path, monkeypatch):
+    db = _db_for_download(tmp_path)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    def fake_download(url, dest):
+        Path(dest).write_bytes(b"%PDF-1.4 fake-downloaded")
+        return dest
+    monkeypatch.setattr(gate, "download_pdf", fake_download)
+    res = gate.heavy_gate("IC-1")
+    assert res == "new"
+    row = _fetch_row(db)
+    assert row["local_pdf_path"] == "_collector_cache/IC-1.pdf"
+    assert row["fetched_sha256"] and len(row["fetched_sha256"]) == 64
+    assert row["resolved_at"]
+
+def test_heavy_gate_download_matches_source_file_sha256_duplicate(tmp_path, monkeypatch):
+    # 用与 fake_download 相同的内容算 sha，预置进 source_files
+    content = b"%PDF-1.4 fake-downloaded"
+    expected_sha = hashlib.sha256(content).hexdigest()
+    db = _db_for_download(tmp_path, source_shas=[expected_sha])
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    def fake_download(url, dest):
+        Path(dest).write_bytes(content)
+        return dest
+    monkeypatch.setattr(gate, "download_pdf", fake_download)
+    res = gate.heavy_gate("IC-1")
+    assert res == "sha256_duplicate"
+
+def test_heavy_gate_download_fails_persists_fetch_failed(tmp_path, monkeypatch):
+    db = _db_for_download(tmp_path)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    monkeypatch.setattr(gate, "download_pdf", lambda url, dest: None)  # 下载失败
+    res = gate.heavy_gate("IC-1")
+    assert res == "fetch_failed"
+    row = _fetch_row(db)
+    assert row["resolution"] == "fetch_failed"
+    assert row["resolved_at"]                  # 落库，不再谎报
+    assert not row["local_pdf_path"]           # 下载失败，local_pdf_path 仍 NULL
+
+def test_heavy_gate_github_no_arxiv_id_fetch_failed(tmp_path, monkeypatch):
+    db = _db_for_download(tmp_path, source_type="github", arxiv_id=None)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    called = []
+    monkeypatch.setattr(gate, "download_pdf", lambda url, dest: called.append(url))
+    res = gate.heavy_gate("IC-1")
+    assert res == "fetch_failed"
+    assert called == []                         # github v1 无 PDF 直链，根本不尝试下载
+    row = _fetch_row(db)
+    assert row["resolution"] == "fetch_failed"
+    assert row["resolved_at"]
+
+def test_heavy_gate_existing_pdf_does_not_redownload(tmp_path, monkeypatch):
+    # 候选已有绝对路径 local_pdf_path（既有测试风格），不应触发 download_pdf
+    sha = _make_pdf(tmp_path / "a.pdf")
+    db = _db_for_download(tmp_path, source_shas=[sha])
+    # 把候选的 local_pdf_path 改成既有绝对路径
+    c = sqlite3.connect(db)
+    c.execute("UPDATE intake_candidates SET local_pdf_path=? WHERE id='IC-1'", (str(tmp_path / "a.pdf"),))
+    c.commit(); c.close()
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
+    monkeypatch.setattr(api.db, "DB_PATH", db)
+    monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
+    called = []
+    monkeypatch.setattr(gate, "download_pdf", lambda url, dest: called.append(url))
+    res = gate.heavy_gate("IC-1")
+    assert res == "sha256_duplicate"
+    assert called == []                         # 未重复下载
