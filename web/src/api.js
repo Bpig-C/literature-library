@@ -180,3 +180,32 @@ export function quarantineFromClassificationReview(extId, reason) {
     body: JSON.stringify({ reason }),
   })
 }
+
+// ---- Intake (collector A2 review) ----
+export function getIntakeCandidates(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/intake/candidates${q ? '?' + q : ''}`)
+}
+
+export function getIntakeStats() {
+  return request('/intake/stats')
+}
+
+export function resolveIntake(data = {}) {
+  return request('/intake/resolve', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function reviewCandidate(id, review_status, note = '') {
+  return request(`/intake/candidates/${encodeURIComponent(id)}/review`, {
+    method: 'PATCH', body: JSON.stringify({ review_status, note }),
+  })
+}
+
+export function promoteCandidates(ids) {
+  return request('/intake/promote', { method: 'POST', body: JSON.stringify({ ids }) })
+}
+
+export function getIntakeTopics(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/intake/topics${q ? '?' + q : ''}`)
+}
