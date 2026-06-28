@@ -84,7 +84,7 @@ def intake_stats():
             "SELECT resolution, COUNT(*) n FROM intake_candidates GROUP BY resolution"
         ).fetchall():
             resolution[row["resolution"]] = row["n"]
-        review = {"pending": 0, "approved": 0, "rejected": 0}
+        review = {s: 0 for s in candidate_store.VALID_REVIEW}
         for row in conn.execute(
             "SELECT review_status, COUNT(*) n FROM intake_candidates GROUP BY review_status"
         ).fetchall():
