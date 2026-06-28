@@ -32,6 +32,8 @@ PARSER_ROOT = LIBRARY_ROOT / "parser"
 if str(PARSER_ROOT) not in sys.path:
     sys.path.insert(0, str(PARSER_ROOT))
 
+from core.mineru.router import route_and_parse, map_mineru_language  # noqa: E402
+
 LEDGER_PATH = LIBRARY_ROOT / "parse_ledger.json"
 DB_PATH = LIBRARY_ROOT / "literature.sqlite"
 ENV_PATH = LIBRARY_ROOT / ".env"
@@ -78,78 +80,16 @@ def get_pending(ledger: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
 
 
 def work_language(work_id: str) -> str:
-    """从 works 表取文献语言，供官网 API language 参数使用；缺失回落 en。"""
+    """从 works 表取 literature 语言原值（映射由 router.map_mineru_language 负责）。"""
     try:
         conn = sqlite3.connect(str(DB_PATH))
         try:
-            row = conn.execute(
-                "SELECT language FROM works WHERE id=?", (work_id,)
-            ).fetchone()
-            lang = (row[0] if row else "") or ""
-            lang = lang.strip().lower()
-            # MinerU language 取值是 ch/en/...；映射常见值
-            if lang in ("", "unknown"):
-                return "en"
-            if lang.startswith("zh") or lang in ("chinese", "中文"):
-                return "ch"
-            if lang.startswith("en") or lang in ("english",):
-                return "en"
-            return lang[:2]
+            row = conn.execute("SELECT language FROM works WHERE id=?", (work_id,)).fetchone()
+            return (row[0] if row else "") or ""
         finally:
             conn.close()
     except Exception:
-        return "en"
-
-
-def route_and_parse(
-    cloud_client: Any,
-    pymupdf_client: Any,
-    source_path: str,
-    output_dir: Path,
-    language: str,
-) -> tuple[bool, str, str]:
-    """二元路由（P3.5 Phase E）：
-    - 有文本层(born-digital) → PyMuPDF 本地抽取；质检不合格 → 回退 cloud vlm。
-    - 无文本层(扫描型) → cloud vlm。
-    返回 (ok, msg, backend_used ∈ {"pymupdf","vlm"})。pipeline 不再使用。
-    """
-    from core.mineru.base_client import ParseRequest  # noqa: PLC0415
-    from core.mineru.pymupdf_client import has_text_layer  # noqa: PLC0415
-
-    pdf_path = Path(source_path)
-
-    def _cloud_vlm() -> tuple[bool, str]:
-        req = ParseRequest(
-            pdf_path=pdf_path,
-            output_dir=Path(output_dir),
-            backend="vlm",
-            lang_list=language or "en",
-            formula_enable=True,
-            table_enable=True,
-        )
-        return cloud_client.parse_pdf(req)
-
-    # 1) 文本层 → PyMuPDF
-    if has_text_layer(pdf_path):
-        ok, msg = pymupdf_client.parse_pdf(
-            ParseRequest(pdf_path=pdf_path, output_dir=Path(output_dir))
-        )
-        if ok and PyMuPDFClient_quality_ok(pymupdf_client):
-            return True, msg, "pymupdf"
-        # 质检不合格 → 回退 cloud vlm
-        print(f"  PyMuPDF 质检不合格({pymupdf_client.last_metrics})，回退 cloud vlm")
-        ok2, msg2 = _cloud_vlm()
-        return ok2, msg2, "vlm"
-
-    # 2) 扫描型 → cloud vlm
-    ok, msg = _cloud_vlm()
-    return ok, msg, "vlm"
-
-
-def PyMuPDFClient_quality_ok(client: Any) -> bool:
-    """薄封装，避免顶层 import 循环。"""
-    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
-    return PyMuPDFClient.quality_ok(getattr(client, "last_metrics", {}))
+        return ""
 
 
 def update_db(
