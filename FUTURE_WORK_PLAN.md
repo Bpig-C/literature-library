@@ -1,7 +1,7 @@
 # 文献库未来工作计划
 
-> 更新日期：2026-06-27
-> 最近审核：2026-06-27，数据库实测核对：143 works（117 活跃 + 26 隔离）、5 篇 pending-parse（reward hacking / goal misgeneralization 主题新摄入未解析）、156 source_files、145 literature_parse_runs、260 metadata_extractions（applied 119）、373 classification_extractions（approved 119）、1842 classification_tags、21 duplicate_groups / 46 candidates（10 未审）、5 analysis_runs（全 pending）。healthcheck 通过，系统一致。新增 P6 collector 集成（设计 spec 已完成）。`uv run pytest` 为 97 passed、6 skipped。
+> 更新日期：2026-06-28
+> 最近审核：2026-06-27，数据库实测核对：143 works（117 活跃 + 26 隔离）、5 篇 pending-parse（reward hacking / goal misgeneralization 主题新摄入未解析）、156 source_files、145 literature_parse_runs、260 metadata_extractions（applied 119）、373 classification_extractions（approved 119）、1842 classification_tags、21 duplicate_groups / 46 candidates（10 未审）、5 analysis_runs（全 pending）。healthcheck 通过，系统一致。P6 collector 集成：**地基已实施并合并 master**（2026-06-28，9 task subagent-driven TDD，28 测试绿），检索层待实施（见 P6）。发现一个父系统遗留 bug：`/api/metadata?include_quarantined=true` 不返回 quarantined work（见 P1.0g 已知问题）。`uv run pytest` 为 121 passed、9 skipped、1 failed（即该 metadata bug）。
 > 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
@@ -378,6 +378,8 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields url --reru
 
 #### P1.0g：审核页隔离文献/文件闭环 ✅ 已完成并审核通过
 
+> **⚠️ 已知问题（2026-06-28 发现，待修）**：`GET /api/metadata?status=all&include_quarantined=true` **不返回**已 quarantine 的 work——审计模式无法查看隔离文献的 extraction。确定性复现：`tests/test_api.py::TestMetadataQuarantine::test_quarantine_excludes_from_default_list` 的 `assertIn` 失败。此前被 `import llm_judge` 的 `ModuleNotFoundError` 掩盖（该 import bug 已修），从未真正执行。待查方向：`api/routes/metadata.py` 里 `include_quarantined` 的 SQL 过滤（join works 时 `read_status='quarantined'` 可能被无条件排除，没被参数翻转）。修时注意该测试用 `LIMIT 1` 非确定性挑 work，应改确定 fixture。与 collector 无关，属父系统核心。
+
 MetadataReview 不仅是元数据质量审核页，也承担“来源是否应该留在主库”的质量闸门。审核人员在查看字段、证据和原文时，如果发现该 PDF 是误收、坏源、重复残留、非目标材料、质量过低或不应进入当前综述范围，可以在同一页面直接隔离，而不需要跳转到 Works/WorkDetail 再处理。
 
 完成状态：
@@ -682,7 +684,18 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 
 ### P6：开源文献收集（collector）集成
 
-> 设计已细化，见 `docs/superpowers/specs/2026-06-27-collector-integration-design.md`。
+> 设计已细化，见 `docs/superpowers/specs/2026-06-27-collector-integration-design.md`（集成地基）与 `docs/superpowers/specs/2026-06-27-collector-retrieval-design.md`（检索层）。
+
+**实施状态（2026-06-28）**：
+- ✅ **地基已完成并合并 master**（merge `70f6c82`）。计划：`docs/superpowers/plans/2026-06-28-collector-foundation.md`（9 task TDD）。落地：`collector/` 包（normalize / candidate_store 候选层去重 / gate 轻+重闸门四态 / adapters/arxiv + fetch / ingest_bridge 复用 ingest 全链路 / replace_source needs_better_copy）、`scripts/migrate_add_intake_candidates.py`、`scripts/literature_intake.py`（A2 list/promote）、边界测试（collector 不直接写 works）。28 测试绿。
+- ⏳ **检索层待实施**。计划：`docs/superpowers/plans/2026-06-27-collector-retrieval.md`（7 task）：`collection_topics` 表 + 主题成熟度（seedling/proposed/mapped）、(a) 显式 ID + (c) 引用图 1 跳发现、GitHub 论文 PDF + 跨源去重、collect/resolve 拆步 CLI。注意：检索层 discovery 插入须走 `collector.candidate_store.insert_candidate`；检索层 Task 6 是 **modify** `scripts/literature_intake.py`（追加 topic/collect/resolve），非 create。
+
+**地基遗留 follow-up（非阻塞，跟踪用）**：
+- `ingest_bridge.promote` 的 `library_root` 契约隐式依赖 `api.db.LIBRARY_ROOT`（生产 OK，但应加断言/docstring 明确）。
+- `gate._title_match` 是 works 全表扫描（无索引）；works 规模增大后需加 normalized-title 列/哈希。
+- `llm_judge.run_executor`（写文件执行器模式）仅留接口，下游抽取/分类任务启动时补实现。
+- collector 尚无 healthcheck（候选与 work 一致性、孤立 PDF、重复晋升防护）。
+- CLI `promote`（review 状态）与 `ingest_bridge.promote`（真正晋升）命名易混，检索层扩展时考虑改名/加 docstring。
 
 目标：把"开源文献/项目收集"作为本仓库的子模块接入，补上目前缺失的**入库前去重**能力，让"是否新文献"的判别前移到入库前。
 
@@ -700,7 +713,7 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 - 复用 P4 上传 API 基础（第二版 intake API）。
 - 与 P5 协同：arXiv 适配器采集的元数据天然补全 arXiv/CrossRef 增强。
 
-检索实施层的三个待决问题（已搁置，留待专门会话讨论，见记忆 `collector-retrieval-implementation-open-questions`）：检索驱动方式、GitHub 资产边界、采集与闸门执行节奏。
+检索实施层的三个待决问题（**2026-06-27 已全部闭合**，见 `docs/superpowers/specs/2026-06-27-collector-retrieval-design.md`）：检索驱动方式（两层主题+成熟度+(a)(c) 发现）、GitHub 资产边界（v1 只收论文 PDF）、采集与闸门执行节奏（手动 CLI、collect/resolve 拆步）。
 
 **实施参考**：采集/抓取环节可参考 **`web-access` 技能包**（搜索、网页抓取、登录后操作、动态渲染页面等流程），其中应有不少可直接复用的采集与浏览器自动化流程。
 
@@ -725,7 +738,7 @@ P1.2 使用 P1.1 的分析结果生成矩阵。它不是重新分析文献，而
 15. **P3.5 文档解析子项目化（document-parser 入仓库 + 官网精准解析 API）。← 优先级在 collector 之前。✅ 已完成**
 16. P4 前端上传与操作闭环。（部分完成：Duplicates 决策写回 DB ✅）
 17. P5 引用导出与外部元数据补全。
-18. P6 开源文献收集（collector）集成。
+18. P6 开源文献收集（collector）集成。（**地基已完成并合并 master**；检索层待实施）
 
 如果近期会大量新增 PDF，则把 P3 提前到 P0 之后。
 
