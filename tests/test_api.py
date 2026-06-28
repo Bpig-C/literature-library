@@ -822,14 +822,16 @@ class TestMetadataQuarantine(unittest.TestCase):
         resp = client.post(f"/api/metadata/{ext_id}/quarantine", json={"reason": "not_literature"})
         self.assertEqual(resp.status_code, 200)
 
-        # Default list should not include this work's extractions
-        resp = client.get("/api/metadata?status=all")
+        # Default list should not include this work's extractions.
+        # Use &search={work_id} to scope to this work — otherwise the work may
+        # fall off page 1 (LIMIT 20) for reasons unrelated to quarantine.
+        resp = client.get(f"/api/metadata?status=all&search={work_id}")
         data = resp.json()
         work_ids_in_list = [e["work_id"] for e in data["extractions"]]
         self.assertNotIn(work_id, work_ids_in_list)
 
         # include_quarantined=true should include it
-        resp = client.get("/api/metadata?status=all&include_quarantined=true")
+        resp = client.get(f"/api/metadata?status=all&include_quarantined=true&search={work_id}")
         data = resp.json()
         work_ids_in_list = [e["work_id"] for e in data["extractions"]]
         self.assertIn(work_id, work_ids_in_list)
