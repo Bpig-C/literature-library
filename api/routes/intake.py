@@ -111,3 +111,40 @@ def intake_resolve(body: ResolveBody):
         "resolved": len(results),
         "results": [{"id": cid, "resolution": res} for cid, res in results],
     }
+
+
+class ReviewBody(BaseModel):
+    review_status: str
+    note: str | None = None
+
+
+@router.patch("/intake/candidates/{candidate_id}/review")
+def review_candidate(candidate_id: str, body: ReviewBody):
+    if body.review_status not in candidate_store.VALID_REVIEW:
+        raise HTTPException(400, f"review_status must be one of {sorted(candidate_store.VALID_REVIEW)}")
+    try:
+        candidate_store.set_review_status(candidate_id, body.review_status, note=body.note)
+    except KeyError:
+        raise HTTPException(404, f"candidate not found: {candidate_id}")
+    return {"ok": True, "id": candidate_id, "review_status": body.review_status}
+
+
+class PromoteBody(BaseModel):
+    ids: list[str]
+
+
+@router.post("/intake/promote")
+def promote_candidates(body: PromoteBody):
+    """A2 batch promote → reuse ingest_bridge (single nucleus). Collector never
+    writes works directly. Returns per-id results; a single failure does not
+    abort the batch."""
+    if not body.ids:
+        raise HTTPException(400, "ids is required and must be non-empty")
+    promoted, failed = [], []
+    for cid in body.ids:
+        try:
+            work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT)
+            promoted.append({"id": cid, "work_id": work_id})
+        except Exception as e:  # noqa: BLE001 — batch must not abort on one failure
+            failed.append({"id": cid, "error": str(e)})
+    return {"promoted": promoted, "failed": failed}

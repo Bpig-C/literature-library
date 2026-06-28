@@ -178,3 +178,67 @@ def test_resolve_with_ids_and_limit(monkeypatch):
     r = client.post("/api/intake/resolve", json={"ids": ["IC-aaaa"], "limit": 5})
     assert r.status_code == 200
     assert seen == {"ids": ["IC-aaaa"], "limit": 5}
+
+
+def test_review_approve_delegates_to_core(monkeypatch):
+    import collector.candidate_store as cs
+    seen = {}
+    def fake_set(cid, status, note=None):
+        seen.update(cid=cid, status=status, note=note)
+    monkeypatch.setattr(cs, "set_review_status", fake_set)
+    r = client.patch("/api/intake/candidates/IC-aaaa/review",
+                     json={"review_status": "approved", "note": "good"})
+    assert r.status_code == 200
+    assert seen == {"cid": "IC-aaaa", "status": "approved", "note": "good"}
+
+
+def test_review_bad_status_400():
+    r = client.patch("/api/intake/candidates/IC-aaaa/review",
+                     json={"review_status": "bogus"})
+    assert r.status_code == 400
+
+
+def test_review_not_found_404(monkeypatch):
+    import collector.candidate_store as cs
+    def boom(cid, status, note=None):
+        raise KeyError(cid)
+    monkeypatch.setattr(cs, "set_review_status", boom)
+    r = client.patch("/api/intake/candidates/IC-nope/review",
+                     json={"review_status": "rejected"})
+    assert r.status_code == 404
+
+
+def test_promote_delegates_to_bridge(monkeypatch):
+    import collector.ingest_bridge as br
+    calls = []
+    def fake_promote(cid, *, library_root):
+        calls.append((cid, str(library_root)))
+        return f"W-{cid[-4:]}"
+    monkeypatch.setattr(br, "promote", fake_promote)
+    r = client.post("/api/intake/promote", json={"ids": ["IC-aaaa", "IC-dddd"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["promoted"] == [
+        {"id": "IC-aaaa", "work_id": "W-aaaa"},
+        {"id": "IC-dddd", "work_id": "W-dddd"},
+    ]
+    assert body["failed"] == []
+    assert calls[0][1] == str(_tmp_dir)   # 用 patched LIBRARY_ROOT
+
+
+def test_promote_collects_failures(monkeypatch):
+    import collector.ingest_bridge as br
+    def fake_promote(cid, *, library_root):
+        if cid == "IC-bbbb":
+            raise FileNotFoundError("no pdf")
+        return "W-x"
+    monkeypatch.setattr(br, "promote", fake_promote)
+    r = client.post("/api/intake/promote", json={"ids": ["IC-aaaa", "IC-bbbb"]})
+    body = r.json()
+    assert body["promoted"] == [{"id": "IC-aaaa", "work_id": "W-x"}]
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-bbbb"
+
+
+def test_promote_empty_ids_400():
+    r = client.post("/api/intake/promote", json={"ids": []})
+    assert r.status_code == 400
