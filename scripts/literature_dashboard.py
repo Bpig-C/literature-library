@@ -64,7 +64,6 @@ def json_for_script(data: dict[str, Any]) -> str:
 
 def load_dashboard_data(library_root: Path) -> dict[str, Any]:
     db_path = library_root / "literature.sqlite"
-    ledger_path = library_root / "parse_ledger.json"
     index_path = library_root / "index.json"
     with connect_db(db_path) as conn:
         works = [dict(row) for row in conn.execute("SELECT * FROM works ORDER BY id")]
@@ -90,9 +89,6 @@ def load_dashboard_data(library_root: Path) -> dict[str, Any]:
             else []
         )
 
-    ledger = {"runs": {}}
-    if ledger_path.exists():
-        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
     index = {"works": []}
     if index_path.exists():
         index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -152,14 +148,13 @@ def load_dashboard_data(library_root: Path) -> dict[str, Any]:
         relations_by_work[relation["work_id_a"]].append(relation)
         relations_by_work[relation["work_id_b"]].append(relation)
 
-    ledger_runs = ledger.get("runs", {})
     rows: list[dict[str, Any]] = []
     for work in works:
         work_id = work["id"]
         work_sources = active_sources_by_work.get(work_id, [])
         work_runs = []
         for source in work_sources:
-            run = runs_by_source.get(source["id"]) or ledger_runs.get(source["id"], {})
+            run = runs_by_source.get(source["id"], {})
             if run:
                 work_runs.append(run)
                 content_md_path = run.get("content_md_path")
