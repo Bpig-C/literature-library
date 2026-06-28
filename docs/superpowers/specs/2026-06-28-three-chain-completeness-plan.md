@@ -37,21 +37,34 @@
 
 | 能力 | CLI | API | UI | 说明 |
 |---|---|---|---|---|
-| collector-A 主题生命周期 | ✅ `literature_intake topic` | ❌ | ❌ | `collection_topics` 表未迁移到 live DB |
+| collector-A 主题生命周期 | ✅ `literature_intake topic` | ✅ `/intake/topics` | ❌ | `collection_topics` **已迁移到 live DB**（Phase A） |
 | collector-B 发现(collect) | ✅ `literature_intake collect` | ❌ | ❌ | 重批量，主战场 CLI/loop |
-| collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ❌ | ❌ | 可被 promote 链式触发 |
-| collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ❌ | ❌ | 人必须介入，UI 优先级最高 |
+| collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ✅ `/intake/resolve` | ❌ | 可被 promote 链式触发 |
+| collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ✅ `/intake/*` | ✅ IntakeReview.vue | **Phase A 已完成并合并**；人必须介入，UI 优先级最高 |
+| **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ❌ | ❌ | 手动丢 PDF 旁路，无候选闸门（源可信）；被原矩阵遗漏，单列 Phase B' |
 | parser-E 解析 pending | ✅ `parser/main.py` | ❌ | ❌ | backend 路由 D13（vlm/pymupdf/selfdeploy） |
 | parser-F 解析状态/产物 | (parse_ledger) | ❌ | ❌ | |
 | (既有) works/meta/分类/去重/关系/文件 | ✅ | ✅ | ✅ | 三链齐全，作模板 |
 
-**差距**：parser 与 collector 各缺 API + UI；collector 另有部署缺口（collection_topics 迁移）。
+**差距（修订后）**：collector-D（A2审核）三链已齐；仍缺 API+UI 的有 ingest-G、parser-E/F、collector-B/C 的 API/UI 链。collector-A/C 的部署缺口（collection_topics 迁移）已于 Phase A 闭合。
+
+> **澄清（易混点）**：`collector collect` **不直接摄入成 work**。采集链四阶段——collect（落 `intake_candidates` 候选，仅元数据）→ resolve（下载+SHA256 闸门）→ **A2 人工审核关（IntakeReview）** → promote（经 `ingest_bridge` 才写 `works`）。人不点 promote，候选永远是候选。inbox-ingest（ingest-G）则是另一条**无候选闸门**的旁路：手动丢 PDF → 直接摄入成 work → 再 parse。
 
 ## 4. 分阶段规划
 
-### Phase A — collector 审核闭环（API + UI）〔最高价值〕
+### Phase A — collector 审核闭环（API + UI）〔✅ 已完成并合并〕
 
 把 collector 唯一必须人介入的环节（A2 审核 + 晋升）搬进 UI。
+
+> **状态：✅ 已完成并合并 master（merge `048a93e`）。** 落地：`api/routes/intake.py`（7 端点全委托 core）+ `IntakeReview.vue`（侧边栏「采集审核」）+ `tests/test_intake_api.py`（18 测试）。Core 抽 nucleus：`candidate_store.set_review_status`、`gate.resolve_pending`（CLI/API 共用单一真相源）。`collection_topics` 已迁移到 live DB。
+>
+> **端到端 smoke 已完成（2026-06-28）**：联网 `collect 2506.19248`（Inference-Time Reward Hacking, NeurIPS 2025）→ `resolve`（真下载 PDF+SHA256）→ API `review`+`promote` → 真实 work `W-arxiv-2506.19248` 落地（source_files + parse_runs pending，进入既有体系）。CLI/API/UI 三链全通。
+>
+> **实施中发现并修补的基础层问题**（非 Phase A 缺陷，均闭合）：
+> 1. **collector PDF 下载缺口**：retrieval 层遗漏下载步骤——`fetch.download_pdf` 写好但全仓库无调用者、`local_pdf_path` 无任何代码写入 → resolve 的 SHA256 闸门跑不了、promote 必 `FileNotFoundError`，"候选晋升为 work"整链曾断。**已修**（merge `3712882`，`heavy_gate` 现按来源下载 PDF 再 SHA256，`fetch_failed` 落库不再谎报）。详见 `docs/superpowers/specs/2026-06-28-collector-pdf-download-fix.md`。
+> 2. **promote A2 守卫**：`POST /intake/promote` 原不校验 `review_status`，程序化调用可绕过人工审核直晋。**已补**：仅晋升 `review_status='approved'` 候选，未审核者进 `failed`、不调 `ingest_bridge`，批次不中断语义不变。
+>
+> **Phase D 跟踪项**：既有 `test_api.py::TestMetadataQuarantine` 分页脆弱（与 collector 无关，base 即失败）；`pyproject.toml` 无 `[tool.pytest.ini_options]`，裸 `pytest` 会收集 `parser/tests`。
 
 - **部署前置**：把 retrieval 层的 `collection_topics`（及相关）迁移跑到真实库（代码已就绪、仅在测试夹具中）。
 - **后端**：新增 `api/routes/intake.py`，挂进 `api/main.py`。端点全部委托 `collector/` core：
@@ -72,6 +85,18 @@
 - **前端**：WorkDetail 加解析状态徽标 + 触发按钮；可选轻量 Parse 页看全库 pending。
 - **验收**：promote 后能在 UI 触发解析并看到 `content.md` 落地，`literature_parse_runs.content_md_path` 更新。
 
+### Phase B' — inbox 手动摄入（API + UI）〔补齐手动丢 PDF 动线〕
+
+> 与 Phase B（parse）天然前后衔接（丢 PDF → 摄入 → 解析），但各自独立可交付。建议顺序：B 先（核心增量、契约硬约束），B' 后（低频运维旁路）。
+
+- **后端**：新增 `api/routes/ingest.py`，委托 `scripts/literature_ingest.py` 抽出的 core（`build_ingest_plan` / `execute_plan` 提为可 import 模块，CLI/API 共用）：
+  - `GET  /api/ingest/plan`（扫描 `_inbox/`，dry-run 返回 IngestPlan：待摄入 + exact_sha256 重复，不写盘）
+  - `POST /api/ingest/execute`（执行 plan：拷贝/归档/写 SQLite/追加 parse ledger，带备份）
+  - `GET  /api/ingest/inbox`（当前 inbox 清单 + 历史归档）
+- **前端**：新 `InboxReview.vue`（仿 IntakeReview）——dry-run 预览（待摄入 vs exact 重复高亮）→ 人工确认 → 执行。
+- **边界（关键差异）**：ingest 直接写 `works`，**不经候选闸门**（与 collector 不同，源是用户亲手丢的可信 PDF）；dry-run 预览即人工关。文件 IO（拷贝/归档/备份）放 core，路由薄；ingest 与 collector 两套摄入路径互不混用。
+- **验收**：浏览器上传/拖放 PDF 到 `_inbox/` → dry-run 预览 → 确认摄入 → 新 work 进既有 metadata/分类审核流 → 可链式触发 Phase B 解析。
+
 ### Phase C — collector 主题与发现进 UI〔补齐 A/B/C 的 UI 链〕
 
 - Topics 页：主题成熟度（seedling/proposed/mapped）管理 + 提案闸门 4 判据展示。
@@ -80,7 +105,9 @@
 
 ### Phase D — 端到端打通与三链验收
 
-- 全流程 smoke：`collect → resolve → [IntakeReview 审核] → promote → [parse 触发] → content.md → metadata/分类/去重(既有 UI) → 分析`。
+- 全流程 smoke（两条摄入路径都要走通）：
+  - **采集路径**：`collect → resolve → [IntakeReview 审核] → promote → [parse 触发] → content.md → metadata/分类/去重(既有 UI) → 分析`
+  - **inbox 旁路**：`丢 PDF → [InboxReview dry-run+确认] → ingest → [parse 触发] → content.md → metadata/分类/去重 → 分析`
 - **硬指标**：每个能力从 CLI、API、UI 三入口都能触发并观察到结果。
 - 新增端点全部配测试；`parser/tests` 的 `fitz`(PyMuPDF) 收集错误在根 pytest 配置中隔离（ignore 或 testpaths 限定 `tests/`），不污染根测试。
 

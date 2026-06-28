@@ -208,35 +208,34 @@ def test_review_not_found_404(monkeypatch):
     assert r.status_code == 404
 
 
-def test_promote_delegates_to_bridge(monkeypatch):
+def test_promote_only_approved_delegates_to_bridge(monkeypatch):
+    # A2 守卫：只有 review_status=approved 的候选才 promote（IC-cccc）；
+    # 未 approved（IC-aaaa pending / IC-dddd rejected）进 failed，且不调 ingest_bridge
     import collector.ingest_bridge as br
     calls = []
     def fake_promote(cid, *, library_root):
         calls.append((cid, str(library_root)))
         return f"W-{cid[-4:]}"
     monkeypatch.setattr(br, "promote", fake_promote)
-    r = client.post("/api/intake/promote", json={"ids": ["IC-aaaa", "IC-dddd"]})
+    r = client.post("/api/intake/promote", json={"ids": ["IC-cccc", "IC-aaaa", "IC-dddd"]})
     assert r.status_code == 200
     body = r.json()
-    assert body["promoted"] == [
-        {"id": "IC-aaaa", "work_id": "W-aaaa"},
-        {"id": "IC-dddd", "work_id": "W-dddd"},
-    ]
-    assert body["failed"] == []
-    assert calls[0][1] == str(_tmp_dir)   # 用 patched LIBRARY_ROOT
+    assert body["promoted"] == [{"id": "IC-cccc", "work_id": "W-cccc"}]
+    assert {f["id"] for f in body["failed"]} == {"IC-aaaa", "IC-dddd"}
+    assert [c[0] for c in calls] == ["IC-cccc"]   # ingest_bridge 只被 approved 候选调用
+    assert calls[0][1] == str(_tmp_dir)            # 用 patched LIBRARY_ROOT
 
 
-def test_promote_collects_failures(monkeypatch):
+def test_promote_collects_ingest_failures(monkeypatch):
+    # approved 候选但 ingest 抛错 → 进 failed（批次不中断）
     import collector.ingest_bridge as br
     def fake_promote(cid, *, library_root):
-        if cid == "IC-bbbb":
-            raise FileNotFoundError("no pdf")
-        return "W-x"
+        raise FileNotFoundError("no pdf")
     monkeypatch.setattr(br, "promote", fake_promote)
-    r = client.post("/api/intake/promote", json={"ids": ["IC-aaaa", "IC-bbbb"]})
+    r = client.post("/api/intake/promote", json={"ids": ["IC-cccc"]})
     body = r.json()
-    assert body["promoted"] == [{"id": "IC-aaaa", "work_id": "W-x"}]
-    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-bbbb"
+    assert body["promoted"] == []
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-cccc"
 
 
 def test_promote_empty_ids_400():
