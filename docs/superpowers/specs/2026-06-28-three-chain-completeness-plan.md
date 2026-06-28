@@ -42,11 +42,11 @@
 | collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ✅ `/intake/resolve` | ❌ | 可被 promote 链式触发 |
 | collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ✅ `/intake/*` | ✅ IntakeReview.vue | **Phase A 已完成并合并**；人必须介入，UI 优先级最高 |
 | **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ❌ | ❌ | 手动丢 PDF 旁路，无候选闸门（源可信）；被原矩阵遗漏，单列 Phase B' |
-| parser-E 解析 pending | ✅ `parser/main.py` | ❌ | ❌ | backend 路由 D13（vlm/pymupdf/selfdeploy） |
-| parser-F 解析状态/产物 | (parse_ledger) | ❌ | ❌ | |
+| parser-E 解析 pending | ✅ `parser/main.py` | ✅ `/parse/trigger` | ✅ WorkDetail 触发按钮 | **Phase B 已完成**；D13 路由统一到 `core.mineru.router`（单核三适配器）；真实 smoke 经 cloud vlm 验证（W-arxiv-2506.19248） |
+| parser-F 解析状态/产物 | (parse_ledger) | ✅ `/parse/status` | ✅ WorkDetail 徽标 | **Phase B 已完成**；API/UI 键控 `literature_parse_runs`（CLI 仍读 `parse_ledger.json`，待 Phase D 统一） |
 | (既有) works/meta/分类/去重/关系/文件 | ✅ | ✅ | ✅ | 三链齐全，作模板 |
 
-**差距（修订后）**：collector-D（A2审核）三链已齐；仍缺 API+UI 的有 ingest-G、parser-E/F、collector-B/C 的 API/UI 链。collector-A/C 的部署缺口（collection_topics 迁移）已于 Phase A 闭合。
+**差距（修订后）**：collector-D（A2审核）、parser-E/F 三链已齐（Phase A/B）；仍缺 API+UI 的有 ingest-G、collector-B/C 的 API/UI 链。collector-A/C 的部署缺口（collection_topics 迁移）已于 Phase A 闭合。
 
 > **澄清（易混点）**：`collector collect` **不直接摄入成 work**。采集链四阶段——collect（落 `intake_candidates` 候选，仅元数据）→ resolve（下载+SHA256 闸门）→ **A2 人工审核关（IntakeReview）** → promote（经 `ingest_bridge` 才写 `works`）。人不点 promote，候选永远是候选。inbox-ingest（ingest-G）则是另一条**无候选闸门**的旁路：手动丢 PDF → 直接摄入成 work → 再 parse。
 
@@ -76,7 +76,9 @@
 - **前端**：新增 `IntakeReview.vue`（仿 `MetadataReview.vue`）——候选列表 + 四态判别展示 + 逐条 approve/reject + 批量 promote + needs_better_copy 高亮。侧边栏加入口。
 - **验收**：人能在浏览器走完「候选 → 审核 → 晋升为 work」，晋升后 work 进入既有 metadata/分类审核流。
 
-### Phase B — 解析触发与状态（API + UI）〔打通晋升→全文〕
+### Phase B — 解析触发与状态（API + UI）〔打通晋升→全文〕 ✅ 已完成（2026-06-28，分支 `fix/phaseB-parse-trigger`）
+
+> **交付**：`api/routes/parse.py`（薄适配器）+ `parser/core/mineru/router.py`（D13 单核，从 CLI 脚本提升）+ `sync_work_parse_status` helper 复用 + WorkDetail 触发按钮。后端测试 7/7 绿（桩 `_run_parse`，不触达 fitz/网络）；**真实 smoke 经 cloud vlm 端到端验证**：W-arxiv-2506.19248 → `content.md`(112KB) 落地 + `content_md_path` + `parse_status=succeeded`。**遗留**（Phase D）：CLI 读 `parse_ledger.json` 而 API/UI 读 `literature_parse_runs` 的状态源不一致，待统一；`parser/scripts/literature_batch_parse.py` 旧批量队列版待归档；Parse 全库概览页未做（WorkDetail 单 work 触发已满足验收）。
 
 - **后端**：新增 `api/routes/parse.py`，委托 `parser/core`：
   - `POST /api/parse/trigger`（解析指定/全部 pending，尊重 D13 backend 路由，保守并发）
