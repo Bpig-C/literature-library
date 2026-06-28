@@ -10,7 +10,7 @@ from collector.normalize import normalize_arxiv_id, normalize_github_url
 from collector.candidate_store import insert_candidate
 from collector.gate import light_gate
 
-_ARXIV_RE = re.compile(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5})", re.IGNORECASE)
+_ARXIV_RE = re.compile(r"(?:arxiv\.org/(?:abs|pdf)/|arXiv:)([0-9]{4}\.[0-9]{4,5})", re.IGNORECASE)
 
 
 def fetch_repo_readme(repo_url):
@@ -48,9 +48,22 @@ def collect_repo_paper(repo_url, *, collection_topic_id=None):
     aid = extract_arxiv_id(readme)
     canonical = normalize_github_url(repo_url) or repo_url
     raw = {"repo_url": repo_url, "extracted_arxiv_id": aid, "readme_excerpt": (readme or "")[:500]}
-    cid, _status = insert_candidate(
+    cid, status = insert_candidate(
         source_type="github", url_canonical=canonical,
         arxiv_id=aid, raw_meta=raw, collection_topic_id=collection_topic_id)
+    if status == "skipped_dup":
+        # 已有同源/同强键候选：不重跑闸门、不改写其 resolution
+        conn = get_conn()
+        try:
+            row = conn.execute(
+                "SELECT resolution, matched_work_id FROM intake_candidates WHERE id=?",
+                (cid,)).fetchone()
+        finally:
+            conn.close()
+        res = row[0] if row else "pending"
+        matched = row[1] if row else None
+        return {"id": cid, "arxiv_id": aid, "resolution": res, "matched_work_id": matched}
+    # title=None 有意：README 标题噪声大，v1 只走强键对齐
     resolution, matched = light_gate({"arxiv_id": aid, "doi": None, "title": None})
     conn = get_conn()
     try:

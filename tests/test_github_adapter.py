@@ -53,3 +53,23 @@ def test_github_no_arxiv_id_is_new(tmp_path, monkeypatch):
     assert cand["arxiv_id"] is None
     assert cand["resolution"] == "new"   # 无强键、无标题 → light_gate 判 new
     assert cand["matched_work_id"] is None
+
+def test_github_recollect_does_not_rewrite_resolution(tmp_path, monkeypatch):
+    db_path = _db(tmp_path, monkeypatch)
+    c = sqlite3.connect(db_path)
+    c.execute("INSERT INTO works VALUES ('W-1','2210.11314',NULL,'Existing',NULL)")
+    c.commit(); c.close()
+    monkeypatch.setattr(gh, "fetch_repo_readme", lambda repo_url: README_WITH_ARXIV)
+    first = gh.collect_repo_paper("https://github.com/org/repo")
+    assert first["resolution"] == "exact_hit"
+    # 人为把首行的 resolution 改成别的值，验证第二次收集不会改写它
+    c = sqlite3.connect(db_path)
+    c.execute("UPDATE intake_candidates SET resolution='title_candidate' WHERE id=?", (first["id"],))
+    c.commit(); c.close()
+    second = gh.collect_repo_paper("https://github.com/org/repo")
+    assert second["id"] == first["id"]            # 同一候选
+    assert second["resolution"] == "title_candidate"   # 未被改写（skipped_dup 短路）
+
+def test_extract_arxiv_id_bare_prefix():
+    # 真实 README 常用裸 arXiv: 前缀
+    assert gh.extract_arxiv_id("See arXiv:2305.12345 for details.") == "2305.12345"
