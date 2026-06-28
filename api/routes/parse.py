@@ -93,3 +93,93 @@ def parse_status(work_id: str | None = None):
         return {"total": total, **counts}
     finally:
         conn.close()
+
+
+class TriggerBody(BaseModel):
+    work_ids: list[str] | None = None
+    all_pending: bool = False
+    backend: str | None = None  # 可选覆盖；v1 不接线（YAGNI），route_and_parse 已做 D13 自动路由
+
+
+def _load_env_file() -> None:
+    """从 LIBRARY_ROOT/.env 读环境变量（已存在则不覆盖）。生产路径用；测试不触达。"""
+    env = Path(LIBRARY_ROOT) / ".env"
+    if not env.exists():
+        return
+    for line in env.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
+def _run_parse(source_path: str, output_dir, language: str) -> tuple[bool, str, str]:
+    """单点委托 nucleus：惰性构造 client + 调 route_and_parse。
+
+    生产路径：.env 已载入 → CloudClient/PyMuPDFClient 真构造（此处才触达 fitz/网络）。
+    测试通过 patch api.routes.parse._run_parse 替换整段，永不触达 fitz/网络。
+    """
+    _load_env_file()
+    from core.mineru.cloud_client import CloudClient  # noqa: PLC0415（惰性）
+    from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415（惰性）
+    cloud = CloudClient()
+    pymupdf = PyMuPDFClient()
+    return route_and_parse(cloud, pymupdf, source_path, Path(output_dir), language)
+
+
+def _update_run(conn, run: dict, status: str, *, content_md_path: str = "",
+                backend: str = "", task_id: str = "", error: str = "") -> None:
+    """写 literature_parse_runs 单行 + 同步 works.parse_status（Flag 4：委托既有 helper）。"""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        """UPDATE literature_parse_runs
+           SET status=?, task_id=?, finished_at=?, error=?,
+               content_md_path=?, backend=? WHERE id=?""",
+        (status, task_id, now, error, content_md_path, backend, run["run_id"]),
+    )
+    sync_work_parse_status(conn, run["work_id"])
+
+
+@router.post("/parse/trigger")
+def parse_trigger(body: TriggerBody):
+    if not body.work_ids and not body.all_pending:
+        raise HTTPException(400, "provide work_ids or set all_pending=true")
+    conn = get_conn()
+    try:
+        pending = list_pending_runs(conn, body.work_ids if body.work_ids else None)
+        if not pending:
+            raise HTTPException(400, "no pending parse runs for the given selector")
+        results, succ, fail = [], 0, 0
+        for run in pending:  # 同步串行（与 CLI nucleus 一致）
+            try:
+                ok, msg, backend_used = _run_parse(
+                    run["source_path"], run["output_dir"], run["language"]
+                )
+                content_md = str(Path(run["output_dir"]) / "content.md")
+                if ok:
+                    _update_run(conn, run, "succeeded",
+                                content_md_path=content_md, backend=backend_used,
+                                task_id="")
+                    results.append({"work_id": run["work_id"], "source_file_id": run["source_file_id"],
+                                    "status": "succeeded", "backend": backend_used,
+                                    "content_md_path": content_md, "error": ""})
+                    succ += 1
+                else:
+                    _update_run(conn, run, "failed", backend=backend_used, error=msg)
+                    results.append({"work_id": run["work_id"], "source_file_id": run["source_file_id"],
+                                    "status": "failed", "backend": backend_used,
+                                    "content_md_path": "", "error": msg})
+                    fail += 1
+            except Exception as e:  # noqa: BLE001 — 批次不中断
+                _update_run(conn, run, "failed", error=str(e))
+                results.append({"work_id": run["work_id"], "source_file_id": run["source_file_id"],
+                                "status": "failed", "backend": "", "content_md_path": "",
+                                "error": str(e)})
+                fail += 1
+        conn.commit()
+        return {"triggered": len(results), "succeeded": succ, "failed": fail, "results": results}
+    finally:
+        conn.close()
