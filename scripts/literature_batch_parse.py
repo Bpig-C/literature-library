@@ -32,7 +32,7 @@ PARSER_ROOT = LIBRARY_ROOT / "parser"
 if str(PARSER_ROOT) not in sys.path:
     sys.path.insert(0, str(PARSER_ROOT))
 
-from core.mineru.router import route_and_parse, map_mineru_language  # noqa: E402
+from core.mineru.router import route_and_parse  # noqa: E402  (language 映射在 nucleus 内)
 
 LEDGER_PATH = LIBRARY_ROOT / "parse_ledger.json"
 DB_PATH = LIBRARY_ROOT / "literature.sqlite"
