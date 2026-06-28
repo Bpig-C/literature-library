@@ -112,28 +112,6 @@ def check_content_md(conn: sqlite3.Connection) -> list[dict]:
     return issues
 
 
-def check_parse_ledger() -> dict[str, Any]:
-    """Check parse_ledger.json consistency."""
-    ledger_path = LIBRARY_ROOT / "parse_ledger.json"
-    if not ledger_path.exists():
-        return {"ok": False, "error": "parse_ledger.json not found"}
-
-    data = json.loads(ledger_path.read_text(encoding="utf-8"))
-    runs = data.get("runs", {})
-    total = len(runs)
-    statuses = {}
-    for r in runs.values():
-        s = r.get("status", "unknown")
-        statuses[s] = statuses.get(s, 0) + 1
-
-    return {
-        "ok": True,
-        "total": total,
-        "statuses": statuses,
-        "has_pending": statuses.get("pending", 0) > 0,
-    }
-
-
 def check_index_json() -> dict[str, Any]:
     """Check index.json consistency."""
     index_path = LIBRARY_ROOT / "index.json"
@@ -497,7 +475,6 @@ def run_all_checks() -> dict[str, Any]:
         works_source = check_works_vs_source_files(conn)
         missing_pdfs = check_pdf_files(conn)
         missing_content = check_content_md(conn)
-        ledger = check_parse_ledger()
         index = check_index_json()
         inbox = check_inbox()
         quarantine = check_quarantine()
@@ -524,7 +501,6 @@ def run_all_checks() -> dict[str, Any]:
         "works_source": works_source,
         "missing_pdfs": missing_pdfs,
         "missing_content_md": missing_content,
-        "parse_ledger": ledger,
         "index_json": index,
         "inbox": inbox,
         "quarantine": quarantine,
@@ -592,18 +568,6 @@ def format_markdown(result: dict[str, Any]) -> str:
         for item in result["missing_content_md"]:
             lines.append(f"- {item['work_id']}：`{item['path']}`")
         lines.append("")
-
-    # Parse ledger
-    ledger = result["parse_ledger"]
-    lines.append("## 解析账本")
-    lines.append("")
-    if ledger.get("ok"):
-        lines.append(f"总计 {ledger['total']} 条记录")
-        for status, count in sorted(ledger["statuses"].items()):
-            lines.append(f"- {status}：{count}")
-    else:
-        lines.append(f"错误：{ledger.get('error', 'unknown')}")
-    lines.append("")
 
     # Index
     index = result["index_json"]

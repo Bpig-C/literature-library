@@ -43,7 +43,7 @@
 | collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ✅ `/intake/*` | ✅ IntakeReview.vue | **Phase A 已完成并合并**；人必须介入，UI 优先级最高 |
 | **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ❌ | ❌ | 手动丢 PDF 旁路，无候选闸门（源可信）；被原矩阵遗漏，单列 Phase B' |
 | parser-E 解析 pending | ✅ `parser/main.py` | ✅ `/parse/trigger` | ✅ WorkDetail 触发按钮 | **Phase B 已完成**；D13 路由统一到 `core.mineru.router`（单核三适配器）；真实 smoke 经 cloud vlm 验证（W-arxiv-2506.19248） |
-| parser-F 解析状态/产物 | (parse_ledger) | ✅ `/parse/status` | ✅ WorkDetail 徽标 | **Phase B 已完成**；API/UI 键控 `literature_parse_runs`（CLI 仍读 `parse_ledger.json`，待 Phase D 统一） |
+| parser-F 解析状态/产物 | ✅ DB-only | ✅ `/parse/status` | ✅ WorkDetail 徽标 | **Phase B/D 已完成**；CLI/API/UI 三收敛键控 `literature_parse_runs`（Phase D 状态源统一：CLI 改 DB-only，`parse_ledger.json` 废弃归档） |
 | (既有) works/meta/分类/去重/关系/文件 | ✅ | ✅ | ✅ | 三链齐全，作模板 |
 
 **差距（修订后）**：collector-D（A2审核）、parser-E/F 三链已齐（Phase A/B）；仍缺 API+UI 的有 ingest-G、collector-B/C 的 API/UI 链。collector-A/C 的部署缺口（collection_topics 迁移）已于 Phase A 闭合。
@@ -107,7 +107,9 @@
 
 ### Phase D — 端到端打通与三链验收
 
-> **进度**：Phase D-hygiene ✅ 已完成（2026-06-28，合并点见 master）。落盘 P1.0g 测试侧修复（`test_quarantine_excludes_from_default_list` 加 `&search={work_id}`，路由本就正确）+ `pyproject.toml` 加 `[tool.pytest.ini_options] testpaths=["tests"]`。`pytest tests/` 192 passed/6 skipped/0 failed；裸 pytest 干净收集 198 tests。状态源统一、Phase D-acceptance 三链 smoke 待后续。
+> **进度**：Phase D-hygiene ✅ 已完成（2026-06-28，合并点见 master）。落盘 P1.0g 测试侧修复（`test_quarantine_excludes_from_default_list` 加 `&search={work_id}`，路由本就正确）+ `pyproject.toml` 加 `[tool.pytest.ini_options] testpaths=["tests"]`。`pytest tests/` 192 passed/6 skipped/0 failed；裸 pytest 干净收集 198 tests。
+>
+> **状态源统一 ✅ 已完成（2026-06-28，分支 `fix/phaseD-status-unify`）**：`parse_ledger.json` 文件状态源废弃，`literature_parse_runs`（DB）成为解析状态唯一权威。具体：旧自部署 MinerU Agent API CLI（`parser/scripts/literature_batch_parse.py`，bucket/failure_kind 唯一消费者）+ ledger 依赖工具 `literature_cleanup_bad_sources.py` 归档至 `_archive/`；新 CLI `scripts/literature_batch_parse.py` 改 DB-only（`get_pending_db` + `run_pending`，逐条 UPDATE parse_runs + 复用 `sync_work_parse_status` 同步 `works.parse_status`，不再读 ledger）；ingest 删 `update_ledger` 停止双写；healthcheck/dashboard 脱离 ledger（纯读 parse_runs）。`parse_ledger.json` 移至 `_archive/parse_ledger.json.bak`。`grep parse_ledger --include=*.py api/ scripts/ collector/ parser/core/` 为空。§2 单核不变量 PRESERVED（`route_and_parse` 仅 `parser/core/mineru/router.py`）。Phase D-acceptance 三链 smoke 待后续。
 
 - 全流程 smoke（两条摄入路径都要走通）：
   - **采集路径**：`collect → resolve → [IntakeReview 审核] → promote → [parse 触发] → content.md → metadata/分类/去重(既有 UI) → 分析`
