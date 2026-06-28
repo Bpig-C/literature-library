@@ -25,6 +25,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 LIBRARY_ROOT = Path(__file__).resolve().parents[1]
+# 直接当脚本跑时（python scripts/literature_batch_parse.py），sys.path[0] 是 scripts/
+# 目录而非 repo root——需显式把 repo root 与 parser 子项目加入，否则
+# `scripts.migrate_sync_parse_status` 与 `core.mineru.router` 都 import 不到。
+if str(LIBRARY_ROOT) not in sys.path:
+    sys.path.insert(0, str(LIBRARY_ROOT))
 PARSER_ROOT = LIBRARY_ROOT / "parser"
 if str(PARSER_ROOT) not in sys.path:
     sys.path.insert(0, str(PARSER_ROOT))

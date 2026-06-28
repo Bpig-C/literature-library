@@ -166,3 +166,27 @@ def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch):
         )
     finally:
         conn.close()
+
+
+def test_cli_direct_invocation_imports_clean():
+    """回归：直接 `python scripts/literature_batch_parse.py` 运行时，顶层 import 链不报 ModuleNotFoundError。
+
+    本 CLI 顶部 `from scripts.migrate_sync_parse_status import ...` 与
+    `from core.mineru.router import ...` 要求 repo root 和 parser 子项目都在
+    sys.path 上。经包路径 import（pytest/-m）总成立，但直接当脚本跑时
+    sys.path[0] 是 scripts/ 目录，必须由脚本自身显式补 path。
+    用 --help：argparse 在任何 DB 访问前 exit，但模块顶层 import 已先执行——
+    若 import 链坏，这里会非 0 退出并带 ModuleNotFoundError。hermetic，不触 DB/网络/fitz。
+    """
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[1]
+    r = subprocess.run(
+        [sys.executable, str(repo_root / "scripts" / "literature_batch_parse.py"), "--help"],
+        capture_output=True, text=True, cwd=str(repo_root), timeout=30,
+    )
+    assert r.returncode == 0, (
+        f"CLI 直接运行失败（returncode={r.returncode}）:\nSTDOUT:{r.stdout}\nSTDERR:{r.stderr}"
+    )
+    assert "ModuleNotFoundError" not in r.stderr
