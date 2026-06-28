@@ -70,6 +70,8 @@ def _write_suggested_tags(conn, work_id: str, topic_id: str) -> None:
         tags = json.loads(row[0])
     except (json.JSONDecodeError, TypeError):
         return
+    if not isinstance(tags, list):
+        return
     if not tags:
         return
 
@@ -84,31 +86,26 @@ def _write_suggested_tags(conn, work_id: str, topic_id: str) -> None:
 
 
 def promote(candidate_id: str, *, library_root: Path) -> str:
-    """Promote an approved candidate. Returns the new work_id.
-
-    若候选的 collection_topic_id 关联主题配置了 mapped_tags，把它们作为建议标签
-    （source=collector, pending, applied=0）写入 classification_extractions，等人审。
-    """
+    """晋升候选；若其主题有 mapped_tags，作为建议标签落 classification_extractions(人审)。
+    建议标签写入是 best-effort：绝不阻断晋升。"""
     work_id = _do_ingest(candidate_id, library_root)
-
     conn = get_conn()
     try:
-        # collection_topic_id 是 collector 检索层新增的列；旧库可能没有——防御性探测，
-        # 缺列则跳过建议标签写入（向后兼容）。
-        topic_id = None
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(intake_candidates)").fetchall()}
-        if "collection_topic_id" in cols:
-            topic_row = conn.execute(
-                "SELECT collection_topic_id FROM intake_candidates WHERE id=?",
-                (candidate_id,)).fetchone()
-            if topic_row and topic_row[0]:
-                topic_id = topic_row[0]
-        if topic_id:
-            _write_suggested_tags(conn, work_id, topic_id)
+        # 主效果先落：候选翻 ingested
         conn.execute(
             "UPDATE intake_candidates SET status='ingested', ingested_work_id=? WHERE id=?",
             (work_id, candidate_id))
         conn.commit()
+        # 次要效果：建议标签 best-effort，失败不影响晋升
+        try:
+            topic_row = conn.execute(
+                "SELECT collection_topic_id FROM intake_candidates WHERE id=?",
+                (candidate_id,)).fetchone()
+            if topic_row and topic_row[0]:
+                _write_suggested_tags(conn, work_id, topic_row[0])
+                conn.commit()
+        except Exception:
+            pass   # 建议标签写入失败：吞掉，晋升已完成
     finally:
         conn.close()
     return work_id

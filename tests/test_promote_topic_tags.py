@@ -105,3 +105,31 @@ def test_promote_no_topic_writes_no_tags(tmp_path, monkeypatch):
 
     assert n == 0
     assert st[0] == "ingested" and st[1] == "W-10"
+
+
+def test_promote_suggestion_failure_does_not_block_promotion(tmp_path, monkeypatch):
+    """建议标签写入抛错时，晋升仍须成功（主效果不受次要效果拖累）。"""
+    db_path = tmp_path / "literature.sqlite"
+    sqlite3.connect(db_path).close()
+    _bootstrap(db_path)
+
+    c = sqlite3.connect(db_path)
+    c.execute("INSERT INTO intake_candidates (id, collection_topic_id) VALUES ('IC-3','CT-3')")
+    c.execute("INSERT INTO collection_topics VALUES ('CT-3','T', '[{\"group\":\"risk_domain\",\"value\":\"x\"}]')")
+    c.commit(); c.close()
+
+    monkeypatch.setattr(br, "get_conn", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(br, "_do_ingest", lambda cid, library_root: "W-11")
+
+    def boom(conn, work_id, topic_id):
+        raise RuntimeError("tag write exploded")
+    monkeypatch.setattr(br, "_write_suggested_tags", boom)
+
+    work_id = br.promote("IC-3", library_root=tmp_path)
+    assert work_id == "W-11"   # 晋升成功
+
+    conn = sqlite3.connect(db_path)
+    st = conn.execute(
+        "SELECT status, ingested_work_id FROM intake_candidates WHERE id='IC-3'").fetchone()
+    conn.close()
+    assert st[0] == "ingested" and st[1] == "W-11"   # 候选已翻状态
