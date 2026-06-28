@@ -209,3 +209,12 @@ export function getIntakeTopics(params = {}) {
   const q = new URLSearchParams(params).toString()
   return request(`/intake/topics${q ? '?' + q : ''}`)
 }
+
+// ---- Parse (P3.5 document-parser trigger) ----
+export function parseTrigger(payload) {
+  return request('/parse/trigger', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function parseStatus(workId) {
+  return request(`/parse/status${workId ? '?work_id=' + encodeURIComponent(workId) : ''}`)
+}
