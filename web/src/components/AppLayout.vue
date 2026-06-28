@@ -29,6 +29,9 @@
       <router-link to="/intake" class="nav-item" :class="{ active: $route.path === '/intake' }">
         <span class="nav-icon">📥</span><span class="nav-text">采集审核</span>
       </router-link>
+      <router-link to="/inbox" class="nav-item" :class="{ active: $route.path === '/inbox' }">
+        <span class="nav-icon">📂</span><span class="nav-text">收件箱摄入</span>
+      </router-link>
     </nav>
     <main class="content">
       <slot />
