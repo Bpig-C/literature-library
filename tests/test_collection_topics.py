@@ -1,5 +1,6 @@
 # tests/test_collection_topics.py
 import sqlite3
+import pytest
 
 def _run_migration(conn_path):
     import api.db as db
@@ -62,7 +63,6 @@ def test_transition_mapped_to_seedling_forbidden(tmp_path, monkeypatch):
     ct = topics.create(name="Y", description="")
     topics.transition(ct["id"], to_map_status="proposed", proposed_note="n")
     topics.transition(ct["id"], to_map_status="mapped", mapped_tags=[{"group": "risk_domain", "value": "y"}])
-    import pytest
     with pytest.raises(ValueError):
         topics.transition(ct["id"], to_map_status="seedling")
 
@@ -82,3 +82,34 @@ def test_mapped_does_not_touch_vocab(tmp_path, monkeypatch):
     tabs = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     conn.close()
     assert "risk_domain_vocab" not in tabs  # collector 不维护词表
+
+
+def test_transition_lifecycle_orthogonal(tmp_path, monkeypatch):
+    """lifecycle (active/paused/retired) 可独立于 map_status 流转。"""
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(name="L", description="")
+    out = topics.transition(ct["id"], to_lifecycle="paused")
+    assert out["lifecycle"] == "paused"
+    assert out["map_status"] == "seedling"   # lifecycle 改了，map_status 不动
+    out = topics.transition(ct["id"], to_lifecycle="retired")
+    assert out["lifecycle"] == "retired"
+
+
+def test_amend_mapped_tags_without_status_change(tmp_path, monkeypatch):
+    """已 mapped 的主题可补/改 mapped_tags 而不重复走状态流转。"""
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(name="M", description="")
+    topics.transition(ct["id"], to_map_status="proposed", proposed_note="n")
+    topics.transition(ct["id"], to_map_status="mapped",
+                      mapped_tags=[{"group": "risk_domain", "value": "a"}])
+    # 再次提供 mapped_tags（status 已是 mapped，不变），应更新 tags 而不报错
+    out = topics.transition(ct["id"],
+                            mapped_tags=[{"group": "risk_domain", "value": "a"},
+                                         {"group": "risk_domain", "value": "b"}])
+    assert out["map_status"] == "mapped"
+    assert out["mapped_tags"] == [{"group": "risk_domain", "value": "a"},
+                                  {"group": "risk_domain", "value": "b"}]

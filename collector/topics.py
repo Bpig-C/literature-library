@@ -76,15 +76,14 @@ def get(topic_id):
     """Return the full topic row as a dict (with query_def/mapped_tags parsed), or None."""
     conn = get_conn()
     try:
-        row = conn.execute("SELECT * FROM collection_topics WHERE id=?", (topic_id,)).fetchone()
+        cur = conn.execute("SELECT * FROM collection_topics WHERE id=?", (topic_id,))
+        row = cur.fetchone()
         if not row:
             return None
-        # column names from a non-empty probe (table is guaranteed non-empty here:
-        # we just fetched a row from it)
-        cols = [d[0] for d in conn.execute("SELECT * FROM collection_topics LIMIT 1").description]
+        cols = [d[0] for d in cur.description]
         d = dict(zip(cols, row))
         d["query_def"] = json.loads(d["query_def"] or "{}")
-        if d.get("mapped_tags"):
+        if d.get("mapped_tags") is not None:
             d["mapped_tags"] = json.loads(d["mapped_tags"])
         return d
     finally:
