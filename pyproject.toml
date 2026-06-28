@@ -16,3 +16,10 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.3",
 ]
+
+[tool.pytest.ini_options]
+# Scope collection to the project test suite. This keeps bare `pytest`
+# equivalent to `pytest tests/` (which is how CI/local green runs are done)
+# and prevents parser/tests from being collected — those modules import
+# optional deps (fitz) and error at collection time.
+testpaths = ["tests"]

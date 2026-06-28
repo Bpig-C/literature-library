@@ -107,11 +107,13 @@
 
 ### Phase D — 端到端打通与三链验收
 
+> **进度**：Phase D-hygiene ✅ 已完成（2026-06-28，合并点见 master）。落盘 P1.0g 测试侧修复（`test_quarantine_excludes_from_default_list` 加 `&search={work_id}`，路由本就正确）+ `pyproject.toml` 加 `[tool.pytest.ini_options] testpaths=["tests"]`。`pytest tests/` 192 passed/6 skipped/0 failed；裸 pytest 干净收集 198 tests。状态源统一、Phase D-acceptance 三链 smoke 待后续。
+
 - 全流程 smoke（两条摄入路径都要走通）：
   - **采集路径**：`collect → resolve → [IntakeReview 审核] → promote → [parse 触发] → content.md → metadata/分类/去重(既有 UI) → 分析`
   - **inbox 旁路**：`丢 PDF → [InboxReview dry-run+确认] → ingest → [parse 触发] → content.md → metadata/分类/去重 → 分析`
 - **硬指标**：每个能力从 CLI、API、UI 三入口都能触发并观察到结果。
-- 新增端点全部配测试；`parser/tests` 的 `fitz`(PyMuPDF) 收集错误在根 pytest 配置中隔离（ignore 或 testpaths 限定 `tests/`），不污染根测试。
+- 新增端点全部配测试；`parser/tests` 的 `fitz`(PyMuPDF) 收集错误在根 pytest 配置中隔离（ignore 或 testpaths 限定 `tests/`），不污染根测试。✅ 已落地（Phase D-hygiene）：`pyproject.toml` 设 `testpaths=["tests"]`，裸 pytest 不再收集 parser/tests。
 
 ## 5. 跨切关注点（贯穿所有 phase）
 

@@ -66,3 +66,6 @@ llm_judge_calls.jsonl
 
 # Phase B 隔离试跑产物（运行时，不入 VCS）
 _cloud_trial/
+
+# collector runtime cache (PDFs staged for ingestion)
+_collector_cache/

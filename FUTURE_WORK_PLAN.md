@@ -1,7 +1,7 @@
 # 文献库未来工作计划
 
 > 更新日期：2026-06-28
-> 最近审核：2026-06-27，数据库实测核对：143 works（117 活跃 + 26 隔离）、5 篇 pending-parse（reward hacking / goal misgeneralization 主题新摄入未解析）、156 source_files、145 literature_parse_runs、260 metadata_extractions（applied 119）、373 classification_extractions（approved 119）、1842 classification_tags、21 duplicate_groups / 46 candidates（10 未审）、5 analysis_runs（全 pending）。healthcheck 通过，系统一致。P6 collector 集成：**地基已实施并合并 master**（2026-06-28，9 task subagent-driven TDD，28 测试绿），检索层待实施（见 P6）。发现一个父系统遗留 bug：`/api/metadata?include_quarantined=true` 不返回 quarantined work（见 P1.0g 已知问题）。`uv run pytest` 为 121 passed、9 skipped、1 failed（即该 metadata bug）。
+> 最近审核：2026-06-27，数据库实测核对：143 works（117 活跃 + 26 隔离）、5 篇 pending-parse（reward hacking / goal misgeneralization 主题新摄入未解析）、156 source_files、145 literature_parse_runs、260 metadata_extractions（applied 119）、373 classification_extractions（approved 119）、1842 classification_tags、21 duplicate_groups / 46 candidates（10 未审）、5 analysis_runs（全 pending）。healthcheck 通过，系统一致。P6 collector 集成：**地基已实施并合并 master**（2026-06-28，9 task subagent-driven TDD，28 测试绿），检索层待实施（见 P6）。发现一个父系统遗留 bug：`/api/metadata?include_quarantined=true` 不返回 quarantined work（见 P1.0g 已知问题，**已于 Phase D-hygiene 修复为测试侧问题**，现 0 failed）。`uv run python -m pytest tests/` 为 192 passed、6 skipped、0 failed；裸 `pytest` 干净收集 198 tests。
 > 依据：`D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`、当前仓库代码、`literature.sqlite`、`index.json`、`parse_ledger.json`
 > 定位：本文件是当前项目内的后续执行计划；外部规划文档保留为设计背景和历史路线依据。
 
@@ -378,7 +378,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields url --reru
 
 #### P1.0g：审核页隔离文献/文件闭环 ✅ 已完成并审核通过
 
-> **⚠️ 已知问题（2026-06-28 发现，待修；诊断已更正 2026-06-28）**：`tests/test_api.py::TestMetadataQuarantine::test_quarantine_excludes_from_default_list` 的 `assertIn` 失败，`uv run pytest` 常年 1 failed 即此。**这是测试 bug，不是生产 bug**——经实证复核（见 memory `metadata-api-include-quarantined-bug`）：路由 `GET /api/metadata?status=all&include_quarantined=true` **完全正确**（`default+search={work_id}`→total=0 正确排除；`include_quarantined=true+search={work_id}`→total=2 正确包含）。失败纯粹因测试用 `LIMIT 1` 挑中**最老的 extraction**（created 2026-06-05），DB 长到 260+ 条后被 `created_at desc` 分页挤出 page1（per_page 20/100），不带 `search` 的 page1 永远不含它 → `assertIn` 假性失败。~~原待查方向"路由 SQL 过滤 join works 无条件排除 quarantined"已被证伪，勿再查路由。~~ **现成修法**（2 行，曾在某会话本地验证通过 153 passed/0 failed，但未提交 master）：给该测试两个 list 请求加 `&search={work_id}` 限定到被隔离的 work，断言即变确定且真正测过滤语义。此前长期被 `import llm_judge` 的 `ModuleNotFoundError` 掩盖、从未真正执行。与 collector 无关，属父系统核心。优先级低（不影响功能，仅测试噪声）。
+> **✅ 已修复（Phase D-hygiene，2026-06-28）**：原"测试假性失败"已落盘修法——给 `test_quarantine_excludes_from_default_list` 的两个 list 请求加 `&search={work_id}` 限定到被隔离的 work，断言变确定且真正测过滤语义（路由本就正确，见 memory `metadata-api-include-quarantined-bug`）。同阶段在 `pyproject.toml` 加 `[tool.pytest.ini_options] testpaths=["tests"]`，裸 `pytest` 不再收集 `parser/tests` 的 fitz 报错。`uv run python -m pytest tests/` 现 192 passed / 6 skipped / 0 failed；裸 pytest 干净收集 198 tests。
 
 MetadataReview 不仅是元数据质量审核页，也承担“来源是否应该留在主库”的质量闸门。审核人员在查看字段、证据和原文时，如果发现该 PDF 是误收、坏源、重复残留、非目标材料、质量过低或不应进入当前综述范围，可以在同一页面直接隔离，而不需要跳转到 Works/WorkDetail 再处理。
 
