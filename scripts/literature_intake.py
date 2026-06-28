@@ -7,6 +7,7 @@ import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.db import get_conn
+from collector import candidate_store
 from collector import topics
 from collector.discovery_explicit import collect_explicit
 from collector.discovery_citation import collect_from_seeds
@@ -26,16 +27,11 @@ def list_cmd(args):
         print(f"{r['id']}\t{r['arxiv_id'] or ''}\t{r['title'] or ''}")
 
 def promote_review(*, approve=None, reject=None):
-    """A2 审核：批量 approve/reject 候选。"""
-    conn = get_conn()
-    try:
-        for cid in (approve or []):
-            conn.execute("UPDATE intake_candidates SET review_status='approved' WHERE id=?", (cid,))
-        for cid in (reject or []):
-            conn.execute("UPDATE intake_candidates SET review_status='rejected' WHERE id=?", (cid,))
-        conn.commit()
-    finally:
-        conn.close()
+    """A2 审核：批量 approve/reject 候选（委托 candidate_store 单一 nucleus）。"""
+    for cid in (approve or []):
+        candidate_store.set_review_status(cid, "approved")
+    for cid in (reject or []):
+        candidate_store.set_review_status(cid, "rejected")
 
 
 def collect(args):
