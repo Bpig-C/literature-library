@@ -24,8 +24,9 @@ def replace_quarantined_source(work_id: str, good_pdf: Path, *, library_root: Pa
         # 归档旧 source_files
         conn.execute("UPDATE source_files SET status='archived' WHERE work_id=? AND status='active'",
                      (work_id,))
-        # 插入新 source_file
-        sf_id = f"SF-{digest[:12]}-{secrets.token_hex(2)}"
+        # 插入新 source_file；5 位数字后缀匹配 literature_ingest.SF_ID_RE，
+        # 使 fetch_existing_state 的 seq 解析能识别此行(否则后续同 work ingest 的 seq 计算会漏算)
+        sf_id = f"SF-{digest[:12]}-{secrets.randbelow(100000):05d}"
         conn.execute(
             """INSERT INTO source_files (id, work_id, content_sha256, source_path,
                relative_source_path, status) VALUES (?,?,?,?,?, 'active')""",
