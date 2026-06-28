@@ -1,7 +1,5 @@
 # tests/test_collection_topics.py
 import sqlite3
-import importlib
-from pathlib import Path
 
 def _run_migration(conn_path):
     import api.db as db
