@@ -39,10 +39,6 @@ class LiteratureIngestTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        (root / "parse_ledger.json").write_text(
-            json.dumps({"version": "literature_batch_parse_v1", "runs": {}}),
-            encoding="utf-8",
-        )
         return root
 
     def test_execute_ingests_new_pdf_as_pending(self) -> None:
@@ -68,9 +64,9 @@ class LiteratureIngestTests(unittest.TestCase):
         self.assertEqual(work[0], "pending")
         self.assertEqual(source[0], sha256_file(library_path))
         self.assertEqual(run[0], "pending")
-
-        ledger = json.loads((root / "parse_ledger.json").read_text(encoding="utf-8"))
-        self.assertEqual(next(iter(ledger["runs"].values()))["status"], "pending")
+        # Phase D: parse_ledger.json 已废弃——ingest 不再写它，
+        # pending 行由 insert_db_rows 写入 literature_parse_runs (DB 唯一源)。
+        self.assertFalse((root / "parse_ledger.json").exists())
 
     def test_exact_duplicate_is_archived_without_new_source(self) -> None:
         root = self.make_library()

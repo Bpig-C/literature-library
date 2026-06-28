@@ -3,7 +3,7 @@
 The runner is conservative by default: it only prints a plan unless
 ``--execute`` is passed. Executed ingests copy PDFs from ``_inbox`` into
 ``works/{work_id}/source/``, archive the inbox copy, update SQLite, append
-pending parse jobs to ``parse_ledger.json``, and refresh ``index.json``.
+pending parse jobs to ``literature_parse_runs`` (DB), and refresh ``index.json``.
 Exact sha256 duplicates are archived under ``_duplicates/exact_sha256``.
 """
 
@@ -262,14 +262,6 @@ def extract_metadata(path: Path) -> Metadata:
         language=guess_language(candidate_text),
         metadata_status=status,
     )
-
-
-def bucket_for_size(size: int) -> str:
-    if size < 5 * 1024 * 1024:
-        return "small"
-    if size < 20 * 1024 * 1024:
-        return "medium"
-    return "large"
 
 
 def connect_db(db_path: Path) -> sqlite3.Connection:
@@ -609,7 +601,7 @@ def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
 def backup_state_files(library_root: Path, stamp: str) -> Path:
     backup_dir = library_root / "_archive" / f"ingest_backups_{stamp}"
     backup_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("literature.sqlite", "index.json", "parse_ledger.json"):
+    for name in ("literature.sqlite", "index.json"):
         source = library_root / name
         if source.exists():
             shutil.copy2(source, backup_dir / name)
@@ -686,36 +678,6 @@ def update_index(library_root: Path, plan: IngestPlan, now: str) -> None:
     index["library_root"] = str(library_root)
     index["ingest_version"] = INGEST_VERSION
     write_json_atomic(index_path, index)
-
-
-def update_ledger(library_root: Path, plan: IngestPlan, now: str) -> None:
-    ledger_path = library_root / "parse_ledger.json"
-    ledger = load_json(ledger_path, {"version": "literature_batch_parse_v1", "runs": {}})
-    runs = ledger.setdefault("runs", {})
-    for action in plan.ingests:
-        output_dir = library_root / "works" / action.work_id / "parsed" / "mineru" / action.source_file_id
-        runs[action.source_file_id] = {
-            "work_id": action.work_id,
-            "task_id": "",
-            "status": "pending",
-            "source_path": action.library_path,
-            "started_at": now,
-            "backend": DEFAULT_BACKEND,
-            "parse_method": DEFAULT_PARSE_METHOD,
-            "size": action.file_size,
-            "bucket": bucket_for_size(action.file_size),
-            "updated_at": now,
-            "source_file_id": action.source_file_id,
-            "finished_at": "",
-            "output_dir": str(output_dir),
-            "content_json_path": str(output_dir / "content.json"),
-            "content_md_path": str(output_dir / "content.md"),
-            "artifacts_path": str(output_dir / "artifacts.json"),
-            "package_path": str(output_dir / "package.zip"),
-            "error": "",
-            "ingest_version": INGEST_VERSION,
-        }
-    write_json_atomic(ledger_path, ledger)
 
 
 def insert_db_rows(library_root: Path, plan: IngestPlan, now: str) -> None:
@@ -922,7 +884,6 @@ def execute_plan(
     copy_planned_files(plan)
     insert_db_rows(library_root, plan, now)
     update_index(library_root, plan, now)
-    update_ledger(library_root, plan, now)
     archive_exact_duplicates(plan)
     archive_inputs(plan, leave_inbox=leave_inbox)
     return backup_dir
