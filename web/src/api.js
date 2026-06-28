@@ -218,3 +218,13 @@ export function parseTrigger(payload) {
 export function parseStatus(workId) {
   return request(`/parse/status${workId ? '?work_id=' + encodeURIComponent(workId) : ''}`)
 }
+
+// ---- Ingest (inbox 手动摄入, P3.5/B') ----
+export function getIngestPlan(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/ingest/plan${q ? '?' + q : ''}`)
+}
+
+export function executeIngest(body = {}) {
+  return request('/ingest/execute', { method: 'POST', body: JSON.stringify(body) })
+}

@@ -41,7 +41,7 @@
 | collector-B 发现(collect) | ✅ `literature_intake collect` | ❌ | ❌ | 重批量，主战场 CLI/loop |
 | collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ✅ `/intake/resolve` | ❌ | 可被 promote 链式触发 |
 | collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ✅ `/intake/*` | ✅ IntakeReview.vue | **Phase A 已完成并合并**；人必须介入，UI 优先级最高 |
-| **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ❌ | ❌ | 手动丢 PDF 旁路，无候选闸门（源可信）；被原矩阵遗漏，单列 Phase B' |
+| **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ✅ `/api/ingest/plan`,`/execute` | ✅ InboxReview.vue | **Phase B' 已完成**；薄适配器委托 nucleus（`build_ingest_plan`/`execute_plan`，§2 单核）；ingest 直写 works + 建 parse_runs pending（Phase B 接力） |
 | parser-E 解析 pending | ✅ `parser/main.py` | ✅ `/parse/trigger` | ✅ WorkDetail 触发按钮 | **Phase B 已完成**；D13 路由统一到 `core.mineru.router`（单核三适配器）；真实 smoke 经 cloud vlm 验证（W-arxiv-2506.19248） |
 | parser-F 解析状态/产物 | ✅ DB-only | ✅ `/parse/status` | ✅ WorkDetail 徽标 | **Phase B/D 已完成**；CLI/API/UI 三收敛键控 `literature_parse_runs`（Phase D 状态源统一：CLI 改 DB-only，`parse_ledger.json` 废弃归档） |
 | (既有) works/meta/分类/去重/关系/文件 | ✅ | ✅ | ✅ | 三链齐全，作模板 |
@@ -87,17 +87,19 @@
 - **前端**：WorkDetail 加解析状态徽标 + 触发按钮；可选轻量 Parse 页看全库 pending。
 - **验收**：promote 后能在 UI 触发解析并看到 `content.md` 落地，`literature_parse_runs.content_md_path` 更新。
 
-### Phase B' — inbox 手动摄入（API + UI）〔补齐手动丢 PDF 动线〕
+### Phase B' — inbox 手动摄入（API + UI）〔补齐手动丢 PDF 动线〕 ✅ 已完成
 
 > 与 Phase B（parse）天然前后衔接（丢 PDF → 摄入 → 解析），但各自独立可交付。建议顺序：B 先（核心增量、契约硬约束），B' 后（低频运维旁路）。
+>
+> **状态：✅ 已完成（2026-06-29，分支 `fix/phaseBp-inbox-ingest`）。** 落地：`api/routes/ingest.py`（2 端点，薄适配器零业务逻辑，全委托 `scripts.literature_ingest` 的 `build_ingest_plan`/`execute_plan`，§2 单核）+ `web/src/views/InboxReview.vue`（仿 IntakeReview 双栏：dry-run 预览 + 确认摄入）+ `tests/test_ingest_api.py`（4 测试：temp library_root + patch LIBRARY_ROOT，不触网络/真 inbox）。验收：`grep "INSERT INTO works" api/routes/ingest.py` 为空（路由零直写，全委托 nucleus）。
 
 - **后端**：新增 `api/routes/ingest.py`，委托 `scripts/literature_ingest.py` 抽出的 core（`build_ingest_plan` / `execute_plan` 提为可 import 模块，CLI/API 共用）：
-  - `GET  /api/ingest/plan`（扫描 `_inbox/`，dry-run 返回 IngestPlan：待摄入 + exact_sha256 重复，不写盘）
-  - `POST /api/ingest/execute`（执行 plan：拷贝/归档/写 SQLite/追加 parse ledger，带备份）
-  - `GET  /api/ingest/inbox`（当前 inbox 清单 + 历史归档）
-- **前端**：新 `InboxReview.vue`（仿 IntakeReview）——dry-run 预览（待摄入 vs exact 重复高亮）→ 人工确认 → 执行。
+  - `GET  /api/ingest/plan`（扫描 `_inbox/`，dry-run 返回 IngestPlan：待摄入 + exact_sha256 重复，不写盘）✅
+  - `POST /api/ingest/execute`（执行 plan：拷贝/归档/写 SQLite + 建 parse_runs pending 行，`no_backup=True`）✅
+  - ~~`GET  /api/ingest/inbox`~~（暂缓——dry-run 端点已含 inbox 清单，归档历史非 MVP 必需）
+- **前端**：新 `InboxReview.vue`（仿 IntakeReview）——dry-run 预览（待摄入 vs exact 重复/skipped/warnings badge）→ 人工确认 → 执行（带 busy 锁 + confirm + 摄入后 reload）。✅
 - **边界（关键差异）**：ingest 直接写 `works`，**不经候选闸门**（与 collector 不同，源是用户亲手丢的可信 PDF）；dry-run 预览即人工关。文件 IO（拷贝/归档/备份）放 core，路由薄；ingest 与 collector 两套摄入路径互不混用。
-- **验收**：浏览器上传/拖放 PDF 到 `_inbox/` → dry-run 预览 → 确认摄入 → 新 work 进既有 metadata/分类审核流 → 可链式触发 Phase B 解析。
+- **验收**：丢 PDF 到 `_inbox/` → dry-run 预览 → 确认摄入 → 新 work + parse_runs pending 落地（`test_execute_writes_works_and_parse_run` 断言）→ 可链式触发 Phase B 解析。✅
 
 ### Phase C — collector 主题与发现进 UI〔补齐 A/B/C 的 UI 链〕
 
