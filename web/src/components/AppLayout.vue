@@ -26,6 +26,9 @@
       <router-link to="/classification" class="nav-item" :class="{ active: $route.path === '/classification' }">
         <span class="nav-icon">📋</span><span class="nav-text">分类审核</span>
       </router-link>
+      <router-link to="/intake" class="nav-item" :class="{ active: $route.path === '/intake' }">
+        <span class="nav-icon">📥</span><span class="nav-text">采集审核</span>
+      </router-link>
     </nav>
     <main class="content">
       <slot />

@@ -7,11 +7,12 @@ import argparse, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.db import get_conn
+from collector import candidate_store
 from collector import topics
 from collector.discovery_explicit import collect_explicit
 from collector.discovery_citation import collect_from_seeds
 from collector.adapters.github import collect_repo_paper
-from collector.gate import light_gate, heavy_gate
+from collector.gate import light_gate, heavy_gate, resolve_pending
 
 def list_cmd(args):
     """列出待晋升候选（resolution=new, review_status=pending）。"""
@@ -26,16 +27,11 @@ def list_cmd(args):
         print(f"{r['id']}\t{r['arxiv_id'] or ''}\t{r['title'] or ''}")
 
 def promote_review(*, approve=None, reject=None):
-    """A2 审核：批量 approve/reject 候选。"""
-    conn = get_conn()
-    try:
-        for cid in (approve or []):
-            conn.execute("UPDATE intake_candidates SET review_status='approved' WHERE id=?", (cid,))
-        for cid in (reject or []):
-            conn.execute("UPDATE intake_candidates SET review_status='rejected' WHERE id=?", (cid,))
-        conn.commit()
-    finally:
-        conn.close()
+    """A2 审核：批量 approve/reject 候选（委托 candidate_store 单一 nucleus）。"""
+    for cid in (approve or []):
+        candidate_store.set_review_status(cid, "approved")
+    for cid in (reject or []):
+        candidate_store.set_review_status(cid, "rejected")
 
 
 def collect(args):
@@ -84,18 +80,9 @@ def resolve_one(cid):
 
 
 def resolve(args=None):
-    """默认只对 resolution in {new, needs_better_copy} 的候选下载+SHA256。"""
-    conn = get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT id FROM intake_candidates WHERE resolution IN ('new','needs_better_copy')").fetchall()
-        n = 0
-        for r in rows:
-            resolve_one(r[0]); n += 1
-            # 无需 commit：heavy_gate 在自己的连接上自提交 resolution/fetched_sha256
-    finally:
-        conn.close()
-    print(f"resolved {n} candidates")
+    """默认只对 resolution in {new, needs_better_copy} 的候选下载+SHA256（委托 gate.resolve_pending）。"""
+    results = resolve_pending()
+    print(f"resolved {len(results)} candidates")
 
 
 def topic(args):

@@ -54,3 +54,30 @@ def insert_candidate(*, source_type, url_canonical, arxiv_id=None, doi=None, tit
         return cid, "created"
     finally:
         conn.close()
+
+
+VALID_REVIEW = {"pending", "approved", "rejected"}
+
+
+def set_review_status(candidate_id, status, note=None):
+    """Set a candidate's A2 review_status (pending|approved|rejected). Optional note.
+
+    This is the single nucleus for review-status writes; both the CLI and the
+    intake API delegate here (no duplicate UPDATE logic).
+    """
+    if status not in VALID_REVIEW:
+        raise ValueError(f"bad review_status {status}")
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT 1 FROM intake_candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not cur:
+            raise KeyError(candidate_id)
+        if note is not None:
+            conn.execute("UPDATE intake_candidates SET review_status=?, review_note=? WHERE id=?",
+                         (status, note, candidate_id))
+        else:
+            conn.execute("UPDATE intake_candidates SET review_status=? WHERE id=?",
+                         (status, candidate_id))
+        conn.commit()
+    finally:
+        conn.close()
