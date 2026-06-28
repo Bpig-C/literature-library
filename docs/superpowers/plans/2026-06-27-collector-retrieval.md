@@ -1045,3 +1045,23 @@ def test_mapped_does_not_touch_vocab(tmp_path, monkeypatch):
 1. **Spec 覆盖**：§3 主题模型→T1/T2；§3.5 发现→T3/T4；§3.3 不碰词表→T2+边界测试；§4 GitHub→T5；§5 collect/resolve→T6；§3.6 桥接→T7。✓
 2. **占位符**：无 TBD/TODO；`_do_ingest`/`fetch_metadata`/`light_gate`/`heavy_gate` 为地基契约，已在 Phase 0 显式声明。✓
 3. **类型一致**：`map_status` 取值、`collect_explicit` 返回 `[{id,arxiv_id,resolution}]`、`promote(candidate_id)->work_id` 全程一致。✓
+
+---
+
+## 实施偏差记录（实施后补记，2026-06-28）
+
+> 以下各 task 的**示例代码块**是写作时的草稿，实际实施时发现与地基真实契约不符，已按真实契约实现。示例代码块**不再权威**，以代码为准。每处偏差都经过 implementer 核验 + spec/质量两阶段审查确认正确。
+
+1. **发现适配器候选写入**（Task 3/4/5 示例）：示例用裸 `INSERT INTO intake_candidates` + 捕获 UNIQUE。**实际改为调用 `collector.candidate_store.insert_candidate(...)`**（地基的候选层去重 chokepoint，分层强键→url 兜底），只统计 `status=='created'` 为新增。裸 INSERT 会丢失候选层去重，故禁用。
+
+2. **闸门签名**（Task 6 示例）：示例写 `light_gate(conn, candidate)` / `heavy_gate(conn, cid)`。**地基真实签名是 `light_gate(candidate: dict) -> (resolution, matched_work_id)` 与 `heavy_gate(candidate_id: str) -> resolution`——均无 conn 参数，自管连接**。CLI 据此调用。
+
+3. **promote 签名与结构**（Task 7 示例）：示例整段重写 `promote(candidate_id)` 并引入桩 `_do_ingest`。**实际保留地基真实签名 `promote(candidate_id, *, library_root) -> str`**，把既有晋升逻辑（暂存 PDF + build_ingest_plan + execute_plan + cleanup）原样抽进 `_do_ingest`，仅在晋升后追加 `_write_suggested_tags`。建议标签是 best-effort（独立 try/except），**绝不阻断晋升**。
+
+4. **建议标签列名**（Task 7 示例）：示例用 `classification_extractions.source`。**真实表无 `source` 列，用 `model_name`**（与既有抽取约定一致）；写入 `model_name='collector'`、`review_status='pending'`、`applied=0`（建议，不绕过人审）。
+
+5. **Task 6 是 MODIFY**：`scripts/literature_intake.py` 地基已有 `list`/`promote` 子命令，示例写成新建会覆盖。实际为合并式 MODIFY，保留 `list_cmd`/`promote_review`，追加 `topic`/`collect`/`resolve`。
+
+6. **测试隔离**：跨模块编排（discovery、gate、collect 流）patch `api.db.DB_PATH`（`get_conn` 调用时读此全局，覆盖 candidate_store/gate/github/cli 全部连接）；单模块测试（topics、cli list/promote）patch 各模块的 `get_conn`。两种模式均有据可循。
+
+7. **GitHub 跨源对齐**（Task 5）：示例手动查 works。实际复用 `light_gate` 做强键对齐（arXiv ID/DOI），**绝不靠 SHA256**（不同主机字节流不同）。`skipped_dup` 时短路、不改写已有候选行的 resolution。

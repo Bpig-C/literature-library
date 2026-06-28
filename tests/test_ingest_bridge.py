@@ -11,8 +11,9 @@ def test_promote_creates_work_and_backfills(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     ingest.ensure_core_schema(conn)   # 建 works/source_files/parse_runs/duplicate_*/...
     conn.execute("""CREATE TABLE intake_candidates (id TEXT PRIMARY KEY, local_pdf_path TEXT,
-                     arxiv_id TEXT, title TEXT, status TEXT, ingested_work_id TEXT)""")
-    conn.execute("INSERT INTO intake_candidates VALUES ('IC-1', ?, '2406.10162', 'Reward Hacking', 'resolved', NULL)",
+                     arxiv_id TEXT, title TEXT, status TEXT, ingested_work_id TEXT,
+                     collection_topic_id TEXT)""")
+    conn.execute("INSERT INTO intake_candidates VALUES ('IC-1', ?, '2406.10162', 'Reward Hacking', 'resolved', NULL, NULL)",
                  (str(pdf),))
     conn.commit(); conn.close()
 
