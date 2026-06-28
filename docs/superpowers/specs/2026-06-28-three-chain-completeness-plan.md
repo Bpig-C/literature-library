@@ -46,7 +46,7 @@
 | parser-F 解析状态/产物 | ✅ DB-only | ✅ `/parse/status` | ✅ WorkDetail 徽标 | **Phase B/D 已完成**；CLI/API/UI 三收敛键控 `literature_parse_runs`（Phase D 状态源统一：CLI 改 DB-only，`parse_ledger.json` 废弃归档） |
 | (既有) works/meta/分类/去重/关系/文件 | ✅ | ✅ | ✅ | 三链齐全，作模板 |
 
-**差距（修订后）**：collector-D（A2审核）、parser-E/F 三链已齐（Phase A/B）；仍缺 API+UI 的有 ingest-G、collector-B/C 的 API/UI 链。collector-A/C 的部署缺口（collection_topics 迁移）已于 Phase A 闭合。
+**差距（全部闭合）**：所有能力 CLI/API/UI 三链齐全。Phase A 闭合 collector-D + topics 迁移；Phase B 闭合 parser-E/F；Phase B' 闭合 ingest-G；Phase C 闭合 collector-A/B/C 的 UI/API 链；Phase D 闭合 hygiene + 状态源统一 + 三链 smoke 验收。
 
 > **澄清（易混点）**：`collector collect` **不直接摄入成 work**。采集链四阶段——collect（落 `intake_candidates` 候选，仅元数据）→ resolve（下载+SHA256 闸门）→ **A2 人工审核关（IntakeReview）** → promote（经 `ingest_bridge` 才写 `works`）。人不点 promote，候选永远是候选。inbox-ingest（ingest-G）则是另一条**无候选闸门**的旁路：手动丢 PDF → 直接摄入成 work → 再 parse。
 
@@ -107,10 +107,10 @@
 > - **§2 单核**：`scripts/literature_intake.collect` 的编排（按 topic query_def 分发到 collect_explicit/collect_from_seeds/collect_repo_paper + light_gate 写 resolution）提取为 `collector/collect.py::collect_once`；CLI 改薄包装（零逻辑复制），为 API 铺路。`grep "def collect_once" --include=*.py .` 仅命中 `collector/collect.py`。
 > - **API**：新增 `POST /api/intake/collect`（薄适配器，全委托 `collect_once`，零编排逻辑）；`GET /api/intake/topics` 背后的 `topics.list_topics` 改为 **additive** `SELECT *`（解析 query_def/mapped_tags，新增 description/axis_hint/proposed_note/mapped_tags 列；既有 id/name/map_status/lifecycle key 不破，既有消费者与 test_intake_api 不受影响）。
 > - **UI**：新增 `web/src/views/TopicsReview.vue`（侧边栏「🗂️ 主题闸门」→ `/topics`）——左栏主题列表（map_status 三色 badge: seedling/proposed/mapped）+ 右栏详情（描述/轴归属/explicit_ids/seed_paper_ids/proposed_note 4 判据/mapped_tags）。成熟度闸门按钮（seedling→proposed prompt 填 proposed_note 提示 4 判据；proposed→mapped prompt 填 mapped_tags）+ 按主题发起采集按钮（`collectIntake`）+ 触发 resolve 按钮（复用 `resolveIntake`）。`api.js` 加 `transitionTopic`/`collectIntake`。
-> - **测试**：`tests/test_collect_once.py`（4 测试，桩网络入口，验证分发+闸门写入+unknown topic+非 pending 跳过闸门）；`tests/test_intake_api.py` +3 collect 端点测试；`tests/test_collection_topics.py` +1 list_topics additive 断言。`uv run python -m pytest tests/` 206 passed/6 skipped（2 个 test_batch_parse_cli 失败为预先存在的环境问题——缺 `MinerU_API_KEY`，与 Phase C 无关）。`tests/test_collector_boundary.py` 3/3 守卫通过（collector 仍经 ingest_bridge 写 works）。
+> - **测试**：`tests/test_collect_once.py`（4 测试，桩网络入口，验证分发+闸门写入+unknown topic+非 pending 跳过闸门）；`tests/test_intake_api.py` +3 collect 端点测试；`tests/test_collection_topics.py` +1 list_topics additive 断言。`tests/test_collector_boundary.py` 3/3 守卫通过（collector 仍经 ingest_bridge 写 works）。
 > - **向后兼容**：`list_topics` additive；CLI `collect` 行为不变（`test_intake_cli` 6/6 回归通过）。
 > - **边界**：UI collect 只做"按主题发起一次采集"入口，持续 loop/批量订阅留 CLI。
-> - **遗留**（Phase D）：`test_batch_parse_cli` 的 2 个环境性失败（需 `MinerU_API_KEY`）独立于本 phase。
+> - **注**：实施期 worktree 报告的 `test_batch_parse_cli` 2 失败是 phaseD-status-unify 的测试纪律遗留（token 闸门依赖真实 .env），已于 hotfix `4d2a38a`（fixture hermetic 设 dummy key）修复，与本 phase 无关。
 
 - Topics 页：主题成熟度（seedling/proposed/mapped）管理 + 提案闸门 4 判据展示。
 - 在 UI 触发 collect/resolve（或明确"按主题发起一次采集"为 UI 入口，持续订阅/loop 留 CLI）。
@@ -120,7 +120,9 @@
 
 > **进度**：Phase D-hygiene ✅ 已完成（2026-06-28，合并点见 master）。落盘 P1.0g 测试侧修复（`test_quarantine_excludes_from_default_list` 加 `&search={work_id}`，路由本就正确）+ `pyproject.toml` 加 `[tool.pytest.ini_options] testpaths=["tests"]`。`pytest tests/` 192 passed/6 skipped/0 failed；裸 pytest 干净收集 198 tests。
 >
-> **状态源统一 ✅ 已完成（2026-06-28，分支 `fix/phaseD-status-unify`）**：`parse_ledger.json` 文件状态源废弃，`literature_parse_runs`（DB）成为解析状态唯一权威。具体：旧自部署 MinerU Agent API CLI（`parser/scripts/literature_batch_parse.py`，bucket/failure_kind 唯一消费者）+ ledger 依赖工具 `literature_cleanup_bad_sources.py` 归档至 `_archive/`；新 CLI `scripts/literature_batch_parse.py` 改 DB-only（`get_pending_db` + `run_pending`，逐条 UPDATE parse_runs + 复用 `sync_work_parse_status` 同步 `works.parse_status`，不再读 ledger）；ingest 删 `update_ledger` 停止双写；healthcheck/dashboard 脱离 ledger（纯读 parse_runs）。`parse_ledger.json` 移至 `_archive/parse_ledger.json.bak`。`grep parse_ledger --include=*.py api/ scripts/ collector/ parser/core/` 为空。§2 单核不变量 PRESERVED（`route_and_parse` 仅 `parser/core/mineru/router.py`）。Phase D-acceptance 三链 smoke 待后续。
+> **状态源统一 ✅ 已完成（2026-06-28，分支 `fix/phaseD-status-unify`）**：`parse_ledger.json` 文件状态源废弃，`literature_parse_runs`（DB）成为解析状态唯一权威。具体：旧自部署 MinerU Agent API CLI（`parser/scripts/literature_batch_parse.py`，bucket/failure_kind 唯一消费者）+ ledger 依赖工具 `literature_cleanup_bad_sources.py` 归档至 `_archive/`；新 CLI `scripts/literature_batch_parse.py` 改 DB-only（`get_pending_db` + `run_pending`，逐条 UPDATE parse_runs + 复用 `sync_work_parse_status` 同步 `works.parse_status`，不再读 ledger）；ingest 删 `update_ledger` 停止双写；healthcheck/dashboard 脱离 ledger（纯读 parse_runs）。`parse_ledger.json` 移至 `_archive/parse_ledger.json.bak`。`grep parse_ledger --include=*.py api/ scripts/ collector/ parser/core/` 为空。§2 单核不变量 PRESERVED（`route_and_parse` 仅 `parser/core/mineru/router.py`）。
+>
+> **Phase D-acceptance ✅ 已完成（2026-06-29，真实三链 smoke）**：两条摄入路径各经 CLI/API/UI 跑通、结果一致。① **采集路径**：`collect`(CLI, arxiv 1706.03762)→`resolve`(API heavy_gate 下载+SHA256)→`review approve`(API)→`promote`(API, 经 ingest_bridge)→`W-arxiv-1706.03762`→`parse/trigger`(API)→**succeeded, backend=vlm(cloud), 43.5KB content.md**。② **inbox 旁路**：丢 PDF(BERT 1810.04805)→`/api/ingest/plan`(dry-run)→`/api/ingest/execute`→`W-arxiv-1810.04805`→`/api/parse/trigger`→**succeeded, backend=pymupdf(本地), 66.8KB content.md**。两种解析后端（PyMuPDF 本地 + cloud vlm）均验证。③ **UI 链**（playwright 渲染）：`/inbox`(InboxReview 读 plan 显示待摄入)、`/topics`(TopicsReview 成熟度闸门)、`/intake`(IntakeReview 候选统计) 三页零错误渲染、显示真实后端数据。DB 一致：parse_runs.status=succeeded、works.parse_status=succeeded、source_files 在位、collector 经 ingest_bridge（boundary 3/3）。master `uv run python -m pytest tests/` **213 passed/6 skipped/0 failed**（MinerU_API_KEY unset，hermetic）。§2 双单核 PRESERVED（`collect_once` 唯一 collector/collect.py、`route_and_parse` 唯一 parser/core/mineru/router.py）。
 
 - 全流程 smoke（两条摄入路径都要走通）：
   - **采集路径**：`collect → resolve → [IntakeReview 审核] → promote → [parse 触发] → content.md → metadata/分类/去重(既有 UI) → 分析`
@@ -138,10 +140,14 @@
 
 ## 6. 端态验收（Definition of Done）
 
-- 能力矩阵中 ✅/❌ 全部转为 ✅（每能力三链路可达）。
-- `uv run python -m pytest tests/` 全绿（含新增 intake/parse 端点测试）。
-- 三链路 smoke 脚本/用例：同一动作从 CLI、`curl /api`、UI 各走一遍，结果一致。
-- 既有功能无回归（既有 153 passed 基线不退化）。
+> **🎉 全部达成（2026-06-29，Phase D-acceptance 完成）**
+
+- ✅ 能力矩阵中 ✅/❌ 全部转为 ✅（每能力三链路可达）——collector A/B/C/D + inbox 摄入，CLI/API/UI 齐。
+- ✅ `uv run python -m pytest tests/` 全绿：**213 passed / 6 skipped / 0 failed**（MinerU_API_KEY unset，hermetic；含新增 intake/parse/ingest/collect 端点测试）。
+- ✅ 三链路 smoke：两条摄入路径各从 CLI、`curl /api`、UI（playwright 渲染）走一遍，结果一致（见 Phase D-acceptance 块）。
+- ✅ 既有功能无回归（基线 153→213 passed，单调上升）。
+- ✅ §2 单核全程 PRESERVED（`route_and_parse` 唯一 parser/core/mineru/router.py；`collect_once` 唯一 collector/collect.py）。
+- ✅ 状态源统一（无 parse_ledger ↔ parse_runs 分裂）。
 
 ## 7. 分工
 
