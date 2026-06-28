@@ -38,3 +38,27 @@ def test_explicit_ids_dedup_on_recollect(tmp_path, monkeypatch):
     de.collect_explicit(["2501.17805"], source_type="arxiv")
     again = de.collect_explicit(["2501.17805"], source_type="arxiv")
     assert len(again) == 0   # 已是候选 → skipped_dup，不重复计
+
+
+def test_malformed_id_is_skipped(tmp_path, monkeypatch):
+    db_path = _db(tmp_path)
+    monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(de, "fetch_metadata",
+                        lambda aid: {"arxiv_id": aid, "title": "T", "authors": [], "doi": None, "abstract": None})
+    created = de.collect_explicit(["not-an-arxiv-id", "2501.17805"], source_type="arxiv")
+    assert {c["arxiv_id"] for c in created} == {"2501.17805"}   # 坏 id 被 normalize 掉 → 跳过
+
+
+def test_raw_meta_persisted_from_fetch(tmp_path, monkeypatch):
+    db_path = _db(tmp_path)
+    monkeypatch.setattr(cs, "get_conn", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(de, "fetch_metadata",
+                        lambda aid: {"arxiv_id": aid, "title": "Paper " + aid, "authors": ["A"], "doi": None, "abstract": "abs"})
+    de.collect_explicit(["2501.17805"], source_type="arxiv")
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT raw_meta FROM intake_candidates WHERE arxiv_id='2501.17805'").fetchone()
+    conn.close()
+    assert row is not None
+    import json
+    meta = json.loads(row[0])
+    assert meta["title"] == "Paper 2501.17805"   # fetch_metadata 的产物落 raw_meta
