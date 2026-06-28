@@ -38,6 +38,28 @@ def find_desynced(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     return rows
 
 
+def sync_work_parse_status(conn: sqlite3.Connection, work_id: str) -> str:
+    """按 literature_parse_runs 重算单个 work 的 works.parse_status。
+
+    保守：succeeded 是粘性的（曾有 succeeded 且 content_md_path 非空的 run → 保持 succeeded）；
+    全部 failed → failed；否则 pending。返回写入的状态值。
+    """
+    runs = conn.execute(
+        "SELECT status, content_md_path FROM literature_parse_runs WHERE work_id=?",
+        (work_id,),
+    ).fetchall()
+    has_succeeded = any(
+        r[0] == "succeeded" and (r[1] or "") for r in runs
+    )
+    all_failed = bool(runs) and all(r[0] == "failed" for r in runs)
+    new = "succeeded" if has_succeeded else ("failed" if all_failed else "pending")
+    conn.execute(
+        "UPDATE works SET parse_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (new, work_id),
+    )
+    return new
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="同步 works.parse_status 与 parse_runs.status")
     ap.add_argument("--apply", action="store_true", help="实际写 DB（默认 dry-run）")
@@ -59,10 +81,7 @@ def main() -> int:
 
         changed = 0
         for wid, _ in rows:
-            conn.execute(
-                "UPDATE works SET parse_status='succeeded', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                (wid,),
-            )
+            sync_work_parse_status(conn, wid)
             changed += 1
         conn.commit()
         print(f"\n已更新 {changed} 条。")

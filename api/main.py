@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .routes import duplicates, files, intake, metadata, relations, works, classification
+from .routes import duplicates, files, intake, metadata, parse, relations, works, classification
 
 app = FastAPI(title="Literature Library API", version="0.1.0")
 
@@ -27,6 +27,7 @@ app.include_router(files.router, prefix="/api")
 app.include_router(metadata.router, prefix="/api")
 app.include_router(classification.router, prefix="/api")
 app.include_router(intake.router, prefix="/api")
+app.include_router(parse.router, prefix="/api")
 
 # Serve Vue build in production
 DIST = Path(__file__).resolve().parents[1] / "web" / "dist"

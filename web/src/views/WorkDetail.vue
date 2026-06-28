@@ -112,7 +112,13 @@
             <span v-else class="muted">—</span>
           </div>
           <div>链接</div><div><a v-if="work.url" :href="work.url" target="_blank">{{ work.url }}</a></div>
-          <div>解析状态</div><div :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</div>
+          <div>解析状态</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</span>
+            <n-button size="small" quaternary :loading="parseLoading"
+                      :disabled="work.parse_status === 'succeeded'"
+                      @click="triggerParse">触发解析</n-button>
+          </div>
           <div>阅读状态</div>
           <div>
             <n-select v-if="editing" v-model:value="editForm.read_status" :options="readStatusOptions" size="small" />
@@ -325,7 +331,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag } from '../api'
+import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag, parseTrigger } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, label } from '../labels'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import PdfPreviewDrawer from '../components/PdfPreviewDrawer.vue'
@@ -368,6 +374,7 @@ const editingCls = ref(false)
 const clsForm = ref({})
 const allTags = ref([])
 const showPdf = ref(false)
+const parseLoading = ref(false)
 
 const showQuarantineModal = ref(false)
 const quarantineReason = ref('')
@@ -733,6 +740,22 @@ function quarantine() {
   quarantineReason.value = ''
   quarantineLoading.value = false
   showQuarantineModal.value = true
+}
+
+// 同步解析：born-digital 走 PyMuPDF（秒级）；扫描型走 cloud vlm 可能耗时数分钟，
+// 期间按钮置 loading。成功后用 loadWork() 全量刷新（含 content.md 预览）。
+async function triggerParse() {
+  parseLoading.value = true
+  try {
+    const res = await parseTrigger({ work_ids: [props.id] })
+    const r = (res.results || [])[0] || {}
+    message.success(`解析：${r.status || '?'}${r.backend ? ' (' + r.backend + ')' : ''}`)
+    await loadWork()  // 刷新 parse_status 徽标 + content.md 预览
+  } catch (e) {
+    message.error('触发解析失败：' + e.message)
+  } finally {
+    parseLoading.value = false
+  }
 }
 
 async function confirmQuarantine() {
