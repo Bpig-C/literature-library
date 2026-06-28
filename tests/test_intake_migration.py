@@ -15,7 +15,7 @@ def test_migration_creates_intake_candidates(tmp_path):
     assert {"id","source_type","source_url","title","arxiv_id","doi","url_canonical",
             "fetched_sha256","local_pdf_path","resolution","matched_work_id","status",
             "review_status","review_note","collected_at","resolved_at","ingested_work_id",
-            "raw_meta"} <= cols
+            "raw_meta","collection_topic_id"} <= cols
     # 唯一约束：(source_type, url_canonical)
     dup = conn.execute("SELECT sql FROM sqlite_master WHERE name='intake_candidates'").fetchone()[0]
     assert "UNIQUE" in dup.upper() or "unique" in dup

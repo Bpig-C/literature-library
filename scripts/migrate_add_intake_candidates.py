@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS intake_candidates (
     resolved_at     TEXT,
     ingested_work_id TEXT,
     raw_meta        TEXT,
+    collection_topic_id TEXT,   -- FK -> collection_topics (检索层建表；nullable，前瞻列)
     UNIQUE(source_type, url_canonical)
 )
 """
@@ -50,11 +51,17 @@ INDEXES = [
 def _index_exists(conn, name):
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone() is not None
 
+def _column_exists(conn, table, col):
+    return any(r[1] == col for r in conn.execute(f"PRAGMA table_info({table})").fetchall())
+
 def run(db_path):
     conn = sqlite3.connect(str(db_path))
     try:
         if not table_exists(conn, "intake_candidates"):
             conn.execute(CREATE_TABLE)
+        # 前瞻列：旧库（无此列建表）补列；collection_topic_id 指向检索层的 collection_topics
+        if not _column_exists(conn, "intake_candidates", "collection_topic_id"):
+            conn.execute("ALTER TABLE intake_candidates ADD COLUMN collection_topic_id TEXT")
         for name, tbl, col in INDEXES:
             if not _index_exists(conn, name):
                 conn.execute(f"CREATE INDEX {name} ON {tbl}({col})")
