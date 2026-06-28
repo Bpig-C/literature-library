@@ -900,7 +900,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--inbox", type=Path, default=None, help="Defaults to <library-root>/_inbox.")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--execute", action="store_true", help="Apply the planned ingest. Default is dry-run.")
-    parser.add_argument("--no-backup", action="store_true", help="Do not backup DB/index/ledger before executing.")
+    parser.add_argument("--no-backup", action="store_true", help="Do not backup DB/index before executing.")
     parser.add_argument("--leave-inbox", action="store_true", help="Keep ingested originals in _inbox.")
     parser.add_argument("--plan-out", type=Path, default=None, help="Optional JSON path for the generated plan.")
     return parser.parse_args(argv)

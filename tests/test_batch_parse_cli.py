@@ -121,3 +121,48 @@ def test_run_one_dry_run_does_not_write(cli_module, monkeypatch):
     monkeypatch.setattr(cli_module, "route_and_parse", fake_route_and_parse)
     cli_module.run_pending(execute=False)
     assert called["n"] == 0  # dry-run 不解析
+
+
+def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch):
+    """sync_work_parse_status 抛异常时，parse_runs 的 succeeded 仍应被提交（不回滚）。
+
+    回归 MINOR-1：sync 在内层 except 之外、commit 之前；若它的异常未吞掉，
+    会回滚 parse_runs 的 succeeded UPDATE，但磁盘 content.md 已写 → 静默不一致。
+    """
+    conn = sqlite3.connect(str(cli_module.DB_PATH))
+    try:
+        _ensure_pending_row(conn)
+    finally:
+        conn.close()
+
+    # 桩 route_and_parse：写一个假 content.md，返回成功
+    def fake_route_and_parse(client, pymupdf_client, source_path, output_dir, language):
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "content.md").write_text("# ok", encoding="utf-8")
+        return True, "", "pymupdf"
+
+    monkeypatch.setattr(cli_module, "route_and_parse", fake_route_and_parse)
+    monkeypatch.setattr(cli_module, "CloudClient", lambda: object(), raising=False)
+    monkeypatch.setattr(cli_module, "PyMuPDFClient", lambda: object(), raising=False)
+
+    # 让 sync_work_parse_status 抛异常
+    def boom(conn, work_id):
+        raise RuntimeError("sync boom")
+
+    monkeypatch.setattr(cli_module, "sync_work_parse_status", boom)
+
+    rc = cli_module.run_pending(execute=True)
+    assert rc == 0  # sync 异常被吞，整体 rc 仍为 0（解析成功）
+
+    conn = sqlite3.connect(str(cli_module.DB_PATH))
+    try:
+        pr = conn.execute(
+            "SELECT status FROM literature_parse_runs WHERE id='LPR-SF-cli1'"
+        ).fetchone()
+        # 关键断言：succeeded 未被回滚
+        assert pr[0] == "succeeded", (
+            f"sync 异常不应回滚 parse_runs；实际 status={pr[0]!r}"
+        )
+    finally:
+        conn.close()

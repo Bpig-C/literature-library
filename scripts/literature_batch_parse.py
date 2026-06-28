@@ -195,8 +195,13 @@ def run_pending(execute: bool, limit: int | None = None) -> int:
                 _update_run_db(conn, p["source_file_id"], "failed", "", now, error=str(exc))
                 failed += 1
                 print(f"  ERROR: {exc}")
-            # 同步 works.parse_status（复用既有 helper，状态源统一）
-            sync_work_parse_status(conn, p["work_id"])
+            # 同步 works.parse_status（复用既有 helper，状态源统一）。
+            # sync 失败不得回滚 parse_runs——parse_runs 已是权威源；
+            # work 状态以既有 migrate_sync 脚本兜底。
+            try:
+                sync_work_parse_status(conn, p["work_id"])
+            except Exception as exc:  # noqa: BLE001 — work 状态同步失败不得回滚 parse_runs
+                print(f"  WARN: sync_work_parse_status failed for {p['work_id']}: {exc}")
             conn.commit()
         finally:
             conn.close()
