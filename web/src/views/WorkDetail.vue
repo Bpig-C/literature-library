@@ -742,13 +742,15 @@ function quarantine() {
   showQuarantineModal.value = true
 }
 
+// 同步解析：born-digital 走 PyMuPDF（秒级）；扫描型走 cloud vlm 可能耗时数分钟，
+// 期间按钮置 loading。成功后用 loadWork() 全量刷新（含 content.md 预览）。
 async function triggerParse() {
   parseLoading.value = true
   try {
     const res = await parseTrigger({ work_ids: [props.id] })
     const r = (res.results || [])[0] || {}
     message.success(`解析：${r.status || '?'}${r.backend ? ' (' + r.backend + ')' : ''}`)
-    work.value = await getWork(props.id)  // 刷新 parse_status
+    await loadWork()  // 刷新 parse_status 徽标 + content.md 预览
   } catch (e) {
     message.error('触发解析失败：' + e.message)
   } finally {
