@@ -22,3 +22,25 @@ def test_parse_arxiv_atom(monkeypatch):
 
 def test_pdf_url():
     assert arxiv.pdf_url("2406.10162") == "https://arxiv.org/pdf/2406.10162"
+
+
+# --- download_pdf (mock urlopen, no real network) ---
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+from collector import fetch as fetch_mod
+
+def test_download_pdf_success(tmp_path):
+    dest = tmp_path / "sub" / "out.pdf"
+    fake_cm = MagicMock()
+    fake_cm.__enter__.return_value.read.return_value = b"%PDF bytes"
+    with patch("collector.fetch.urllib.request.urlopen", return_value=fake_cm):
+        result = fetch_mod.download_pdf("http://x/a.pdf", dest)
+    assert result == dest
+    assert dest.read_bytes() == b"%PDF bytes"
+    assert dest.parent.exists()  # parent dir created by mkdir
+
+def test_download_pdf_failure_returns_none(tmp_path):
+    dest = tmp_path / "out.pdf"
+    with patch("collector.fetch.urllib.request.urlopen", side_effect=OSError("net fail")):
+        result = fetch_mod.download_pdf("http://x/a.pdf", dest)
+    assert result is None
