@@ -51,7 +51,7 @@ def test_resolve_default_only_handles_new_and_better_copy(tmp_path, monkeypatch)
     c.commit(); c.close()
     monkeypatch.setattr(cli, "get_conn", lambda: sqlite3.connect(db_path))
     resolved = []
-    def fake_resolve_one(conn, cid):
+    def fake_resolve_one(cid):
         resolved.append(cid); return "new"
     monkeypatch.setattr(cli, "resolve_one", fake_resolve_one)
     cli.resolve()
@@ -87,3 +87,18 @@ def test_collect_topic_runs_gate_and_persists(tmp_path, monkeypatch):
     conn.close()
     assert rows["2210.11314"] == "exact_hit"
     assert rows["2501.00009"] == "new"
+
+
+def test_collect_unknown_topic_errors_cleanly(tmp_path, monkeypatch):
+    import api.db
+    import scripts.migrate_add_intake_candidates as mic
+    import scripts.migrate_add_collection_topics as mct
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    monkeypatch.setattr(api.db, "DB_PATH", db_path)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", db_path.parent)
+    mic.run(db_path); mct.run(db_path)
+    from types import SimpleNamespace
+    args = SimpleNamespace(topic="CT-doesnotexist", ids=None, github=None, auto_resolve=False)
+    import pytest
+    with pytest.raises(SystemExit):
+        cli.collect(args)

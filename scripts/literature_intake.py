@@ -39,10 +39,16 @@ def promote_review(*, approve=None, reject=None):
 
 
 def collect(args):
-    """跑发现 + 轻量闸门，不下载。"""
+    """跑发现 + 轻量闸门，不下载。
+
+    若中途 fetch_metadata 网络失败，已写入的候选保持 resolution=pending，需重跑 collect 补闸门。
+    """
     created = []
     if getattr(args, "topic", None):
         t = topics.get(args.topic)
+        if t is None:
+            print(f"error: unknown topic {args.topic}", file=sys.stderr)
+            sys.exit(1)
         qd = t["query_def"]
         if qd.get("explicit_ids"):
             created += collect_explicit(qd["explicit_ids"], collection_topic_id=args.topic)
@@ -72,7 +78,7 @@ def collect(args):
         resolve()
 
 
-def resolve_one(conn, cid):
+def resolve_one(cid):
     """下载 + SHA256 重量闸门（heavy_gate 自管连接）。"""
     return heavy_gate(cid)   # 注意：heavy_gate(cid) 无 conn 参数
 
@@ -85,7 +91,8 @@ def resolve(args=None):
             "SELECT id FROM intake_candidates WHERE resolution IN ('new','needs_better_copy')").fetchall()
         n = 0
         for r in rows:
-            resolve_one(conn, r[0]); n += 1
+            resolve_one(r[0]); n += 1
+            # 无需 commit：heavy_gate 在自己的连接上自提交 resolution/fetched_sha256
     finally:
         conn.close()
     print(f"resolved {n} candidates")
@@ -93,9 +100,11 @@ def resolve(args=None):
 
 def topic(args):
     if args.action == "add":
-        t = topics.create(name=args.name, description=args.description or "",
-                          seed_paper_ids=[s.strip() for s in args.seeds.split(",")] if args.seeds else None,
-                          axis_hint=args.axis, map_status=args.map_status or "seedling")
+        t = topics.create(
+            name=args.name, description=args.description or "",
+            seed_paper_ids=[s.strip() for s in args.seeds.split(",")] if args.seeds else None,
+            explicit_ids=[s.strip() for s in args.explicit_ids.split(",")] if getattr(args, "explicit_ids", None) else None,
+            axis_hint=args.axis, map_status=args.map_status or "seedling")
         print(t["id"])
     elif args.action == "list":
         for t in topics.list_topics(map_status=args.map_status):
@@ -116,6 +125,7 @@ def main(argv=None):
     t.add_argument("action", choices=["add", "list", "propose"])
     t.add_argument("--name"); t.add_argument("--description"); t.add_argument("--seeds")
     t.add_argument("--axis"); t.add_argument("--map-status"); t.add_argument("--id"); t.add_argument("--note")
+    t.add_argument("--explicit-ids")
     c = sub.add_parser("collect")
     c.add_argument("--topic"); c.add_argument("--ids"); c.add_argument("--github")
     c.add_argument("--auto-resolve", action="store_true")
