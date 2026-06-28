@@ -21,7 +21,8 @@
 | 数据库 | SQLite (WAL 模式) | — |
 | 后端 | FastAPI (Python) | 19527 |
 | 前端 | Vue 3 + Vite | 19528 |
-| PDF 解析 | MinerU 官网精准 API（cloud，默认）/ 自部署 MinerU（降级） | 经 parser/ 子项目 |
+| PDF 解析 | 二元路由：PyMuPDF 本地（文本层，默认/免费）↔ MinerU 官网 cloud vlm（扫描型/降级） | 经 parser/ 子项目 |
+| 文献采集 | collector 子项目（topics 成熟度闸门 / collect·resolve / intake 审核 / ingest_bridge） | CLI·API·UI 三链 |
 | 元数据抽取 | Ollama (qwen3:4b) / opencode→MiMo-v2.5-pro（质量裁判） | 11435 |
 
 ### 目录结构
@@ -30,7 +31,7 @@
 literature_library/
   literature.sqlite          # 主数据库，逻辑关系中心
   index.json                 # 前端/脚本可读的文献索引（历史产物，新功能优先查 DB）
-  parse_ledger.json          # MinerU 解析任务账本
+  parse_ledger.json          # (已废弃/归档) 解析状态现以 literature_parse_runs 表为准
   pyproject.toml             # Python 项目配置（uv）
   _inbox/                    # 新 PDF 临时投递入口
   _duplicates/               # 精确重复文件归档处
@@ -277,7 +278,7 @@ MinerU 解析产物。路径记录在 `literature_parse_runs.content_md_path`。
 python scripts\literature_ingest.py --execute
 ```
 
-流程：扫描 inbox → 计算 sha256 → 精确重复移入 `_duplicates/exact_sha256` → 新文件复制到 `works/{work_id}/source/` → inbox 原文件归档 → 写 DB/index/ledger → parse_ledger 新增 `pending` 条目。
+流程：扫描 inbox → 计算 sha256 → 精确重复移入 `_duplicates/exact_sha256` → 新文件复制到 `works/{work_id}/source/` → inbox 原文件归档 → 写 DB(`works`/`source_files`/`literature_parse_runs` pending 行)/index。摄入也可经前端 `/inbox`(InboxReview) dry-run + 确认，或 `POST /api/ingest/plan`·`/execute`（Phase B'）。
 
 **不要**手动把 PDF 放入 `works/`；让摄入脚本维护 DB 一致性。
 
@@ -418,13 +419,12 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 
 ## 10. 当前限制
 
-- 没有前端上传入口，新增文献仍依赖 `_inbox` + 命令行摄入。
-- 摄入后不自动触发解析，需手动运行 `python scripts/literature_batch_parse.py --execute`（经 `parser/` 子项目走 MinerU 官网 cloud API）。
+- 仍无"直接前端文件上传到 work"端点；新增文献经 `_inbox/` 摄入——现已有前端入口 `/inbox`(InboxReview，dry-run+确认，Phase B')，也可命令行或 `POST /api/ingest/*`。
+- 摄入后不自动触发解析，需手动触发：CLI `python scripts/literature_batch_parse.py --execute`、API `POST /api/parse/trigger`、或 WorkDetail 按钮（经 `parser/` 子项目二元路由：PyMuPDF 本地 / MinerU cloud vlm）。
 - `year` 暂不自动回填，因为模型容易误提取会议年份或修订日期。
-- `collections`、`work_collections` 表尚不存在，标签/主题/集合未进入可用工作流。
 - 综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面尚未实现。
 - 引用导出（BibTeX/RIS）尚未实现。
-- `index.json` 和 `parse_ledger.json` 是历史产物，新功能应优先查询 SQLite。
+- `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。
 - 26 个隔离文献中 24 个有 `_quarantine/{work_id}` 目录（含 active source），2 个为 archived source 状态无 quarantine 目录（W-sha-50c7c11439c3、W-sha-e2a35f439caf）。
 - P1.1 全库 digest 尚未批量生成（当前 5/112 覆盖率）。
 

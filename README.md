@@ -24,18 +24,18 @@ D:\02_academic\doctoral\literature_library
   literature.sqlite    # 主数据库
   pyproject.toml       # Python 项目配置（uv 环境）
   index.json           # 前端/脚本可读的文献索引
-  parse_ledger.json    # MinerU/document-parser 解析任务账本
+  parse_ledger.json    # (已废弃/归档) 解析状态现以 literature_parse_runs 表为准
 ```
 
 ## 核心概念
 
-`_inbox` 是新文献的入口，不是永久存储位置。现在可以手动把 PDF 放进去；未来前端上传也应先进入这个摄入流程。执行摄入后，新 PDF 会复制到 `works\{work_id}\source\`，`_inbox` 中的原始投递文件会归档到 `_archive\ingested_inbox\`。
+`_inbox` 是新文献的入口，不是永久存储位置。可以手动把 PDF 放进去，也可经前端 `/inbox`（InboxReview）页 dry-run 预览后确认摄入。执行摄入后，新 PDF 会复制到 `works\{work_id}\source\`，`_inbox` 中的原始投递文件会归档到 `_archive\ingested_inbox\`。
 
 `works` 是稳定物理存储区。每篇文献有一个 `work_id`，例如 `W-arxiv-2501.17805` 或 `W-sha-d35373840d97`。PDF、MinerU 解析结果、笔记、分析结果都围绕这个目录组织。
 
 `literature.sqlite` 是逻辑关系中心，记录 Work、source 文件、解析产物、重复候选、文献关系等。主题、标签、关系不靠物理文件夹表达，而是进入数据库。
 
-`parse_ledger.json` 是解析任务状态账本。已经成功解析的文献不要重复提交；新增文献摄入后会先以 `pending` 状态进入 ledger，等需要解析时再调用 document-parser/MinerU。
+解析任务状态以 `literature.sqlite` 的 `literature_parse_runs` 表为唯一权威（Phase D 状态源统一）。新增文献摄入后会先以 `pending` 状态写入该表，等需要解析时再触发（CLI `literature_batch_parse.py` / API `POST /api/parse/trigger` / UI WorkDetail 按钮）。`parse_ledger.json` 是历史文件镜像，已废弃并归档至 `_archive/`，不再读写。
 
 ## 日常流程
 
@@ -66,9 +66,8 @@ python scripts\literature_ingest.py --execute
 - 精确重复文件移入 `_duplicates\exact_sha256`
 - 新文件复制到 `works\{work_id}\source\`
 - `_inbox` 原始投递文件归档到 `_archive\ingested_inbox\`
-- 写入 `literature.sqlite`
+- 写入 `literature.sqlite`（含 `literature_parse_runs` 新增 `pending` 解析行）
 - 更新 `index.json`
-- 在 `parse_ledger.json` 中新增 `pending` 解析任务
 
 如果希望执行摄入后仍保留 `_inbox` 原文件，可加：
 
@@ -77,6 +76,17 @@ python scripts\literature_ingest.py --execute --leave-inbox
 ```
 
 ### 2. 解析新增 PDF
+
+> 现行解析架构（Phase B/E）：**二元路由** `parser/core/mineru/router.py::route_and_parse`——文本层 PDF(born-digital) → PyMuPDF 本地直抽（免费/快）；扫描型/质检不过 → MinerU 官网 cloud vlm API（token 从根 `.env` 的 `MinerU_API_KEY` 读）。旧的自部署 MinerU:18200 + document-parser:18201 两层架构已降级为回滚参考（CLI 归档于 `_archive/`）。完整审核/测试步骤见 `docs/superpowers/specs/2026-06-29-three-chain-runbook.md`。
+
+最常用（解析所有 pending，DB-only 状态源）：
+
+```powershell
+python scripts\literature_batch_parse.py --execute
+```
+
+<details>
+<summary>旧的自部署 MinerU 两层设置（降级参考，cloud 模式不需要）</summary>
 
 短期内不需要常驻 MinerU，因为现有 140 个活跃 PDF 已全部解析成功。只有新增文献、重跑解析或处理疑难 PDF 时才启动。
 
@@ -118,6 +128,8 @@ uv run python scripts\literature_batch_parse.py --library-root D:\02_academic\do
 MINERU_API_MAX_CONCURRENT_REQUESTS=1
 MINERU_PROCESSING_WINDOW_SIZE=32
 ```
+
+</details>
 
 ### 3. 查看当前库状态
 
