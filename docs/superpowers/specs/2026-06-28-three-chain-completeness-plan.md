@@ -37,9 +37,9 @@
 
 | 能力 | CLI | API | UI | 说明 |
 |---|---|---|---|---|
-| collector-A 主题生命周期 | ✅ `literature_intake topic` | ✅ `/intake/topics` | ❌ | `collection_topics` **已迁移到 live DB**（Phase A） |
-| collector-B 发现(collect) | ✅ `literature_intake collect` | ❌ | ❌ | 重批量，主战场 CLI/loop |
-| collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ✅ `/intake/resolve` | ❌ | 可被 promote 链式触发 |
+| collector-A 主题生命周期 | ✅ `literature_intake topic` | ✅ `/intake/topics` | ✅ TopicsReview.vue | `collection_topics` **已迁移到 live DB**（Phase A）；UI 成熟度闸门 + list_topics additive 补字段（Phase C） |
+| collector-B 发现(collect) | ✅ `literature_intake collect` | ✅ `/intake/collect` | ✅ TopicsReview.vue | 重批量主战场 CLI/loop；UI 提供"按主题发起一次采集"入口（Phase C）；collect 编排提取为 `collector.collect.collect_once` §2 单核 |
+| collector-C 闸门(resolve) | ✅ `literature_intake resolve` | ✅ `/intake/resolve` | ✅ TopicsReview.vue | 可被 promote 链式触发；UI 加触发 resolve 按钮（Phase C） |
 | collector-D **A2 审核+晋升** | ✅ `literature_intake list/promote` | ✅ `/intake/*` | ✅ IntakeReview.vue | **Phase A 已完成并合并**；人必须介入，UI 优先级最高 |
 | **ingest-G inbox 手动摄入** | ✅ `literature_ingest.py` | ✅ `/api/ingest/plan`,`/execute` | ✅ InboxReview.vue | **Phase B' 已完成**；薄适配器委托 nucleus（`build_ingest_plan`/`execute_plan`，§2 单核）；ingest 直写 works + 建 parse_runs pending（Phase B 接力） |
 | parser-E 解析 pending | ✅ `parser/main.py` | ✅ `/parse/trigger` | ✅ WorkDetail 触发按钮 | **Phase B 已完成**；D13 路由统一到 `core.mineru.router`（单核三适配器）；真实 smoke 经 cloud vlm 验证（W-arxiv-2506.19248） |
@@ -101,7 +101,16 @@
 - **边界（关键差异）**：ingest 直接写 `works`，**不经候选闸门**（与 collector 不同，源是用户亲手丢的可信 PDF）；dry-run 预览即人工关。文件 IO（拷贝/归档/备份）放 core，路由薄；ingest 与 collector 两套摄入路径互不混用。
 - **验收**：丢 PDF 到 `_inbox/` → dry-run 预览 → 确认摄入 → 新 work + parse_runs pending 落地（`test_execute_writes_works_and_parse_run` 断言）→ 可链式触发 Phase B 解析。✅
 
-### Phase C — collector 主题与发现进 UI〔补齐 A/B/C 的 UI 链〕
+### Phase C — collector 主题与发现进 UI〔补齐 A/B/C 的 UI 链〕 ✅ 已完成（2026-06-29，分支 `fix/phaseC-collector-ui`）
+
+> **交付**：
+> - **§2 单核**：`scripts/literature_intake.collect` 的编排（按 topic query_def 分发到 collect_explicit/collect_from_seeds/collect_repo_paper + light_gate 写 resolution）提取为 `collector/collect.py::collect_once`；CLI 改薄包装（零逻辑复制），为 API 铺路。`grep "def collect_once" --include=*.py .` 仅命中 `collector/collect.py`。
+> - **API**：新增 `POST /api/intake/collect`（薄适配器，全委托 `collect_once`，零编排逻辑）；`GET /api/intake/topics` 背后的 `topics.list_topics` 改为 **additive** `SELECT *`（解析 query_def/mapped_tags，新增 description/axis_hint/proposed_note/mapped_tags 列；既有 id/name/map_status/lifecycle key 不破，既有消费者与 test_intake_api 不受影响）。
+> - **UI**：新增 `web/src/views/TopicsReview.vue`（侧边栏「🗂️ 主题闸门」→ `/topics`）——左栏主题列表（map_status 三色 badge: seedling/proposed/mapped）+ 右栏详情（描述/轴归属/explicit_ids/seed_paper_ids/proposed_note 4 判据/mapped_tags）。成熟度闸门按钮（seedling→proposed prompt 填 proposed_note 提示 4 判据；proposed→mapped prompt 填 mapped_tags）+ 按主题发起采集按钮（`collectIntake`）+ 触发 resolve 按钮（复用 `resolveIntake`）。`api.js` 加 `transitionTopic`/`collectIntake`。
+> - **测试**：`tests/test_collect_once.py`（4 测试，桩网络入口，验证分发+闸门写入+unknown topic+非 pending 跳过闸门）；`tests/test_intake_api.py` +3 collect 端点测试；`tests/test_collection_topics.py` +1 list_topics additive 断言。`uv run python -m pytest tests/` 206 passed/6 skipped（2 个 test_batch_parse_cli 失败为预先存在的环境问题——缺 `MinerU_API_KEY`，与 Phase C 无关）。`tests/test_collector_boundary.py` 3/3 守卫通过（collector 仍经 ingest_bridge 写 works）。
+> - **向后兼容**：`list_topics` additive；CLI `collect` 行为不变（`test_intake_cli` 6/6 回归通过）。
+> - **边界**：UI collect 只做"按主题发起一次采集"入口，持续 loop/批量订阅留 CLI。
+> - **遗留**（Phase D）：`test_batch_parse_cli` 的 2 个环境性失败（需 `MinerU_API_KEY`）独立于本 phase。
 
 - Topics 页：主题成熟度（seedling/proposed/mapped）管理 + 提案闸门 4 判据展示。
 - 在 UI 触发 collect/resolve（或明确"按主题发起一次采集"为 UI 入口，持续订阅/loop 留 CLI）。

@@ -83,7 +83,7 @@ def get(topic_id):
         cols = [d[0] for d in cur.description]
         d = dict(zip(cols, row))
         d["query_def"] = json.loads(d["query_def"] or "{}")
-        if d.get("mapped_tags") is not None:
+        if d.get("mapped_tags"):
             d["mapped_tags"] = json.loads(d["mapped_tags"])
         return d
     finally:
@@ -138,16 +138,30 @@ def transition(topic_id, *, to_map_status=None, to_lifecycle=None,
 
 
 def list_topics(*, map_status=None, lifecycle=None):
-    """List topics, optionally filtered by map_status and/or lifecycle."""
+    """List topics, optionally filtered by map_status and/or lifecycle.
+
+    Additive: returns the full row as a dict (id/name/map_status/lifecycle plus
+    description/query_def/mapped_tags/proposed_note/axis_hint). Existing consumers
+    that read by key are unaffected. query_def/mapped_tags are parsed from JSON,
+    matching `get`.
+    """
     conn = get_conn()
     try:
-        q = "SELECT id,name,map_status,lifecycle FROM collection_topics WHERE 1=1"
+        q = "SELECT * FROM collection_topics WHERE 1=1"
         args = []
         if map_status:
             q += " AND map_status=?"; args.append(map_status)
         if lifecycle:
             q += " AND lifecycle=?"; args.append(lifecycle)
-        return [dict(zip(["id", "name", "map_status", "lifecycle"], r))
-                for r in conn.execute(q, args).fetchall()]
+        cur = conn.execute(q, args)
+        cols = [d[0] for d in cur.description]
+        out = []
+        for r in cur.fetchall():
+            d = dict(zip(cols, r))
+            d["query_def"] = json.loads(d["query_def"] or "{}")
+            if d.get("mapped_tags"):
+                d["mapped_tags"] = json.loads(d["mapped_tags"])
+            out.append(d)
+        return out
     finally:
         conn.close()
