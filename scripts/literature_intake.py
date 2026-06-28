@@ -9,10 +9,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.db import get_conn
 from collector import candidate_store
 from collector import topics
-from collector.discovery_explicit import collect_explicit
-from collector.discovery_citation import collect_from_seeds
-from collector.adapters.github import collect_repo_paper
-from collector.gate import light_gate, heavy_gate, resolve_pending
+# collect 编排已提取为 collector.collect.collect_once（§2 单核）；
+# heavy_gate/resolve_pending 仍由本模块的 resolve 路径直接用。
+from collector.gate import heavy_gate, resolve_pending
 
 def list_cmd(args):
     """列出待晋升候选（resolution=new, review_status=pending）。"""
@@ -35,41 +34,22 @@ def promote_review(*, approve=None, reject=None):
 
 
 def collect(args):
-    """跑发现 + 轻量闸门，不下载。
+    """跑发现 + 轻量闸门，不下载（委托 collector.collect.collect_once 单一 nucleus）。
 
     若中途 fetch_metadata 网络失败，已写入的候选保持 resolution=pending，需重跑 collect 补闸门。
     """
-    created = []
-    if getattr(args, "topic", None):
-        t = topics.get(args.topic)
-        if t is None:
-            print(f"error: unknown topic {args.topic}", file=sys.stderr)
+    from collector.collect import collect_once
+    topic_id = getattr(args, "topic", None)
+    if topic_id:
+        if topics.get(topic_id) is None:
+            print(f"error: unknown topic {topic_id}", file=sys.stderr)
             sys.exit(1)
-        qd = t["query_def"]
-        if qd.get("explicit_ids"):
-            created += collect_explicit(qd["explicit_ids"], collection_topic_id=args.topic)
-        if qd.get("seed_paper_ids"):
-            created += collect_from_seeds(qd["seed_paper_ids"], source_type="arxiv",
-                                          collection_topic_id=args.topic)
-    if getattr(args, "ids", None):
-        created += collect_explicit([s.strip() for s in args.ids.split(",") if s.strip()],
-                                    source_type="arxiv")
-    if getattr(args, "github", None):
-        for url in [s.strip() for s in args.github.split(",") if s.strip()]:
-            created.append(collect_repo_paper(url))
-    # 轻量闸门（不下载）：只对仍是 pending 的候选（explicit/citation）跑；github 已自带 resolution
-    conn = get_conn()
-    try:
-        for c in created:
-            if c.get("resolution") == "pending":
-                res, matched = light_gate({"arxiv_id": c.get("arxiv_id"),
-                                           "doi": None, "title": c.get("title")})
-                conn.execute("UPDATE intake_candidates SET resolution=?, matched_work_id=? WHERE id=?",
-                             (res, matched, c["id"]))
-        conn.commit()
-    finally:
-        conn.close()
-    print(f"collected {len(created)} candidates")
+    ids = ([s.strip() for s in args.ids.split(",") if s.strip()]
+           if getattr(args, "ids", None) else None)
+    gh = ([s.strip() for s in args.github.split(",") if s.strip()]
+          if getattr(args, "github", None) else None)
+    result = collect_once(topic_id=topic_id, explicit_ids=ids, github_urls=gh)
+    print(f"collected {result['created']} candidates")
     if getattr(args, "auto_resolve", False):
         resolve()
 
