@@ -116,18 +116,23 @@ def _load_env_file() -> None:
             os.environ[k] = v
 
 
-def _run_parse(source_path: str, output_dir, language: str) -> tuple[bool, str, str]:
+def _run_parse(source_path: str, output_dir, language: str) -> tuple[bool, str, str, str]:
     """单点委托 nucleus：惰性构造 client + 调 route_and_parse。
 
     生产路径：.env 已载入 → CloudClient/PyMuPDFClient 真构造（此处才触达 fitz/网络）。
     测试通过 patch api.routes.parse._run_parse 替换整段，永不触达 fitz/网络。
+
+    返回 (ok, msg, backend_used, task_id)：task_id 取 cloud 的 last_batch_id
+    （cloud vlm 路径有 MinerU batch_id 用于溯源；PyMuPDF 本地路径为空）。
     """
     _load_env_file()
     from core.mineru.cloud_client import CloudClient  # noqa: PLC0415（惰性）
     from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415（惰性）
     cloud = CloudClient()
     pymupdf = PyMuPDFClient()
-    return route_and_parse(cloud, pymupdf, source_path, Path(output_dir), language)
+    ok, msg, backend_used = route_and_parse(cloud, pymupdf, source_path, Path(output_dir), language)
+    task_id = getattr(cloud, "last_batch_id", "") or ""
+    return ok, msg, backend_used, task_id
 
 
 def _update_run(conn, run: dict, status: str, *, content_md_path: str = "",
@@ -155,20 +160,21 @@ def parse_trigger(body: TriggerBody):
         results, succ, fail = [], 0, 0
         for run in pending:  # 同步串行（与 CLI nucleus 一致）
             try:
-                ok, msg, backend_used = _run_parse(
+                ok, msg, backend_used, task_id = _run_parse(
                     run["source_path"], run["output_dir"], run["language"]
                 )
                 content_md = str(Path(run["output_dir"]) / "content.md")
                 if ok:
                     _update_run(conn, run, "succeeded",
                                 content_md_path=content_md, backend=backend_used,
-                                task_id="")
+                                task_id=task_id)
                     results.append({"work_id": run["work_id"], "source_file_id": run["source_file_id"],
                                     "status": "succeeded", "backend": backend_used,
                                     "content_md_path": content_md, "error": ""})
                     succ += 1
                 else:
-                    _update_run(conn, run, "failed", backend=backend_used, error=msg)
+                    _update_run(conn, run, "failed", backend=backend_used,
+                                task_id=task_id, error=msg)
                     results.append({"work_id": run["work_id"], "source_file_id": run["source_file_id"],
                                     "status": "failed", "backend": backend_used,
                                     "content_md_path": "", "error": msg})

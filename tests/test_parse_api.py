@@ -114,7 +114,7 @@ def test_trigger_success_updates_run_and_status(monkeypatch):
         seen.update(source_path=source_path, language=language)
         out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
         (out / "content.md").write_text("# stub md", encoding="utf-8")
-        return True, "ok", "pymupdf"
+        return True, "ok", "pymupdf", "BATCH-stub"
     monkeypatch.setattr(parse, "_run_parse", fake_run)
     r = client.post("/api/parse/trigger", json={"work_ids": ["W-parse-test-1"]})
     assert r.status_code == 200
@@ -129,11 +129,12 @@ def test_trigger_success_updates_run_and_status(monkeypatch):
     conn = _test_get_conn()
     try:
         row = conn.execute(
-            "SELECT status, content_md_path, backend FROM literature_parse_runs WHERE id='LPR-SF-1'"
+            "SELECT status, content_md_path, backend, task_id FROM literature_parse_runs WHERE id='LPR-SF-1'"
         ).fetchone()
         assert row["status"] == "succeeded"
         assert (row["content_md_path"] or "").endswith("content.md")
         assert row["backend"] == "pymupdf"
+        assert row["task_id"] == "BATCH-stub"  # cloud last_batch_id 溯源被保留（I1）
         # Flag 4：works.parse_status 被同步成 succeeded
         wrow = conn.execute(
             "SELECT parse_status FROM works WHERE id='W-parse-test-1'"
@@ -148,7 +149,7 @@ def test_trigger_failure_does_not_abort_batch(monkeypatch):
     calls = {"n": 0}
     def fake_run(source_path, output_dir, language):
         calls["n"] += 1
-        return (False, "boom", "vlm") if calls["n"] == 1 else (True, "ok", "pymupdf")
+        return (False, "boom", "vlm", "BATCH-fail") if calls["n"] == 1 else (True, "ok", "pymupdf", "BATCH-ok")
     monkeypatch.setattr(parse, "_run_parse", fake_run)
     # 用 work_ids 显式选定 2 行，避免 temp DB（live 副本）里其它 pending 行
     # （如 Phase A 留下的 W-arxiv-2506.19248）混入 all_pending 集合。
