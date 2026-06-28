@@ -9,6 +9,7 @@ No get_conn import here: collect_explicit / insert_candidate own their connectio
 """
 from __future__ import annotations
 import json
+import urllib.error
 import urllib.request
 from typing import Iterable, Optional
 
@@ -41,8 +42,11 @@ def expand_one_hop(seed_arxiv_id):
     if not aid:
         return [], []
     paper = _arxiv_to_s2paper(aid)
-    pid = paper["paperId"]
+    pid = paper.get("paperId")
+    if not pid:
+        return [], []
 
+    # v1 truncates at 100 edges per direction (no pagination yet).
     fwd = _s2_get(f"{S2_BASE}/{pid}/citations?fields=externalIds,title&limit=100")
     forward = []
     for row in fwd.get("data", []):
@@ -52,6 +56,7 @@ def expand_one_hop(seed_arxiv_id):
         if nid:
             forward.append({"arxiv_id": nid, "title": p.get("title")})
 
+    # v1 truncates at 100 edges per direction (no pagination yet).
     bwd = _s2_get(f"{S2_BASE}/{pid}/references?fields=externalIds,title&limit=100")
     backward = []
     for row in bwd.get("data", []):
@@ -74,10 +79,17 @@ def collect_from_seeds(
     through collect_explicit (which normalizes, fetches metadata, dedups, writes).
 
     Multi-hop is intentionally not supported in v1.
+
+    v1 fail-loud per seed: a seed whose S2 lookup fails is skipped, the rest proceed
+    (one dead seed must not poison the whole batch).
     """
     found: list[str] = []
     for seed in seed_arxiv_ids:
-        forward, backward = expand_one_hop(seed)
+        try:
+            forward, backward = expand_one_hop(seed)
+        except (urllib.error.URLError, urllib.error.HTTPError,
+                json.JSONDecodeError, TimeoutError):
+            continue   # 单种子 S2 调用失败：跳过该种子，不毒化整批
         for p in forward + backward:
             if p.get("arxiv_id"):
                 found.append(p["arxiv_id"])

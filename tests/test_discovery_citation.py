@@ -61,3 +61,30 @@ def test_collect_from_seeds_skips_none_ids(tmp_path, monkeypatch):
     monkeypatch.setattr(dc, "expand_one_hop", fake_expand)
     created = dc.collect_from_seeds(["2501.17805"], source_type="arxiv")
     assert {c["arxiv_id"] for c in created} == {"2502.00010"}
+
+
+def test_expand_one_hop_parses_s2_shape(tmp_path, monkeypatch):
+    """离线验证 expand_one_hop 对 S2 JSON 形状（citingPaper/citedPaper/externalIds.ArXiv）的解析。
+
+    不打网络：通过 monkeypatch dc._s2_get（expand_one_hop 内部三处 fetch 都走它：
+    先 _arxiv_to_s2paper 解析 paperId，再 citations，再 references）喂入录制 JSON。
+    """
+    # _arxiv_to_s2paper 的返回
+    paper_resp = {"paperId": "PID-1", "externalIds": {"ArXiv": "2501.17805"}, "title": "Seed"}
+    # /citations 返回（forward：引用 seed 的论文）
+    citations_resp = {"data": [
+        {"citingPaper": {"externalIds": {"ArXiv": "2502.00010"}, "title": "Cites seed"}},
+        {"citingPaper": {"externalIds": {"DOI": "10.1/x"}, "title": "No arxiv -> dropped"}},  # 无 ArXiv → 丢
+        {"citingPaper": {"externalIds": {}, "title": "Empty ext"}},                            # 空 → 丢
+    ]}
+    # /references 返回（backward：seed 引用的论文）
+    references_resp = {"data": [
+        {"citedPaper": {"externalIds": {"ArXiv": "2401.00001"}, "title": "Cited by seed"}},
+    ]}
+    # pop 顺序必须匹配 expand_one_hop 的调用顺序：paper 先，citations 次，references 最后
+    responses = [paper_resp, citations_resp, references_resp]
+    monkeypatch.setattr(dc, "_s2_get", lambda url: responses.pop(0))
+
+    forward, backward = dc.expand_one_hop("2501.17805")
+    assert [p["arxiv_id"] for p in forward] == ["2502.00010"]   # 只有带 ArXiv 的进 forward
+    assert [p["arxiv_id"] for p in backward] == ["2401.00001"]
