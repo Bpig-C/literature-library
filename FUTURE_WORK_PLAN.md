@@ -378,7 +378,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields url --reru
 
 #### P1.0g：审核页隔离文献/文件闭环 ✅ 已完成并审核通过
 
-> **⚠️ 已知问题（2026-06-28 发现，待修）**：`GET /api/metadata?status=all&include_quarantined=true` **不返回**已 quarantine 的 work——审计模式无法查看隔离文献的 extraction。确定性复现：`tests/test_api.py::TestMetadataQuarantine::test_quarantine_excludes_from_default_list` 的 `assertIn` 失败。此前被 `import llm_judge` 的 `ModuleNotFoundError` 掩盖（该 import bug 已修），从未真正执行。待查方向：`api/routes/metadata.py` 里 `include_quarantined` 的 SQL 过滤（join works 时 `read_status='quarantined'` 可能被无条件排除，没被参数翻转）。修时注意该测试用 `LIMIT 1` 非确定性挑 work，应改确定 fixture。与 collector 无关，属父系统核心。
+> **⚠️ 已知问题（2026-06-28 发现，待修；诊断已更正 2026-06-28）**：`tests/test_api.py::TestMetadataQuarantine::test_quarantine_excludes_from_default_list` 的 `assertIn` 失败，`uv run pytest` 常年 1 failed 即此。**这是测试 bug，不是生产 bug**——经实证复核（见 memory `metadata-api-include-quarantined-bug`）：路由 `GET /api/metadata?status=all&include_quarantined=true` **完全正确**（`default+search={work_id}`→total=0 正确排除；`include_quarantined=true+search={work_id}`→total=2 正确包含）。失败纯粹因测试用 `LIMIT 1` 挑中**最老的 extraction**（created 2026-06-05），DB 长到 260+ 条后被 `created_at desc` 分页挤出 page1（per_page 20/100），不带 `search` 的 page1 永远不含它 → `assertIn` 假性失败。~~原待查方向"路由 SQL 过滤 join works 无条件排除 quarantined"已被证伪，勿再查路由。~~ **现成修法**（2 行，曾在某会话本地验证通过 153 passed/0 failed，但未提交 master）：给该测试两个 list 请求加 `&search={work_id}` 限定到被隔离的 work，断言即变确定且真正测过滤语义。此前长期被 `import llm_judge` 的 `ModuleNotFoundError` 掩盖、从未真正执行。与 collector 无关，属父系统核心。优先级低（不影响功能，仅测试噪声）。
 
 MetadataReview 不仅是元数据质量审核页，也承担“来源是否应该留在主库”的质量闸门。审核人员在查看字段、证据和原文时，如果发现该 PDF 是误收、坏源、重复残留、非目标材料、质量过低或不应进入当前综述范围，可以在同一页面直接隔离，而不需要跳转到 Works/WorkDetail 再处理。
 
