@@ -242,13 +242,13 @@ def run_healthcheck(library_root: Path, *, apply: bool = False,
                     "ingested_work_id": row["ingested_work_id"],
                 })
 
-        # 8. P2-POST-03: Build repair plan for quarantined works with active source_files
+        # 8. P2-POST-03: Build repair plan for quarantined works with non-quarantined source_files
         if has_status_col and repair_quarantine_status:
             for row in conn.execute(
                 "SELECT sf.id, sf.source_path, sf.work_id, sf.status, sf.archive_reason "
                 "FROM source_files sf "
                 "JOIN works w ON w.id = sf.work_id "
-                "WHERE w.read_status = 'quarantined' AND sf.status = 'active'"
+                "WHERE w.read_status = 'quarantined' AND sf.status != 'quarantined'"
             ).fetchall():
                 plan_entry = {
                     "source_file_id": row["id"],
