@@ -287,7 +287,8 @@ def _merge_same_work(conn, work_ids: list[str], note: str, primary_work_id: str 
 
 
 def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
-    """Move source_files to _quarantine/{work_id}/ and update DB. Returns moved paths."""
+    """Move source_files to _quarantine/{work_id}/, sync status='quarantined',
+    and update DB. Returns moved paths. (Batch-friendly: skips missing files.)"""
     quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
     moved = []
     sources = conn.execute(
@@ -306,9 +307,9 @@ def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
         else:
             # File absent on disk: still record the sanitized intended location.
             new_path = str(quarantine_dir / dest_name)
-        # Update source_path to new location
+        # Update source_path + sync status to quarantined (P1-01: avoid drift)
         conn.execute(
-            "UPDATE source_files SET source_path = ? WHERE id = ?",
+            "UPDATE source_files SET source_path = ?, status = 'quarantined' WHERE id = ?",
             (new_path, s["id"]),
         )
     return moved

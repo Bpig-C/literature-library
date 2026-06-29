@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +12,6 @@ from pydantic import BaseModel
 
 from ..db import LIBRARY_ROOT, get_conn, table_exists
 from ..models import QuarantineAction
-from ..path_safety import _safe_dest_name, _unique_dest
 from ..classification_vocab import get_vocab, validate_tag_value, validate_scalar_fields
 from ..classification_ambiguity import compute_ambiguity
 from ..security import build_status_filter, validate_status
@@ -952,37 +950,12 @@ def quarantine_from_classification_review(ext_id: str, body: QuarantineAction):
             (body.reason, now, now, work_id, ext_id),
         )
 
-        conn.execute(
-            "UPDATE works SET read_status = 'quarantined', updated_at = ? WHERE id = ?",
-            (now, work_id),
+        # Move sources + sync works/source_files status via the shared nucleus.
+        # Strict: a missing source file 409s before any change (no half-isolation).
+        from ..quarantine import quarantine_work_sources
+        quarantine_work_sources(
+            conn, LIBRARY_ROOT, work_id, reason=body.reason, code="quarantined"
         )
-
-        if table_exists(conn, "work_codes"):
-            try:
-                conn.execute(
-                    "INSERT INTO work_codes (work_id, source_file_id, code, reason) "
-                    "VALUES (?, '', 'quarantined', ?)",
-                    (work_id, body.reason),
-                )
-            except Exception:
-                pass
-
-        quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
-        sources = conn.execute(
-            "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
-            (work_id,),
-        ).fetchall()
-        for s in sources:
-            src = Path(s["source_path"])
-            if src.exists():
-                quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest_name = _safe_dest_name(dict(s), s["source_path"])
-                dest = _unique_dest(quarantine_dir / dest_name)
-                shutil.move(str(src), str(dest))
-                conn.execute(
-                    "UPDATE source_files SET source_path = ? WHERE id = ?",
-                    (str(dest), s["id"]),
-                )
 
         conn.commit()
         return {"ok": True, "work_id": work_id}

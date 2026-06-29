@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn, LIBRARY_ROOT
 from ..models import WorkUpdate, QuarantineAction, SourceFileArchiveAction
 from ..path_safety import _sanitize_filename, _safe_dest_name, _unique_dest
+from ..quarantine import quarantine_work_sources, restore_work_sources
 
 from scripts.migrate_sync_parse_status import sync_work_parse_status
 
@@ -350,65 +351,13 @@ def update_work(work_id: str, body: WorkUpdate):
 
 @router.post("/works/{work_id}/quarantine")
 def quarantine_work(work_id: str, body: QuarantineAction = QuarantineAction()):
-    """Quarantine a work: update status, add bad_source code, move files to _quarantine/."""
+    """Quarantine a work: move sources to _quarantine/, mark work + sources
+    quarantined. Delegates to the shared nucleus (single policy + status sync)."""
     conn = get_conn()
     try:
-        row = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Work not found")
-
-        quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
-        moved_files = []
-        missing_files = []
-
-        sources = conn.execute(
-            "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
-            (work_id,),
-        ).fetchall()
-
-        # Pre-check: collect all dest paths and verify sources exist
-        planned_moves: list[tuple[Path, Path, dict]] = []
-        for s in sources:
-            src = Path(s["source_path"])
-            if not src.exists():
-                missing_files.append(str(src))
-                continue
-            dest_name = _safe_dest_name(dict(s), s["source_path"])
-            quarantine_dir.mkdir(parents=True, exist_ok=True)
-            dest = _unique_dest(quarantine_dir / dest_name)
-            planned_moves.append((src, dest, dict(s)))
-
-        if missing_files:
-            raise HTTPException(
-                status_code=409,
-                detail={"error": "missing_source_files", "missing": missing_files},
-            )
-
-        # Move files
-        for src, dest, _ in planned_moves:
-            shutil.move(str(src), str(dest))
-            moved_files.append(str(dest))
-
-        # Update DB: work status
-        conn.execute(
-            "UPDATE works SET read_status = 'quarantined', updated_at = datetime('now') WHERE id = ?",
-            (work_id,),
+        moved_files = quarantine_work_sources(
+            conn, LIBRARY_ROOT, work_id, reason=body.reason, code="bad_source"
         )
-        # Update source_paths to point to quarantine (use same dest name as file move)
-        for _, dest, s in planned_moves:
-            conn.execute(
-                "UPDATE source_files SET source_path = ? WHERE id = ?",
-                (str(dest), s["id"]),
-            )
-        # Add bad_source code
-        try:
-            conn.execute(
-                "INSERT INTO work_codes (work_id, source_file_id, code, reason) VALUES (?, '', 'bad_source', ?)",
-                (work_id, body.reason or "quarantined via API"),
-            )
-        except Exception:
-            pass  # Already has this code
-
         conn.commit()
         return {"ok": True, "work_id": work_id, "moved_files": moved_files}
     finally:
@@ -417,72 +366,12 @@ def quarantine_work(work_id: str, body: QuarantineAction = QuarantineAction()):
 
 @router.post("/works/{work_id}/restore")
 def restore_work(work_id: str):
-    """Restore a quarantined work: update status, remove bad_source code, move files back."""
+    """Restore a quarantined work: move sources back, mark work + sources active.
+    Delegates to the shared nucleus."""
     conn = get_conn()
     try:
-        row = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Work not found")
-
-        work_dir = LIBRARY_ROOT / "works" / work_id / "source"
-        moved_files = []
-        missing_files = []
-
-        sources = conn.execute(
-            "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
-            (work_id,),
-        ).fetchall()
-
-        # Pre-check: collect all dest paths and verify sources exist
-        planned_moves: list[tuple[Path, Path, dict]] = []
-        for s in sources:
-            src = Path(s["source_path"])
-            if not src.exists():
-                missing_files.append(str(src))
-                continue
-            dest_name = _safe_dest_name(dict(s), s["source_path"])
-            work_dir.mkdir(parents=True, exist_ok=True)
-            dest = _unique_dest(work_dir / dest_name)
-            planned_moves.append((src, dest, dict(s)))
-
-        if missing_files:
-            raise HTTPException(
-                status_code=409,
-                detail={"error": "missing_source_files", "missing": missing_files},
-            )
-
-        # Move files
-        for src, dest, _ in planned_moves:
-            shutil.move(str(src), str(dest))
-            moved_files.append(str(dest))
-
-        # Update DB: work status
-        conn.execute(
-            "UPDATE works SET read_status = 'unread', updated_at = datetime('now') WHERE id = ?",
-            (work_id,),
-        )
-        # Update source_paths back to works dir (use same dest name as file move)
-        for _, dest, s in planned_moves:
-            conn.execute(
-                "UPDATE source_files SET source_path = ? WHERE id = ?",
-                (str(dest), s["id"]),
-            )
-        # Remove quarantine-related codes
-        conn.execute(
-            "DELETE FROM work_codes WHERE work_id = ? AND code IN ('bad_source', 'quarantined')",
-            (work_id,),
-        )
-
+        moved_files = restore_work_sources(conn, LIBRARY_ROOT, work_id)
         conn.commit()
-
-        # Clean up empty quarantine directory
-        quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
-        if quarantine_dir.exists():
-            try:
-                quarantine_dir.rmdir()  # only removes if empty
-            except OSError:
-                pass  # directory not empty, leave it
-
         return {"ok": True, "work_id": work_id, "moved_files": moved_files}
     finally:
         conn.close()

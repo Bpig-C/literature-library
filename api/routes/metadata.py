@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +11,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY_ROOT
 from ..models import MetadataReviewAction, MetadataSupersedeAction, QuarantineAction
-from ..path_safety import _safe_dest_name, _unique_dest
 from ..risk import compute_risk
 from ..security import build_status_filter, validate_status
 
@@ -461,40 +459,12 @@ def quarantine_from_review(ext_id: str, body: QuarantineAction):
             (body.reason, now, work_id, ext_id),
         )
 
-        # Update work status to quarantined
-        conn.execute(
-            "UPDATE works SET read_status = 'quarantined', updated_at = ? WHERE id = ?",
-            (now, work_id),
+        # Move sources + sync works/source_files status via the shared nucleus.
+        # Strict: a missing source file 409s before any change (no half-isolation).
+        from ..quarantine import quarantine_work_sources
+        quarantine_work_sources(
+            conn, LIBRARY_ROOT, work_id, reason=body.reason, code="quarantined"
         )
-
-        # Write work_codes quarantine reason
-        if table_exists(conn, "work_codes"):
-            try:
-                conn.execute(
-                    "INSERT INTO work_codes (work_id, source_file_id, code, reason) "
-                    "VALUES (?, '', 'quarantined', ?)",
-                    (work_id, body.reason),
-                )
-            except Exception:
-                pass  # Duplicate code entry is fine
-
-        # Move source files to _quarantine/{work_id}/
-        quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
-        sources = conn.execute(
-            "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
-            (work_id,),
-        ).fetchall()
-        for s in sources:
-            src = Path(s["source_path"])
-            if src.exists():
-                quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest_name = _safe_dest_name(dict(s), s["source_path"])
-                dest = _unique_dest(quarantine_dir / dest_name)
-                shutil.move(str(src), str(dest))
-                conn.execute(
-                    "UPDATE source_files SET source_path = ? WHERE id = ?",
-                    (str(dest), s["id"]),
-                )
 
         conn.commit()
         return {"ok": True, "work_id": work_id}
