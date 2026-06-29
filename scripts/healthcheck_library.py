@@ -23,6 +23,11 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+# Ensure repo root is on sys.path so scripts.literature_ingest can be imported
+_REPO_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 REQUIRED_TABLES = {"works", "source_files"}
 REQUIRED_SOURCE_FILE_COLUMNS = {"id", "work_id", "source_path", "original_name", "content_sha256",
                                 "status", "archived_at", "archive_path", "archive_reason"}
