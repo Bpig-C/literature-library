@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="inbox-layout">
       <div class="list-panel">
         <h2 class="page-title">收件箱摄入 <span class="muted tiny">inbox manual ingest</span></h2>
@@ -81,12 +80,10 @@
         <div class="muted">从左侧选择一项查看摄入详情</div>
       </div>
     </div>
-  </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import { getIngestPlan, executeIngest } from '../api'
 
 const plan = ref(null)

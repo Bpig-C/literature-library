@@ -38,7 +38,7 @@
     <div class="detail-panel" v-if="work">
       <div class="detail-header">
         <div class="detail-header-left">
-          <h1 :contenteditable="editing" @blur="e => work.title = e.target.innerText" ref="titleEl">
+          <h1 :contenteditable="editing" @blur="onTitleBlur" ref="titleEl">
             {{ work.title || work.id }}
           </h1>
           <div class="muted tiny">{{ work.id }}</div>
@@ -676,6 +676,15 @@ function startEdit() {
   editing.value = true
 }
 function cancelEdit() { editing.value = false }
+
+function onTitleBlur(e) {
+  // Keep the editable title, the display value, and the submission form in sync.
+  // saveEdit() submits editForm, so the edited title must land there — otherwise
+  // the user's title change is silently dropped on save.
+  const t = (e.target.innerText || '').trim()
+  work.value.title = t
+  if (editForm.value) editForm.value.title = t
+}
 
 async function saveEdit() {
   const data = { ...editForm.value }

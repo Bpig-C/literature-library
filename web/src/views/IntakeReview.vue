@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="intake-layout">
       <div class="list-panel">
         <h2 class="page-title">采集审核 <span class="muted tiny">collector A2</span></h2>
@@ -96,12 +95,10 @@
         <div class="muted">从左侧选择一个候选查看详情</div>
       </div>
     </div>
-  </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import { getIntakeCandidates, getIntakeStats, reviewCandidate, promoteCandidates } from '../api'
 
 const RESOLUTIONS = [

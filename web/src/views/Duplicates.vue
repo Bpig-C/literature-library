@@ -183,10 +183,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useMessage } from 'naive-ui'
+import { useMessage, useDialog } from 'naive-ui'
 import { getDuplicates, getMergePreview, reviewDuplicate, pdfUrl } from '../api'
 
 const message = useMessage()
+const dialog = useDialog()
 
 const DECISION_TYPES = [
   ['same_work', '同一作品'],
@@ -280,6 +281,19 @@ async function onDecision(group, decision) {
     } finally {
       confirmMerge.value.loadingPreview = false
     }
+    return
+  }
+  // Quarantine is destructive at the file level: it moves every candidate work's
+  // source files into _quarantine/. Require explicit confirmation first.
+  if (decision === 'quarantine') {
+    const count = (group.candidates || []).length
+    dialog.warning({
+      title: '确认隔离',
+      content: `此操作将把该重复组内 ${count} 个候选 work 的源文件移入隔离区（_quarantine/）并标记为 quarantined。可通过各 work 的「恢复」撤销。是否继续？`,
+      positiveText: '隔离',
+      negativeText: '取消',
+      onPositiveClick: () => executeDecision(group, decision),
+    })
     return
   }
   // For exact_sha256 or other decisions: execute directly

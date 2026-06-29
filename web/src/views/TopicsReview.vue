@@ -1,5 +1,4 @@
 <template>
-  <AppLayout>
     <div class="topics-layout">
       <div class="list-panel">
         <h2 class="page-title">主题闸门 <span class="muted tiny">collector 成熟度</span></h2>
@@ -90,12 +89,10 @@
         <div class="muted">从左侧选择一个主题查看详情</div>
       </div>
     </div>
-  </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import AppLayout from '../components/AppLayout.vue'
 import {
   getIntakeTopics,
   transitionTopic,
