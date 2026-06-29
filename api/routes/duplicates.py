@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..db import get_conn, LIBRARY_ROOT
 from ..models import DuplicateReview
+from ..path_safety import _safe_dest_name, _unique_dest
 
 router = APIRouter()
 
@@ -261,7 +262,8 @@ def _merge_same_work(conn, work_ids: list[str], note: str, primary_work_id: str 
             if src_path.exists():
                 archive_dir = LIBRARY_ROOT / "_archive" / "dedup" / sec_id
                 archive_dir.mkdir(parents=True, exist_ok=True)
-                dest = archive_dir / (s["original_name"] or src_path.name)
+                dest_name = _safe_dest_name(dict(s), str(src_path))
+                dest = _unique_dest(archive_dir / dest_name)
                 shutil.move(str(src_path), str(dest))
                 archive_path = str(dest)
             conn.execute(
@@ -294,13 +296,17 @@ def _move_to_quarantine(conn, work_id: str, reason: str) -> list[str]:
     ).fetchall()
     for s in sources:
         src = Path(s["source_path"])
+        dest_name = _safe_dest_name(dict(s), str(src))
         if src.exists():
             quarantine_dir.mkdir(parents=True, exist_ok=True)
-            dest = quarantine_dir / (s["original_name"] or src.name)
+            dest = _unique_dest(quarantine_dir / dest_name)
             shutil.move(str(src), str(dest))
             moved.append(str(dest))
+            new_path = str(dest)
+        else:
+            # File absent on disk: still record the sanitized intended location.
+            new_path = str(quarantine_dir / dest_name)
         # Update source_path to new location
-        new_path = str(quarantine_dir / (s["original_name"] or Path(s["source_path"]).name))
         conn.execute(
             "UPDATE source_files SET source_path = ? WHERE id = ?",
             (new_path, s["id"]),

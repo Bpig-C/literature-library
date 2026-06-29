@@ -97,5 +97,35 @@ def validate_tag_value(tag_group: str, tag_value: str) -> bool:
     return tag_value in VOCAB.get(tag_group, [])
 
 
+# Scalar classification fields written straight into the ``works`` table whose
+# values MUST come from VOCAB. Fields that are intentionally free-text (e.g.
+# ``secondary_doc_type``) are absent here and stay unvalidated by design.
+SCALAR_VOCAB_FIELDS: tuple[str, ...] = (
+    "primary_doc_type",
+    "publication_status",
+    "ingestion_state",
+    "priority",
+    "primary_source_actor_type",
+    "region",
+)
+
+
+def validate_scalar_fields(extracted: dict) -> None:
+    """Raise ``ValueError`` if any scalar classification field is outside its vocab.
+
+    Only fields listed in :data:`SCALAR_VOCAB_FIELDS` and present in ``extracted``
+    are checked. Free-text fields are skipped. Pure (no fastapi dependency) so it
+    can be reused by both API routes and offline scripts.
+    """
+    for field in SCALAR_VOCAB_FIELDS:
+        value = extracted.get(field)
+        if value is None:
+            continue
+        if value not in VOCAB.get(field, []):
+            raise ValueError(
+                f"Invalid {field} value (not in controlled vocabulary): {value!r}"
+            )
+
+
 def get_vocab() -> dict:
     return {k: list(v) for k, v in VOCAB.items()}

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from ..db import LIBRARY_ROOT, get_conn, table_exists
 from ..models import QuarantineAction
 from ..path_safety import _safe_dest_name, _unique_dest
-from ..classification_vocab import get_vocab, validate_tag_value
+from ..classification_vocab import get_vocab, validate_tag_value, validate_scalar_fields
 from ..classification_ambiguity import compute_ambiguity
 from ..security import build_status_filter, validate_status
 
@@ -580,6 +580,10 @@ def review_extraction(ext_id: str, body: ExtractionReview):
         if body.review_status == "approved" and not is_quarantined:
             # Write classification to works table (fill-empty only)
             work_id = ext["work_id"]
+            try:
+                validate_scalar_fields(extracted)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
             CLASSIFICATION_FIELDS = {
                 "primary_doc_type": "primary_doc_type",
                 "secondary_doc_type": "secondary_doc_type",
@@ -697,6 +701,11 @@ def batch_approve_low_ambiguity():
                 # Merge dual-source confidence (D1 read-side fix)
                 embedded_confidence = extracted.get("confidence", {})
                 merged_confidence = {**embedded_confidence, **confidence}
+
+                try:
+                    validate_scalar_fields(extracted)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
 
                 # Write scalar classification fields (fill-empty only)
                 CLASSIFICATION_FIELDS = {
@@ -821,6 +830,11 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
                 # Merge dual-source confidence (D1 read-side fix)
                 embedded_confidence = extracted.get("confidence", {})
                 merged_confidence = {**embedded_confidence, **confidence}
+
+                try:
+                    validate_scalar_fields(extracted)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
 
                 # Write scalar classification fields (fill-empty only)
                 CLASSIFICATION_FIELDS = {
