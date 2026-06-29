@@ -49,6 +49,16 @@ def _seed():
     out1 = str(Path(_tmp_dir) / "works" / "W-parse-test-1" / "parsed" / "mineru" / "SF-1")
     out2 = str(Path(_tmp_dir) / "works" / "W-parse-test-2" / "parsed" / "mineru" / "SF-2")
     conn.executemany(
+        "INSERT OR REPLACE INTO source_files"
+        "(id, work_id, content_sha256, original_name, source_path, "
+        "relative_source_path, file_size, file_ext, status) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        [("SF-1", "W-parse-test-1", "sha1", "a.pdf", "/tmp/a.pdf",
+          "works/W-parse-test-1/source/a.pdf", 100, ".pdf", "active"),
+         ("SF-2", "W-parse-test-2", "sha2", "b.pdf", "/tmp/b.pdf",
+          "works/W-parse-test-2/source/b.pdf", 100, ".pdf", "active")],
+    )
+    conn.executemany(
         "INSERT OR REPLACE INTO literature_parse_runs"
         "(id,work_id,source_file_id,source_path,task_id,status,backend,parse_method,"
         " file_size,started_at,finished_at,output_dir,error,content_json_path,"

@@ -32,6 +32,14 @@ def _ensure_pending_row(conn, tmp_path, sf_id="SF-cli1", work_id="W-cli1"):
     content_json_path = str(tmp_path / "out" / "content.json")
     content_md_path = str(tmp_path / "out" / "content.md")
     conn.execute(
+        "INSERT OR REPLACE INTO source_files "
+        "(id, work_id, content_sha256, original_name, source_path, "
+        "relative_source_path, file_size, file_ext, status) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (sf_id, work_id, f"sha_{sf_id}", "x.pdf", source_path,
+         f"works/{work_id}/source/x.pdf", 1000, ".pdf", "active"),
+    )
+    conn.execute(
         "INSERT OR REPLACE INTO literature_parse_runs "
         "(id, work_id, source_file_id, source_path, task_id, status, backend, "
         " parse_method, file_size, started_at, finished_at, output_dir, error, "

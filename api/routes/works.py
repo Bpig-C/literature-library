@@ -10,8 +10,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from ..db import get_conn, LIBRARY_ROOT
-from ..models import WorkUpdate, QuarantineAction
+from ..models import WorkUpdate, QuarantineAction, SourceFileArchiveAction
 from ..path_safety import _sanitize_filename, _safe_dest_name, _unique_dest
+
+from scripts.migrate_sync_parse_status import sync_work_parse_status
 
 router = APIRouter()
 
@@ -482,5 +484,113 @@ def restore_work(work_id: str):
                 pass  # directory not empty, leave it
 
         return {"ok": True, "work_id": work_id, "moved_files": moved_files}
+    finally:
+        conn.close()
+
+
+@router.post("/works/{work_id}/sources/{source_file_id}/archive")
+def archive_source_file(work_id: str, source_file_id: str, body: SourceFileArchiveAction):
+    """Archive a single source file: move to _archive, mark archived, recalc parse_status."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Work not found")
+
+        sf = conn.execute(
+            "SELECT * FROM source_files WHERE id = ? AND work_id = ?",
+            (source_file_id, work_id),
+        ).fetchone()
+        if not sf:
+            raise HTTPException(status_code=404, detail="Source file not found")
+
+        src = Path(sf["source_path"])
+        if not src.exists():
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "source_file_missing", "path": str(src)},
+            )
+
+        dest_name = _safe_dest_name(dict(sf), sf["source_path"])
+        archive_dir = LIBRARY_ROOT / "_archive" / work_id
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        dest = _unique_dest(archive_dir / dest_name)
+
+        shutil.move(str(src), str(dest))
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE source_files SET status='archived', archived_at=?, "
+            "archive_path=?, archive_reason=? WHERE id=?",
+            (now, str(dest), body.reason, source_file_id),
+        )
+
+        parse_status = sync_work_parse_status(conn, work_id)
+        conn.commit()
+        return {
+            "ok": True,
+            "work_id": work_id,
+            "source_file_id": source_file_id,
+            "parse_status": parse_status,
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/works/{work_id}/sources/{source_file_id}/restore")
+def restore_source_file(work_id: str, source_file_id: str):
+    """Restore an archived source file: move back to works/{work_id}/source/, mark active, recalc parse_status."""
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM works WHERE id = ?", (work_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Work not found")
+
+        sf = conn.execute(
+            "SELECT * FROM source_files WHERE id = ? AND work_id = ?",
+            (source_file_id, work_id),
+        ).fetchone()
+        if not sf:
+            raise HTTPException(status_code=404, detail="Source file not found")
+
+        src = Path(sf["archive_path"] or sf["source_path"])
+        if not src.exists():
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "archived_file_missing", "path": str(src)},
+            )
+
+        dest_name = _safe_dest_name(dict(sf), sf["source_path"])
+        work_dir = LIBRARY_ROOT / "works" / work_id / "source"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        dest = _unique_dest(work_dir / dest_name)
+
+        shutil.move(str(src), str(dest))
+
+        conn.execute(
+            "UPDATE source_files SET status='active', "
+            "archived_at=NULL, archive_path=NULL, archive_reason=NULL, "
+            "source_path=? WHERE id=?",
+            (str(dest), source_file_id),
+        )
+
+        parse_status = sync_work_parse_status(conn, work_id)
+        conn.commit()
+
+        # Clean up empty archive directory
+        archive_dir = LIBRARY_ROOT / "_archive" / work_id
+        if archive_dir.exists():
+            try:
+                archive_dir.rmdir()
+            except OSError:
+                pass
+
+        return {
+            "ok": True,
+            "work_id": work_id,
+            "source_file_id": source_file_id,
+            "parse_status": parse_status,
+        }
     finally:
         conn.close()

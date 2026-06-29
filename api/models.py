@@ -51,6 +51,10 @@ class MetadataReviewAction(BaseModel):
     edited_fields: dict | None = None  # optional field overrides to merge into extracted_json
 
 
+class SourceFileArchiveAction(BaseModel):
+    reason: str = ""
+
+
 class MetadataSupersedeAction(BaseModel):
     review_note: str = ""
     edited_fields: dict | None = None  # new/overridden extraction fields from agent or external rerun

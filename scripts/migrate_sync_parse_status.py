@@ -1,9 +1,17 @@
 """同步 works.parse_status 与 literature_parse_runs.status。
 
-修正滞后状态：若某 work 存在 status='succeeded' 且 content_md_path 非空的 parse_run，
-但 works.parse_status 仍为非 succeeded（如 pending），则更正为 succeeded。
+只统计 source_files.status='active' 的源。对每个 active 源取其"最好成绩"：
+- 有任意一条 status='succeeded' 且 content_md_path 非空的 run → succeeded
+- 否则若它有 run 且全部 failed → failed
+- 否则 → pending（含"还没有任何 run"）
 
-幂等、保守：只做 pending/其他 -> succeeded 的单向修正，绝不回退已 succeeded 的状态。
+work 的 parse_status：
+- 无 active 源 → pending
+- 全部 succeeded → succeeded
+- 全部 failed → failed
+- 其它（混合 / 有 pending） → partial
+
+注意：允许 succeeded→partial 的回退（这是预期行为，非回归）。
 
 用法：
     python scripts/migrate_sync_parse_status.py            # dry-run，仅列出
@@ -41,18 +49,45 @@ def find_desynced(conn: sqlite3.Connection) -> list[tuple[str, str]]:
 def sync_work_parse_status(conn: sqlite3.Connection, work_id: str) -> str:
     """按 literature_parse_runs 重算单个 work 的 works.parse_status。
 
-    保守：succeeded 是粘性的（曾有 succeeded 且 content_md_path 非空的 run → 保持 succeeded）；
-    全部 failed → failed；否则 pending。返回写入的状态值。
+    只统计 active 源：对每个 active source_file 取其最好成绩，再聚合。
+    允许 succeeded→partial 回退（多源场景下部分源未完成时属预期行为）。
     """
-    runs = conn.execute(
-        "SELECT status, content_md_path FROM literature_parse_runs WHERE work_id=?",
+    active_sources = conn.execute(
+        "SELECT id FROM source_files WHERE work_id=? AND status='active'",
         (work_id,),
     ).fetchall()
-    has_succeeded = any(
-        r[0] == "succeeded" and (r[1] or "") for r in runs
-    )
-    all_failed = bool(runs) and all(r[0] == "failed" for r in runs)
-    new = "succeeded" if has_succeeded else ("failed" if all_failed else "pending")
+    if not active_sources:
+        conn.execute(
+            "UPDATE works SET parse_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            ("pending", work_id),
+        )
+        return "pending"
+
+    source_statuses: list[str] = []
+    for (sf_id,) in active_sources:
+        runs = conn.execute(
+            "SELECT status, content_md_path FROM literature_parse_runs "
+            "WHERE work_id=? AND source_file_id=?",
+            (work_id, sf_id),
+        ).fetchall()
+        if not runs:
+            source_statuses.append("pending")
+        elif any(r[0] == "succeeded" and (r[1] or "") for r in runs):
+            source_statuses.append("succeeded")
+        elif all(r[0] == "failed" for r in runs):
+            source_statuses.append("failed")
+        else:
+            source_statuses.append("pending")
+
+    if all(s == "succeeded" for s in source_statuses):
+        new = "succeeded"
+    elif all(s == "failed" for s in source_statuses):
+        new = "failed"
+    elif all(s == "pending" for s in source_statuses):
+        new = "pending"
+    else:
+        new = "partial"
+
     conn.execute(
         "UPDATE works SET parse_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (new, work_id),
