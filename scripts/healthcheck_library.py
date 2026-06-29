@@ -7,6 +7,8 @@ Detects:
   - Status inconsistencies (P2-06): quarantined works with active source files,
     intake_candidates with inconsistent status/review_status/ingested_work_id.
   - P2-POST-04: active source outside works/, quarantine path/status mismatch.
+  - D3: dangling child→parent references (e.g. source_files.work_id pointing at a
+    deleted works row). Most tables lack FK constraints, so this surfaces orphans.
 
 Default mode is read-only. Use --apply to quarantine orphan files.
 Use --repair-quarantine-status to fix source_files.status for quarantined works.
@@ -50,12 +52,69 @@ def _check_schema(conn: sqlite3.Connection) -> list[dict[str, str]]:
     return issues
 
 
+# D3: child (table, column) → parent (table) reference checks.
+# Read-only. Only FK-style logical references that should always point to an
+# existing parent row are listed here. Each is checked only if both tables and
+# the child column exist, so this is safe on partial/older schemas.
+_DANGLING_REF_CHECKS: list[tuple[str, str, str]] = [
+    # (child_table, child_column, parent_table)
+    ("source_files", "work_id", "works"),
+    ("literature_parse_runs", "work_id", "works"),
+    ("literature_parse_runs", "source_file_id", "source_files"),
+    ("metadata_extractions", "work_id", "works"),
+    ("classification_extractions", "work_id", "works"),
+    ("work_codes", "work_id", "works"),
+    ("duplicate_candidates", "work_id", "works"),
+    ("intake_candidates", "ingested_work_id", "works"),
+    ("intake_candidates", "matched_work_id", "works"),
+    ("intake_candidates", "collection_topic_id", "collection_topics"),
+]
+
+
+def _check_dangling_references(conn: sqlite3.Connection) -> list[dict[str, str]]:
+    """Detect child rows pointing at a nonexistent parent. Read-only.
+
+    Most tables lack DB-level FK constraints, so a deleted parent (e.g. a
+    ``works`` row removed by hand or a buggy path) can orphan child rows. This
+    surfaces them. NULL/empty child values are skipped (they mean "no reference".
+    """
+    issues: list[dict[str, str]] = []
+    existing_tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()}
+    table_columns: dict[str, set[str]] = {}
+    for t in existing_tables:
+        table_columns[t] = {r[1] for r in conn.execute(f"PRAGMA table_info({t})").fetchall()}
+
+    for child_tbl, child_col, parent_tbl in _DANGLING_REF_CHECKS:
+        if child_tbl not in existing_tables or parent_tbl not in existing_tables:
+            continue
+        if child_col not in table_columns.get(child_tbl, set()):
+            continue
+        rows = conn.execute(
+            f"SELECT rowid AS rid, {child_col} AS ref_val FROM {child_tbl} "
+            f"WHERE {child_col} IS NOT NULL AND {child_col} != '' "
+            f"AND {child_col} NOT IN (SELECT id FROM {parent_tbl})"
+        ).fetchall()
+        for r in rows:
+            issues.append({
+                "type": f"{child_tbl}.{child_col}",
+                "child_table": child_tbl,
+                "child_column": child_col,
+                "parent_table": parent_tbl,
+                "dangling_value": r["ref_val"],
+                "child_rowid": str(r["rid"]),
+            })
+    return issues
+
+
 @dataclass
 class HealthcheckResult:
     orphan_files: list[str] = field(default_factory=list)
     phantom_db_entries: list[str] = field(default_factory=list)
     work_dirs_without_db: list[str] = field(default_factory=list)
     status_inconsistencies: list[dict[str, str]] = field(default_factory=list)
+    dangling_references: list[dict[str, str]] = field(default_factory=list)
     applied_fixes: list[str] = field(default_factory=list)
     repair_plan: list[dict[str, str]] = field(default_factory=list)
 
@@ -65,6 +124,7 @@ class HealthcheckResult:
             or self.phantom_db_entries
             or self.work_dirs_without_db
             or self.status_inconsistencies
+            or self.dangling_references
         )
 
     def summary(self) -> dict[str, int]:
@@ -73,6 +133,7 @@ class HealthcheckResult:
             "phantom_db_entries": len(self.phantom_db_entries),
             "work_dirs_without_db": len(self.work_dirs_without_db),
             "status_inconsistencies": len(self.status_inconsistencies),
+            "dangling_references": len(self.dangling_references),
             "applied_fixes": len(self.applied_fixes),
             "repair_plan": len(self.repair_plan),
         }
@@ -104,6 +165,9 @@ def run_healthcheck(library_root: Path, *, apply: bool = False,
             # If core tables are missing, we can't do further checks
             if any(i["type"] == "missing_table" for i in schema_issues):
                 return result
+
+        # D3: dangling child→parent references (no FK constraints on most tables)
+        result.dangling_references = _check_dangling_references(conn)
 
         # 1. Collect all source_paths from DB (for phantom check — P2-POST-04)
         db_source_paths_raw: list[tuple[str, str, str]] = []  # (id, source_path, status)
@@ -344,6 +408,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Status inconsistencies: {len(result.status_inconsistencies)}")
         for inc in result.status_inconsistencies:
             print(f"    - {inc}")
+        print(f"  Dangling references (child row → missing parent): {len(result.dangling_references)}")
+        for d in result.dangling_references:
+            print(f"    - {d['type']}: {d['dangling_value']} (rowid {d['child_rowid']} -> missing {d['parent_table']})")
         if result.repair_plan:
             label = "Repair plan" if dry_run else "Applied repairs"
             print(f"  {label}: {len(result.repair_plan)}")
