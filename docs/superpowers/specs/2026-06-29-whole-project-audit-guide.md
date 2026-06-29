@@ -3,6 +3,73 @@
 > 面向：对整个 `literature_library` 项目做**整体审核**的强代码模型（不是逐任务验收）。
 > 性质：**审核的输入与方向**，不是审核结论。给地图和该怀疑什么，不规定"怎么看"——保留审核模型的自由度。
 > 配套：总规划 `2026-06-28-three-chain-completeness-plan.md`、操作手册 `2026-06-29-three-chain-runbook.md`。
+> 用途：下一步第三方系统性审核验收的**执行规程 + 审核提示词**。第三方可以据此派发子 agent、复核证据、输出阻断/非阻断结论。
+
+## 第三方审核硬约束
+
+1. **不得直接信任本文档事实**：一阶段地图是起点，不是证据。审核 agent 必须先独立扫描代码、路由、前端 API、测试和 DB schema，生成自己的"功能-实现-测试-入口"矩阵，再与本文档对账。
+2. **必须派发子 agent 并分工**：至少 4 个并行子 agent：
+   - `traceability-agent`：重建功能/文档/实现/测试矩阵，找死端点、孤儿脚本、文档漂移。
+   - `backend-data-agent`：审 DB 写入、状态机、事务、幂等、崩溃窗口、collector/inbox 双入口。
+   - `frontend-contract-agent`：审 Vue 页面、`web/src/api.js`、路由响应形状、空态/错误态/分页/筛选。
+   - `test-security-agent`：审测试假绿、网络/env 泄漏、路径逃逸、密钥泄漏、`except` 吞错。
+3. **至少两轮审核**：
+   - 第一轮：各子 agent 独立产出 finding，必须附文件行号、命令或复现步骤。
+   - 第二轮：交叉复核。每个 finding 必须由另一个 agent 复现或反驳；无法复现的 finding 降级为"待确认"，不得作为阻断项。
+   - 汇总轮：汇总 agent 只采纳有证据的 finding，去重、定级、给出验收结论。
+4. **审核不得偷懒为"功能可用"**：三链路 smoke 只能证明可达，不能证明安全。最终结论必须回答：哪些输入、时序、异常或并发会让系统撒谎、损坏数据、绕过单核或丢失证据。
+5. **所有结论必须可复现**：没有文件行号、DB 查询、命令输出、HTTP 请求/响应、截图或测试补丁之一的结论，一律不得进入最终阻断清单。
+
+## 隔离环境要求
+
+第三方审核默认**只读真实库**。任何会写 DB、移动文件、触发解析、下载 PDF、执行 ingest/promote/resolve/quarantine 的动作，必须在隔离副本中完成。
+
+建议副本布局：
+
+```text
+_audit_sandbox/
+  literature.sqlite
+  works/
+  _inbox/
+  _duplicates/
+  _quarantine/
+```
+
+执行要求：
+
+- 复制 `literature.sqlite`、`works/`、`_inbox/`、`_duplicates/`、`_quarantine/` 后再做 destructive smoke。
+- 写入类测试必须 patch `api.db.LIBRARY_ROOT`、相关脚本的 `library_root` 或工作目录，确认不会碰真实根目录。
+- 网络型 smoke（arxiv/GitHub/MinerU/cloud）必须单独标注"需要网络/密钥/额度"，不能作为 hermetic 自动化测试通过的前提。
+- 如果需要验证崩溃窗口，优先用临时 DB + 临时文件树 + monkeypatch/fault injection，不在真实库上手工中断进程。
+
+## 验收判定标准
+
+最终报告必须给出明确结论：
+
+- **PASS**：未发现 P0/P1；P2/P3 已记录且不影响当前验收。
+- **CONDITIONAL PASS**：无 P0，但存在 P1；必须列出最小修复清单，修复并复测后才能交付。
+- **FAIL**：存在 P0，或核心证据不足导致无法判断数据安全。
+
+严重级别：
+
+- **P0 阻断**：可导致真实库数据损坏/丢失、路径逃逸写出项目根、密钥泄漏、绕过人工审核直接晋升、解析/摄入状态系统性撒谎、跨入口重复写入不可恢复。
+- **P1 高危**：单核承诺被绕过、状态机允许非法倒退、崩溃后 DB/磁盘明显不一致、测试依赖真实网络/env 导致假绿、前端关键流程在合法响应下崩溃。
+- **P2 中危**：死端点/孤儿脚本/未测 migration、错误提示不足、非核心页面空态异常、幂等性不完整但可人工恢复。
+- **P3 低危**：文档漂移、命名混乱、报告可读性、非阻断治理问题。
+
+Finding 必须使用固定格式：
+
+```markdown
+### [P1] 标题
+- 影响：
+- 证据：`path/to/file.py:123` + 关键代码/DB 查询/HTTP 响应/截图
+- 复现：
+- 实际结果：
+- 预期结果：
+- 阻断判断：
+- 修复建议：
+- 复核状态：confirmed by <agent> / disputed / needs-info
+```
 
 ## 为什么分两阶段
 
@@ -26,22 +93,22 @@
 
 | 功能域 | 设计文档 | 实现（route / 脚本 / core / 前端） | 测试 | 状态/缺口 |
 |---|---|---|---|---|
-| works 管理 / WorkDetail | `2026-06-11-ui-migration-design.md` | `api/routes/works.py`、`files.py`；`web/Works.vue`·`WorkDetail.vue` | `tests/test_api.py` | ✅ |
-| relations 关系 | （同上） | `api/routes/relations.py`；`web/Relations.vue` | `tests/test_api.py` | ✅ |
-| duplicates 去重 | `FUTURE_WORK_PLAN` P1.0/4 | `api/routes/duplicates.py`；`scripts/literature_dedup.py`·`dedup_apply.py`·`dedup_cleanup.py`·`scan_title_duplicates.py`；`web/Duplicates.vue` | `tests/test_api.py` | ⚠️ 去重脚本无独立测试（仅 API 层） |
-| metadata 抽取/审核 | （P3 段） | `api/routes/metadata.py`；`scripts/literature_metadata_extract.py`·`literature_metadata_rerun.py`·`backfill_risk.py`；`web/MetadataReview.vue` | `tests/test_api.py` | ⚠️ `metadata/supersede`、`metadata/agent/queue` 端点无明确 UI 消费方 |
-| classification 抽取/审核/tags/vocab | （P2/P3 段） | `api/routes/classification.py`；`scripts/literature_classification_extract.py`·`recompute_classification_ambiguity.py`·`_batch_classify*.py`；`web/ClassificationReview.vue` | `tests/test_api.py` | ⚠️ `classification/extractions/batch-approve-with-tag` 端点无对应 api.js 导出？ |
+| works 管理 / WorkDetail | `docs/superpowers/specs/2026-06-11-ui-migration-design.md` | `api/routes/works.py`、`api/routes/files.py`；`web/src/views/Works.vue`·`web/src/views/WorkDetail.vue` | `tests/test_api.py` | ✅ |
+| relations 关系 | （同上） | `api/routes/relations.py`；`web/src/views/Relations.vue` | `tests/test_api.py` | ✅ |
+| duplicates 去重 | `FUTURE_WORK_PLAN.md` P1.0/4 | `api/routes/duplicates.py`；`scripts/literature_dedup.py`·`scripts/dedup_apply.py`·`scripts/dedup_cleanup.py`·`scripts/scan_title_duplicates.py`；`web/src/views/Duplicates.vue` | `tests/test_api.py` | ⚠️ 去重脚本无独立测试（仅 API 层） |
+| metadata 抽取/审核 | `FUTURE_WORK_PLAN.md` P3 段 | `api/routes/metadata.py`；`scripts/literature_metadata_extract.py`·`scripts/literature_metadata_rerun.py`·`scripts/backfill_risk.py`；`web/src/views/MetadataReview.vue` | `tests/test_api.py` | ⚠️ `metadata/supersede`、`metadata/agent/queue` 端点无明确 UI 消费方 |
+| classification 抽取/审核/tags/vocab | `FUTURE_WORK_PLAN.md` P2/P3 段 | `api/routes/classification.py`；`scripts/literature_classification_extract.py`·`scripts/recompute_classification_ambiguity.py`·`scripts/_batch_classify*.py`；`web/src/views/ClassificationReview.vue` | `tests/test_api.py` | ⚠️ `classification/extractions/batch-approve-with-tag` 端点无对应 api.js 导出？ |
 | files content/pdf | — | `api/routes/files.py` | `tests/test_api.py` | ✅ |
-| analysis_runs | `2026-06-12-reading-methodology-analysis-runs-design.md` | `scripts/literature_analyze.py`·`migrate_add_analysis_runs.py` | `tests/test_analysis_runs.py` | ⚠️ 5 runs 全 pending，功能未实战 |
-| healthcheck / dashboard | — | `scripts/literature_healthcheck.py`·`literature_dashboard.py` | `tests/test_healthcheck_no_ledger.py`（仅 ledger 回归） | ⚠️ healthcheck 主体逻辑无独立测试 |
+| analysis_runs | `docs/superpowers/specs/2026-06-12-reading-methodology-analysis-runs-design.md` | `scripts/literature_analyze.py`·`scripts/migrate_add_analysis_runs.py` | `tests/test_analysis_runs.py` | ⚠️ 5 runs 全 pending，功能未实战 |
+| healthcheck / dashboard | — | `scripts/literature_healthcheck.py`·`scripts/literature_dashboard.py` | `tests/test_healthcheck_no_ledger.py`（仅 ledger 回归） | ⚠️ healthcheck 主体逻辑无独立测试 |
 
 ## B. parser 解析子系统（P3.5）
 
 | 功能域 | 设计文档 | 实现 | 测试 | 状态/缺口 |
 |---|---|---|---|---|
-| 二元路由解析（单核） | `2026-06-27-parser-subproject-design.md` + 总规划 §2 | **核心** `parser/core/mineru/router.py::route_and_parse`；`pymupdf_client.py`(本地)·`cloud_client.py`(vlm) | `parser/tests/test_routing.py`（不进根 testpaths） | ⚠️ 单核测试在 parser/tests，根套件不覆盖 |
-| 解析触发/状态 API+UI | `2026-06-28-phaseB-parse.md` | `api/routes/parse.py`；WorkDetail 按钮 | `tests/test_parse_api.py` | ✅ |
-| 解析 CLI（DB-only） | `2026-06-28-phaseD-status-unify.md` | `scripts/literature_batch_parse.py` | `tests/test_batch_parse_cli.py` | ✅ |
+| 二元路由解析（单核） | `docs/superpowers/specs/2026-06-27-parser-subproject-design.md` + 总规划 §2 | **核心** `parser/core/mineru/router.py::route_and_parse`；`parser/core/mineru/pymupdf_client.py`(本地)·`parser/core/mineru/cloud_client.py`(vlm) | `parser/tests/test_routing.py`（不进根 testpaths） | ⚠️ 单核测试在 parser/tests，根套件不覆盖 |
+| 解析触发/状态 API+UI | `docs/superpowers/plans/2026-06-28-phaseB-parse.md` | `api/routes/parse.py`；`web/src/views/WorkDetail.vue` 按钮 | `tests/test_parse_api.py` | ✅ |
+| 解析 CLI（DB-only） | `docs/superpowers/plans/2026-06-28-phaseD-status-unify.md` | `scripts/literature_batch_parse.py` | `tests/test_batch_parse_cli.py` | ✅ |
 | 状态同步 | — | `scripts/migrate_sync_parse_status.py::sync_work_parse_status` | 间接（parse_api / batch_parse_cli） | ✅ |
 | ⚠️ 自部署降级路径 | （parser-subproject-design） | `parser/core/mineru/local_client.py`·`web_client.py`·`mineru_op.py`·`base_client.py` | 仅 parser/tests | **疑似 dead code**：cloud+PyMuPDF 已成主路径，self-deploy 是否仍被 active 路径触达？ |
 
@@ -49,19 +116,19 @@
 
 | 功能域 | 设计文档 | 实现（core / API / CLI / UI） | 测试 | 状态/缺口 |
 |---|---|---|---|---|
-| 地基（候选层/闸门/桥） | `2026-06-27-collector-integration-design.md` + `2026-06-28-collector-foundation.md` | `collector/{candidate_store,gate,ingest_bridge,normalize,paths,replace_source,fetch}`；`adapters/{arxiv,github}` | `test_candidate_store*`·`test_gate*`·`test_ingest_bridge`·`test_normalize`·`test_*_adapter`·`test_replace_source`·`test_collector_boundary` | ✅ |
-| topics 成熟度闸门 | `2026-06-27-collector-retrieval-design.md` + `2026-06-29-phaseC-*.md` | `collector/topics.py`；`api/routes/intake.py`(`/topics`)；CLI `topic`；`web/TopicsReview.vue` | `test_collection_topics`·`test_intake_api` | ✅（live DB 0 主题，未实战） |
+| 地基（候选层/闸门/桥） | `docs/superpowers/specs/2026-06-27-collector-integration-design.md` + `docs/superpowers/plans/2026-06-28-collector-foundation.md` | `collector/{candidate_store,gate,ingest_bridge,normalize,paths,replace_source,fetch}`；`collector/adapters/{arxiv,github}` | `test_candidate_store*`·`test_gate*`·`test_ingest_bridge`·`test_normalize`·`test_*_adapter`·`test_replace_source`·`test_collector_boundary` | ✅ |
+| topics 成熟度闸门 | `docs/superpowers/specs/2026-06-27-collector-retrieval-design.md` + `docs/superpowers/plans/2026-06-29-phaseC-collector-ui.md` | `collector/topics.py`；`api/routes/intake.py`(`/topics`)；CLI `topic`；`web/src/views/TopicsReview.vue` | `test_collection_topics`·`test_intake_api` | ✅（live DB 0 主题，未实战） |
 | collect 发现 | 同上 | **核心** `collector/collect.py::collect_once`；`discovery_explicit.py`·`discovery_citation.py`；`api/routes/intake.py`(`/collect`)；CLI `collect` | `test_collect_once`·`test_discovery_*` | ✅ |
 | resolve 闸门 | 同上 | `collector/gate.py::resolve_pending`；`api/routes/intake.py`(`/resolve`)；CLI `resolve` | `test_gate_resolve_pending`·`test_intake_api` | ✅ |
-| A2 审核+晋升 | `2026-06-28-phaseA-intake-review.md` | `api/routes/intake.py`(`/candidates·/stats·/review·/promote`)；CLI `list/promote`；`web/IntakeReview.vue` | `test_intake_api`(18)·`test_intake_cli`·`test_promote_topic_tags` | ✅ |
-| PDF 下载缺口修复 | `2026-06-28-collector-pdf-download-fix.md` | `collector/ingest_bridge.py` | `test_ingest_bridge` | ✅ |
+| A2 审核+晋升 | `docs/superpowers/plans/2026-06-28-phaseA-intake-review.md` | `api/routes/intake.py`(`/candidates·/stats·/review·/promote`)；CLI `list/promote`；`web/src/views/IntakeReview.vue` | `test_intake_api`(18)·`test_intake_cli`·`test_promote_topic_tags` | ✅ |
+| PDF 下载缺口修复 | `docs/superpowers/specs/2026-06-28-collector-pdf-download-fix.md` | `collector/ingest_bridge.py` | `test_ingest_bridge` | ✅ |
 
 ## D. ingest inbox 摄入（P4 + Phase B'）
 
 | 功能域 | 设计文档 | 实现 | 测试 | 状态/缺口 |
 |---|---|---|---|---|
-| inbox 摄入 nucleus | （P1/P4 段） | `scripts/literature_ingest.py` | `tests/test_literature_ingest.py`·`test_ingest_no_ledger.py` | ✅ |
-| inbox API+UI（Phase B'） | `2026-06-29-phaseBp-inbox-ingest.md` | `api/routes/ingest.py`(`/plan`·`/execute`)；`web/InboxReview.vue`；`web/src/api.js`(`getIngestPlan`/`executeIngest`) | `tests/test_ingest_api.py` | ✅ |
+| inbox 摄入 nucleus | `FUTURE_WORK_PLAN.md` P1/P4 段 | `scripts/literature_ingest.py` | `tests/test_literature_ingest.py`·`test_ingest_no_ledger.py` | ✅ |
+| inbox API+UI（Phase B'） | `docs/superpowers/plans/2026-06-29-phaseBp-inbox-ingest.md` | `api/routes/ingest.py`(`/plan`·`/execute`)；`web/src/views/InboxReview.vue`；`web/src/api.js`(`getIngestPlan`/`executeIngest`) | `tests/test_ingest_api.py` | ✅ |
 
 ## E. 跨切 / 治理
 
@@ -116,6 +183,10 @@
 
 10. **"`.env`/密钥/网络边界有没有漏到不该漏的层？"** 解析 token、模型 key、外部 API（arxiv/Semantic Scholar/GitHub）调用点。测试是否真桩了网络？有没有把密钥写进日志/错误消息/DB？
 
+11. **"UI 合法操作是否真的覆盖了所有关键状态？"** 用 Playwright 或等价浏览器自动化打开 `/works`、`/works/{id}`、`/metadata`、`/classification`、`/duplicates`、`/relations`、`/intake`、`/topics`、`/inbox`。检查 console error、network 4xx/5xx、空态、筛选、分页、刷新后状态保持。UI 只渲染不报错不够，必须至少点击每个关键写操作的 dry-run/confirm/trigger 前置按钮，并在隔离副本验证响应。
+
+12. **"历史/归档代码会不会被误当 active 入口？"** `_archive/`、`parser/` 内旧 API、`scripts/README.md` 里的旧 `parse_ledger` 说明、静态 dashboard 说明都可能误导后续 agent。审核时区分 active import/route/CLI 入口与历史材料；若历史材料仍被 README/runbook 指向，应作为文档漂移 finding。
+
 ## 承重事实（非显然，必须独立验证——别信文档，信代码）
 
 - **解析单核** = `parser/core/mineru/router.py::route_and_parse`；CLI/API/UI 三处都该调它，无一例外。
@@ -139,16 +210,29 @@
 
 ## 三个跨切验证动作（亲手做）
 
-1. **清空环境跑测试**：`MinerU_API_KEY= MINERU_API_TOKEN= uv run python -m pytest tests/` —— 还绿才是真 hermetic。变红 = 测试纪律 bug（给了假信心）。
-2. **单记录全链追踪**：挑一个 `work_id`，列全它在 `works`/`source_files`/`literature_parse_runs`/`metadata_extractions`/`classification_extractions`/`duplicate_candidates` 的所有行 + 磁盘 `works/{id}/` 下所有文件，**查一致性**（孤儿文件/行、状态矛盾）。
+1. **清空环境跑测试**：在不移动真实库的前提下运行 `MinerU_API_KEY= MINERU_API_TOKEN= uv run python -m pytest tests/` —— 还绿才是真 hermetic。变红 = 测试纪律 bug（给了假信心）。
+2. **单记录全链追踪**：挑一个 `work_id`，只读列全它在 `works`/`source_files`/`literature_parse_runs`/`metadata_extractions`/`classification_extractions`/`duplicate_candidates` 的所有行 + 磁盘 `works/{id}/` 下所有文件，**查一致性**（孤儿文件/行、状态矛盾）。
 3. **§2 三连 grep**（快速体检，不是终点）：
    - `grep -rn "def route_and_parse" --include=*.py . | grep -v "_archive\|/docs/"` → 仅 `parser/core/mineru/router.py`
    - `grep -rn "def collect_once" --include=*.py . | grep -v "_archive\|/docs/"` → 仅 `collector/collect.py`
    - `grep -rn "INSERT INTO works" collector/ api/routes/` → 空（works 直写只在 ingest nucleus）
 
+## 最终报告结构
+
+第三方最终输出必须包含：
+
+1. **执行摘要**：PASS / CONDITIONAL PASS / FAIL；阻断项数量；最高风险一句话。
+2. **审核范围**：commit/branch、是否使用隔离副本、是否联网、是否有 MinerU/API key、运行的命令。
+3. **子 agent 分工与两轮复核记录**：每个子 agent 审了什么，第二轮谁复核谁。
+4. **功能追溯矩阵差异**：第三方独立矩阵 vs 本文档地图的差异。
+5. **Finding 清单**：按 P0→P3 排序，使用固定 finding schema。
+6. **复现附录**：测试命令、HTTP 请求、DB 查询、关键截图/console/network 摘要。
+7. **未覆盖/无法判断项**：必须明说原因，例如缺网络、缺密钥、真实库只读、样本不足。
+8. **建议修复顺序**：只列和 finding 直接相关的最小修复，不做无关重构建议。
+
 ---
 
 ## 给审核模型的收尾指令
 
-> "一阶段已替你圈出 8 个起点，但**别局限于此**——二阶段启发式镜头该跑全程，缺口只是优先怀疑对象。
+> "一阶段已替你圈出 7 个起点，但**别局限于此**——二阶段启发式镜头该跑全程，缺口只是优先怀疑对象。
 > 功能我相信跑得通。告诉我：**这个系统在什么输入/什么时序下会撒谎或损坏数据——以及你的证据。**"
