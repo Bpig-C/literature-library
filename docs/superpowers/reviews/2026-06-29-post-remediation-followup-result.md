@@ -6,14 +6,23 @@
 
 ## 1. 执行摘要
 
-本轮处理了 6 个 POST findings：1 个 P1、4 个 P2、1 个 P3。
+本轮处理了 6 个 POST findings：1 个 P1、4 个 P2、1 个 P3。POST findings 修复完成后，额外完成了真实库治理工作。
+
+### POST findings 修复
 
 - **P1-POST-01** (fixed): 分类审核 3 条写入路径统一调用 `validate_tag_value()`，前端 ClassificationReview 移除 `tag` 自由输入。反向 payload `__FREE_TAG_SHOULD_NOT_PERSIST__` 和 `__BAD_METHOD__` 无法写入标签表。
 - **P2-POST-01** (fixed): 提取共享 `api/path_safety.py`，metadata/classification quarantine 复用 `_safe_dest_name()`，`../evil.pdf` 等恶意文件名返回 422。
 - **P2-POST-02** (fixed): `test_batch_parse_cli.py` 改用 `tmp_path`，全量测试在仓库内可干净复现。
-- **P2-POST-03** (fixed-with-dry-run): healthcheck 新增 `--repair-quarantine-status` 标志，输出 dry-run 修复计划。真实库 16 条不一致已报告，未执行写入。
+- **P2-POST-03** (fixed): healthcheck 新增 `--repair-quarantine-status` 标志，真实库 27 条隔离文献状态已全部修复。
 - **P2-POST-04** (fixed): phantom 口径改为 `Path.exists()` 检查，新增 `active_source_in_quarantine` 和 `quarantine_path_status_mismatch` 分类报告。
 - **P3-POST-01** (analyzed): 工作区交付边界已分析，所有产物有明确归属。
+
+### 真实库治理（POST findings 修复后追加）
+
+- **隔离文献状态修复**：27 篇 quarantined works 的 source_files.status 从 active/archived 统一更新为 quarantined。
+- **Phantom 文件恢复**：6 条 phantom（DB 有记录但文件不存在）中的 5 条，从 `literature_read` 目录找回并归位到 `works/`。SHA256 全部匹配。
+- **Dedup 副本恢复**：1 条 dedup 归档 phantom，从主文件复制副本并恢复 DB 记录。
+- **Healthcheck 全零**：orphan=0, phantom=0, inconsistency=0。
 
 ## 2. POST Findings 状态表
 
@@ -22,7 +31,7 @@
 | P1-POST-01 分类审核绕过词表写入任意 tag | P1 | **fixed** | 3 条写入路径统一调用 validate_tag_value；前端移除 tag 自由输入；5 个回归测试 |
 | P2-POST-01 metadata/classification quarantine 安全文件名 | P2 | **fixed** | 共享 api/path_safety.py；10 个回归测试覆盖 ../ 、绝对路径、分隔符 |
 | P2-POST-02 全量测试不可干净复现 | P2 | **fixed** | test_batch_parse_cli.py 改用 tmp_path；全量 313 passed |
-| P2-POST-03 真实库 quarantine/source_files 状态不一致 | P2 | **fixed-with-dry-run** | healthcheck 新增 --repair-quarantine-status；真实库 16 条已报告，未执行写入 |
+| P2-POST-03 真实库 quarantine/source_files 状态不一致 | P2 | **fixed** | healthcheck 新增 --repair-quarantine-status；27 条全部修复为 quarantined |
 | P2-POST-04 healthcheck phantom 口径误报 | P2 | **fixed** | phantom 改为 Path.exists()；新增 active_source_in_quarantine + quarantine_path_status_mismatch |
 | P3-POST-01 工作区交付边界不清 | P3 | **analyzed** | 所有产物有明确 commit/gitignore/needs-decision 归属 |
 
@@ -67,7 +76,7 @@
 uv run python -m pytest tests/ --basetemp=.codex_tmp/pytest_full -p no:cacheprovider
 ```
 
-**313 passed, 10 skipped, 1 warning**
+**316 passed, 7 skipped, 1 warning**
 
 ### Hermetic 测试（清空 MinerU 密钥）
 
@@ -75,7 +84,7 @@ uv run python -m pytest tests/ --basetemp=.codex_tmp/pytest_full -p no:cacheprov
 $env:MinerU_API_KEY=''; $env:MinerU_API_TOKEN=''; uv run python -m pytest tests/ --basetemp=.codex_tmp/pytest_hermetic -p no:cacheprovider
 ```
 
-**313 passed, 10 skipped, 1 warning**
+**316 passed, 7 skipped, 1 warning**
 
 ### 前端构建
 
@@ -109,11 +118,11 @@ npm.cmd run build
 
 ## 6. 真实库 Healthcheck 结果
 
+### 修复前（POST findings 修复后、真实库治理前）
+
 ```powershell
 .\.venv\Scripts\python.exe scripts\healthcheck_library.py --json
 ```
-
-结果摘要：
 
 | 指标 | 数量 |
 |------|------|
@@ -121,29 +130,45 @@ npm.cmd run build
 | phantom_db_entries | 6 |
 | status_inconsistencies | 56 |
 
-详细分类：
+### 执行的修复
 
-- **phantom_db_entries (6)**: DB 中 source_path 指向的文件在磁盘上不存在（含编码问题的中文路径）。
-- **quarantined_work_active_source (16)**: works.read_status='quarantined' 但 source_files.status='active'。
-- **active_source_in_quarantine (16)**: source_files.status='active' 且路径在 _quarantine/ 下。
-- **quarantine_path_status_mismatch (24)**: source_path 在 _quarantine/ 下但 status 不是 'quarantined'（含 active 和 archived）。
+1. **27 条隔离文献状态修复**：`--repair-quarantine-status --apply`，将 16 条 active + 11 条 archived 统一更新为 quarantined。
+2. **5 条 phantom 文件恢复**：从 `literature_read` 目录找回 PDF，SHA256 匹配后移入 `works/` 并更新 source_path。
+3. **1 条 dedup 副本恢复**：从主文件复制到 `_archive/dedup/` 并恢复 DB 记录。
+4. **1 条 orphan 处理**：dedup 归档残留在 `works/` 的副本，已移入 `_quarantine/_healthcheck_orphans/`。
 
-是否执行了 repair：**否**（默认只读，需用户确认后 --apply）
+### 修复后
 
-修复计划：用户可运行 `--repair-quarantine-status --apply` 将 16 条 active source 更新为 status='quarantined'。
+```powershell
+.\.venv\Scripts\python.exe scripts\healthcheck_library.py
+```
+
+```
+Orphan files (on disk, not in DB): 0
+Phantom DB entries (in DB, not on disk): 0
+Work dirs without DB work: 0
+Status inconsistencies: 0
+
+No issues detected.
+```
 
 ## 7. 工作区交付状态（P3-POST-01 分析结果）
 
-### 7.1 未 push 的 commit（ahead 2）
+### 7.1 未 push 的 commit（ahead 5）
 
 | Hash | Message |
 | --- | --- |
 | `60e65be` | docs(audit): add third-party audit report and remediation plan |
 | `f35aeab` | fix: remediate all P1/P2/P3 third-party audit findings |
+| `fa1d3f3` | fix: close all POST findings and commit workspace deliverables |
+| `a21f782` | fix: repair plan covers all 27 quarantined works (active + archived) |
+| `cc3fa3c` | fix: add sys.path for direct script invocation; repair 27 quarantined works |
 
 建议：最终验收通过后一并 push。
 
-### 7.2 本轮修改文件（待提交）
+### 7.2 本轮修改文件（已提交）
+
+POST findings 修复（commit `fa1d3f3`）：
 
 | 文件 | 变更类型 | 说明 |
 | --- | --- | --- |
@@ -152,7 +177,7 @@ npm.cmd run build
 | `api/routes/classification.py` | 修改 | P1-POST-01 + P2-POST-01 |
 | `api/routes/metadata.py` | 修改 | P2-POST-01 |
 | `api/routes/works.py` | 修改 | P2-POST-01 |
-| `scripts/healthcheck_library.py` | 修改 | P2-POST-03 + P2-POST-04 |
+| `scripts/healthcheck_library.py` | 修改 | P2-POST-03 + P2-POST-04 + sys.path fix |
 | `scripts/run_api.py` | 修改 | 端口配置改进 |
 | `web/vite.config.js` | 修改 | proxy target 配置改进 |
 | `web/src/views/ClassificationReview.vue` | 修改 | P1-POST-01 前端修复 |
@@ -161,6 +186,21 @@ npm.cmd run build
 | `tests/test_classification_vocab_bypass.py` | 新增 | P1-POST-01 |
 | `tests/test_quarantine_meta_class.py` | 新增 | P2-POST-01 |
 | `tests/test_healthcheck_repair.py` | 新增 | P2-POST-03/04 |
+
+追加修复（commits `a21f782`, `cc3fa3c`）：
+
+| 文件 | 变更类型 | 说明 |
+| --- | --- | --- |
+| `scripts/healthcheck_library.py` | 修改 | repair plan 覆盖 active+archived；sys.path 修复 |
+
+真实库修复（未产生新 commit，仅修改 literature.sqlite）：
+
+| 操作 | 说明 |
+| --- | --- |
+| 27 条 source_files.status 更新 | active/archived → quarantined |
+| 5 条 source_files.source_path 更新 | 从 literature_read 恢复文件到 works/ |
+| 1 条 dedup 副本恢复 | 从主文件复制到 _archive/dedup/ 并恢复 DB 记录 |
+| 1 条 orphan 处理 | dedup 残留副本移入 _quarantine/_healthcheck_orphans/ |
 
 ### 7.3 未跟踪文件决策
 
@@ -199,21 +239,19 @@ parser/docs/archive/latest_changes.diff
 
 ## 8. 建议
 
-1. 所有 POST findings 已修复或有明确 dry-run 方案，建议提交。
-2. `parser/docs/archive/20260403文档服务在线部署_V1.1.docx` 建议删除或 gitignore（历史部署文档，非当前活跃参考）。
-3. 最终验收通过后 `git push` 同步 ahead 2 个 commit + 本轮新 commit。
-4. 推荐 commit message：
+1. 所有 POST findings 已修复，真实库治理已完成，建议提交并 push。
+2. `parser/docs/archive/20260403文档服务在线部署_V1.1.docx` 保留在归档文件夹。
+3. 最终验收通过后 `git push` 同步 5 个 commit。
+4. 推荐 commit message（合并本轮追加修复到已有 commit 或新建）：
 
 ```text
-fix: close all POST findings and commit workspace deliverables
+fix: complete real library healthcheck repair and phantom file recovery
 
-- P1-POST-01: validate classification tags on all extraction apply paths
-- P2-POST-01: unify quarantine filename safety via shared path_safety module
-- P2-POST-02: replace hardcoded /tmp with pytest tmp_path in batch parse tests
-- P2-POST-03: add --repair-quarantine-status dry-run for real DB inconsistencies
-- P2-POST-04: fix phantom detection to use Path.exists() instead of set diff
-- P3-POST-01: commit architecture docs, workflow diagrams, dev config improvements
-- Add .codex_tmp/ and large diff to .gitignore
+- Repair 27 quarantined works source_files.status (active+archived -> quarantined)
+- Recover 5 phantom files from literature_read with SHA256 verification
+- Restore dedup copy for SF-1152b10cb288-00091
+- Fix sys.path for direct healthcheck script invocation
+- Healthcheck: orphan=0, phantom=0, inconsistency=0
 ```
 
 ## 9. 反向 payload 验证
