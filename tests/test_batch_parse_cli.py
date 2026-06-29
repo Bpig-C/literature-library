@@ -26,16 +26,20 @@ def cli_module(tmp_path, monkeypatch):
     return mod
 
 
-def _ensure_pending_row(conn, sf_id="SF-cli1", work_id="W-cli1"):
+def _ensure_pending_row(conn, tmp_path, sf_id="SF-cli1", work_id="W-cli1"):
+    source_path = str(tmp_path / "x.pdf")
+    output_dir = str(tmp_path / "out")
+    content_json_path = str(tmp_path / "out" / "content.json")
+    content_md_path = str(tmp_path / "out" / "content.md")
     conn.execute(
         "INSERT OR REPLACE INTO literature_parse_runs "
         "(id, work_id, source_file_id, source_path, task_id, status, backend, "
         " parse_method, file_size, started_at, finished_at, output_dir, error, "
         " content_json_path, content_md_path, package_path) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (f"LPR-{sf_id}", work_id, sf_id, "/tmp/x.pdf", "", "pending",
-         "vlm", "auto", 1000, "2026-06-28T00:00:00+00:00", "", "/tmp/out",
-         "", "/tmp/out/content.json", "/tmp/out/content.md", ""),
+        (f"LPR-{sf_id}", work_id, sf_id, source_path, "", "pending",
+         "vlm", "auto", 1000, "2026-06-28T00:00:00+00:00", "", output_dir,
+         "", content_json_path, content_md_path, ""),
     )
     conn.execute(
         "INSERT OR REPLACE INTO works (id, title, parse_status, read_status, created_at, updated_at) "
@@ -45,10 +49,10 @@ def _ensure_pending_row(conn, sf_id="SF-cli1", work_id="W-cli1"):
     conn.commit()
 
 
-def test_get_pending_db_reads_parse_runs(cli_module):
+def test_get_pending_db_reads_parse_runs(cli_module, tmp_path):
     conn = sqlite3.connect(str(cli_module.DB_PATH))
     try:
-        _ensure_pending_row(conn)
+        _ensure_pending_row(conn, tmp_path)
     finally:
         conn.close()
     pending = cli_module.get_pending_db()
@@ -57,14 +61,14 @@ def test_get_pending_db_reads_parse_runs(cli_module):
     # 字段集齐备
     row = next(p for p in pending if p["source_file_id"] == "SF-cli1")
     assert row["work_id"] == "W-cli1"
-    assert row["source_path"] == "/tmp/x.pdf"
+    assert row["source_path"] == str(tmp_path / "x.pdf")
     assert row["output_dir"]
 
 
-def test_get_pending_db_excludes_non_pending(cli_module):
+def test_get_pending_db_excludes_non_pending(cli_module, tmp_path):
     conn = sqlite3.connect(str(cli_module.DB_PATH))
     try:
-        _ensure_pending_row(conn)
+        _ensure_pending_row(conn, tmp_path)
         conn.execute(
             "UPDATE literature_parse_runs SET status='succeeded' WHERE id='LPR-SF-cli1'"
         )
@@ -74,11 +78,11 @@ def test_get_pending_db_excludes_non_pending(cli_module):
     assert all(p["source_file_id"] != "SF-cli1" for p in cli_module.get_pending_db())
 
 
-def test_run_one_writes_db_and_syncs_work_status(cli_module, monkeypatch):
+def test_run_one_writes_db_and_syncs_work_status(cli_module, monkeypatch, tmp_path):
     """成功解析后：parse_runs.status=succeeded 且 works.parse_status=succeeded。"""
     conn = sqlite3.connect(str(cli_module.DB_PATH))
     try:
-        _ensure_pending_row(conn)
+        _ensure_pending_row(conn, tmp_path)
     finally:
         conn.close()
 
@@ -110,10 +114,10 @@ def test_run_one_writes_db_and_syncs_work_status(cli_module, monkeypatch):
         conn.close()
 
 
-def test_run_one_dry_run_does_not_write(cli_module, monkeypatch):
+def test_run_one_dry_run_does_not_write(cli_module, monkeypatch, tmp_path):
     conn = sqlite3.connect(str(cli_module.DB_PATH))
     try:
-        _ensure_pending_row(conn)
+        _ensure_pending_row(conn, tmp_path)
     finally:
         conn.close()
     called = {"n": 0}
@@ -127,7 +131,7 @@ def test_run_one_dry_run_does_not_write(cli_module, monkeypatch):
     assert called["n"] == 0  # dry-run 不解析
 
 
-def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch):
+def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch, tmp_path):
     """sync_work_parse_status 抛异常时，parse_runs 的 succeeded 仍应被提交（不回滚）。
 
     回归 MINOR-1：sync 在内层 except 之外、commit 之前；若它的异常未吞掉，
@@ -135,7 +139,7 @@ def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch):
     """
     conn = sqlite3.connect(str(cli_module.DB_PATH))
     try:
-        _ensure_pending_row(conn)
+        _ensure_pending_row(conn, tmp_path)
     finally:
         conn.close()
 

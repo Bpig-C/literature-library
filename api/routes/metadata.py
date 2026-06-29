@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY_ROOT
 from ..models import MetadataReviewAction, MetadataSupersedeAction, QuarantineAction
+from ..path_safety import _safe_dest_name, _unique_dest
 from ..risk import compute_risk
 from ..security import build_status_filter, validate_status
 
@@ -487,10 +488,8 @@ def quarantine_from_review(ext_id: str, body: QuarantineAction):
             src = Path(s["source_path"])
             if src.exists():
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest_name = Path(s["original_name"]).name if s["original_name"] else src.name
-                if ".." in dest_name or Path(dest_name).is_absolute():
-                    raise HTTPException(status_code=422, detail=f"Invalid original_name: {s['original_name']}")
-                dest = quarantine_dir / dest_name
+                dest_name = _safe_dest_name(dict(s), s["source_path"])
+                dest = _unique_dest(quarantine_dir / dest_name)
                 shutil.move(str(src), str(dest))
                 conn.execute(
                     "UPDATE source_files SET source_path = ? WHERE id = ?",

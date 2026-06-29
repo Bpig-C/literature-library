@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">系统架构图</title>
+  <desc id="desc">文献库系统中用户、智能体、Web、API、CLI、collector、parser、SQLite 和文件区的关系。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}
+      .store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}
+      .external{fill:#fff7ed;stroke:#c2410c;stroke-width:1.4;rx:10}
+      .title{font:700 26px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}
+      .line{stroke:#334155;stroke-width:1.5;fill:none;marker-end:url(#arrow)}
+      .dashed{stroke:#64748b;stroke-dasharray:7 5}
+    </style>
+  </defs>
+  <rect width="1280" height="760" fill="#ffffff"/>
+  <text x="40" y="52" class="title">Literature Library 系统架构</text>
+  <text x="40" y="78" class="small">根目录维护跨边界关系；子项目文档维护内部细节。</text>
+
+  <rect x="60" y="140" width="150" height="72" class="box"/>
+  <text x="135" y="171" text-anchor="middle" class="text">用户</text>
+  <text x="135" y="194" text-anchor="middle" class="small">浏览器操作</text>
+
+  <rect x="60" y="288" width="150" height="72" class="box"/>
+  <text x="135" y="319" text-anchor="middle" class="text">智能体</text>
+  <text x="135" y="342" text-anchor="middle" class="small">CLI / API</text>
+
+  <rect x="275" y="120" width="180" height="92" class="box"/>
+  <text x="365" y="154" text-anchor="middle" class="text">Web SPA</text>
+  <text x="365" y="178" text-anchor="middle" class="small">web/ Vue 3</text>
+  <text x="365" y="198" text-anchor="middle" class="small">10 个业务页面</text>
+
+  <rect x="275" y="270" width="180" height="92" class="box"/>
+  <text x="365" y="304" text-anchor="middle" class="text">CLI 脚本</text>
+  <text x="365" y="328" text-anchor="middle" class="small">scripts/</text>
+  <text x="365" y="348" text-anchor="middle" class="small">ingest / parse / analyze</text>
+
+  <rect x="535" y="135" width="190" height="105" class="box"/>
+  <text x="630" y="169" text-anchor="middle" class="text">FastAPI 后端</text>
+  <text x="630" y="194" text-anchor="middle" class="small">api/</text>
+  <text x="630" y="216" text-anchor="middle" class="small">works / files / intake / parse</text>
+
+  <rect x="535" y="300" width="190" height="90" class="box"/>
+  <text x="630" y="333" text-anchor="middle" class="text">Collector</text>
+  <text x="630" y="357" text-anchor="middle" class="small">collector/</text>
+  <text x="630" y="377" text-anchor="middle" class="small">候选发现 / 门控 / 晋升</text>
+
+  <rect x="535" y="455" width="190" height="90" class="box"/>
+  <text x="630" y="488" text-anchor="middle" class="text">Parser</text>
+  <text x="630" y="512" text-anchor="middle" class="small">parser/core/mineru</text>
+  <text x="630" y="532" text-anchor="middle" class="small">PyMuPDF / MinerU cloud</text>
+
+  <rect x="835" y="112" width="210" height="108" class="store"/>
+  <text x="940" y="147" text-anchor="middle" class="text">SQLite</text>
+  <text x="940" y="171" text-anchor="middle" class="small">literature.sqlite</text>
+  <text x="940" y="193" text-anchor="middle" class="small">works / parse_runs / extractions</text>
+
+  <rect x="835" y="285" width="210" height="122" class="store"/>
+  <text x="940" y="320" text-anchor="middle" class="text">文件区</text>
+  <text x="940" y="344" text-anchor="middle" class="small">_inbox / works / _archive</text>
+  <text x="940" y="366" text-anchor="middle" class="small">_quarantine / _duplicates</text>
+  <text x="940" y="388" text-anchor="middle" class="small">_collector_cache</text>
+
+  <rect x="835" y="480" width="210" height="92" class="store"/>
+  <text x="940" y="514" text-anchor="middle" class="text">解析产物</text>
+  <text x="940" y="538" text-anchor="middle" class="small">content.md / content.json</text>
+  <text x="940" y="558" text-anchor="middle" class="small">works/{id}/parsed/mineru</text>
+
+  <rect x="1100" y="430" width="145" height="70" class="external"/>
+  <text x="1172" y="462" text-anchor="middle" class="text">MinerU cloud</text>
+  <text x="1172" y="484" text-anchor="middle" class="small">selfdeploy 降级</text>
+
+  <line x1="210" y1="176" x2="275" y2="166" class="line"/>
+  <line x1="210" y1="324" x2="275" y2="316" class="line"/>
+  <line x1="455" y1="166" x2="535" y2="178" class="line"/>
+  <line x1="455" y1="316" x2="535" y2="188" class="line dashed"/>
+  <line x1="455" y1="316" x2="535" y2="340" class="line"/>
+  <line x1="455" y1="340" x2="535" y2="492" class="line"/>
+  <line x1="725" y1="178" x2="835" y2="165" class="line"/>
+  <line x1="725" y1="200" x2="835" y2="330" class="line"/>
+  <line x1="725" y1="340" x2="835" y2="346" class="line"/>
+  <line x1="725" y1="358" x2="835" y2="160" class="line"/>
+  <line x1="725" y1="502" x2="835" y2="524" class="line"/>
+  <line x1="940" y1="407" x2="940" y2="480" class="line"/>
+  <line x1="1045" y1="526" x2="1100" y2="465" class="line"/>
+  <line x1="835" y1="540" x2="725" y2="520" class="line"/>
+  <line x1="835" y1="390" x2="725" y2="520" class="line"/>
+
+  <rect x="62" y="640" width="1120" height="56" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
+  <text x="82" y="665" class="small">关键不变量：SQLite 是逻辑中心；文件区保存物理 PDF 和产物；collector 晋升必须经 ingest_bridge；parse 状态以 literature_parse_runs 为准；删除类动作走归档或隔离。</text>
+</svg>

@@ -11,51 +11,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..db import get_conn, LIBRARY_ROOT
 from ..models import WorkUpdate, QuarantineAction
+from ..path_safety import _sanitize_filename, _safe_dest_name, _unique_dest
 
 router = APIRouter()
-
-
-def _sanitize_filename(name: str) -> str:
-    """Sanitize a filename from DB to prevent path traversal.
-
-    Rejects absolute paths and path components like '..'. Returns only the
-    basename portion, stripping any directory separators.
-    """
-    p = Path(name)
-    # Reject absolute paths (Windows C:\\... or Unix /...)
-    if p.is_absolute():
-        raise HTTPException(status_code=422, detail=f"Invalid filename (absolute path): {name}")
-    # Reject any '..' components
-    if ".." in p.parts:
-        raise HTTPException(status_code=422, detail=f"Invalid filename (path traversal): {name}")
-    # Take only the final basename (strips any / or \ in the string)
-    clean = p.name
-    if not clean or clean in (".", ".."):
-        raise HTTPException(status_code=422, detail=f"Invalid filename: {name}")
-    return clean
-
-
-def _safe_dest_name(row: dict, fallback_path: str) -> str:
-    """Return sanitized original_name if non-empty, else basename of fallback_path."""
-    name = row.get("original_name")
-    if name:
-        return _sanitize_filename(name)
-    return Path(fallback_path).name
-
-
-def _unique_dest(dest: Path) -> Path:
-    """If dest already exists, append __2, __3, etc. until unique."""
-    if not dest.exists():
-        return dest
-    stem = dest.stem
-    suffix = dest.suffix
-    parent = dest.parent
-    counter = 2
-    while True:
-        candidate = parent / f"{stem}__{counter}{suffix}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
 
 
 def _safe_json(value: str | None, default=None):

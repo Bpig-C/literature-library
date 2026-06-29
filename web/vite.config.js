@@ -5,6 +5,8 @@ import AutoImport from 'unplugin-auto-import/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import { visualizer } from 'rollup-plugin-visualizer'
 
+const apiTarget = process.env.LITLIB_API_TARGET || 'http://127.0.0.1:19527'
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -16,7 +18,7 @@ export default defineConfig({
     port: 19528,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:19527',
+        target: apiTarget,
         changeOrigin: true,
       },
     },

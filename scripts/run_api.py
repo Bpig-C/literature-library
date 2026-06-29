@@ -11,4 +11,7 @@ if ROOT not in sys.path:
 os.chdir(ROOT)
 
 if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="127.0.0.1", port=19527, reload=True)
+    from api.main import app
+
+    port = int(os.environ.get("LITLIB_API_PORT", "19527"))
+    uvicorn.run(app, host="127.0.0.1", port=port, reload=False)

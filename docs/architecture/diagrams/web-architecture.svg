@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520" role="img" aria-labelledby="title">
+  <title id="title">Web 子项目架构</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.4;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1100" height="520" fill="#fff"/><text x="40" y="45" class="title">Web 子项目架构</text>
+  <rect x="455" y="70" width="180" height="58" class="box"/><text x="545" y="104" text-anchor="middle" class="text">App.vue / router.js</text>
+  <rect x="100" y="170" width="130" height="52" class="box"/><text x="165" y="202" text-anchor="middle" class="small">Dashboard</text>
+  <rect x="250" y="170" width="130" height="52" class="box"/><text x="315" y="202" text-anchor="middle" class="small">Works / Detail</text>
+  <rect x="400" y="170" width="130" height="52" class="box"/><text x="465" y="202" text-anchor="middle" class="small">Duplicates</text>
+  <rect x="550" y="170" width="130" height="52" class="box"/><text x="615" y="202" text-anchor="middle" class="small">Relations</text>
+  <rect x="700" y="170" width="130" height="52" class="box"/><text x="765" y="202" text-anchor="middle" class="small">Metadata</text>
+  <rect x="850" y="170" width="130" height="52" class="box"/><text x="915" y="202" text-anchor="middle" class="small">Classification</text>
+  <rect x="250" y="285" width="130" height="52" class="box"/><text x="315" y="317" text-anchor="middle" class="small">Intake</text>
+  <rect x="400" y="285" width="130" height="52" class="box"/><text x="465" y="317" text-anchor="middle" class="small">Inbox</text>
+  <rect x="550" y="285" width="130" height="52" class="box"/><text x="615" y="317" text-anchor="middle" class="small">Topics</text>
+  <rect x="700" y="285" width="130" height="52" class="box"/><text x="765" y="317" text-anchor="middle" class="small">PdfPreviewDrawer</text>
+  <rect x="390" y="405" width="160" height="58" class="box"/><text x="470" y="439" text-anchor="middle" class="text">src/api.js</text>
+  <rect x="610" y="405" width="160" height="58" class="store"/><text x="690" y="439" text-anchor="middle" class="text">FastAPI /api</text>
+  <line x1="545" y1="128" x2="165" y2="170" class="line"/><line x1="545" y1="128" x2="315" y2="170" class="line"/><line x1="545" y1="128" x2="465" y2="170" class="line"/><line x1="545" y1="128" x2="615" y2="170" class="line"/><line x1="545" y1="128" x2="765" y2="170" class="line"/><line x1="545" y1="128" x2="915" y2="170" class="line"/><line x1="545" y1="128" x2="315" y2="285" class="line"/><line x1="545" y1="128" x2="465" y2="285" class="line"/><line x1="545" y1="128" x2="615" y2="285" class="line"/><line x1="545" y1="128" x2="765" y2="285" class="line"/><line x1="470" y1="337" x2="470" y2="405" class="line"/><line x1="550" y1="434" x2="610" y2="434" class="line"/>
+</svg>

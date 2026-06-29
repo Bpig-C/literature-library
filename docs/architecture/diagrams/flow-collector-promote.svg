@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title">
+  <title id="title">采集候选到正式文献</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.5;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1180" height="360" fill="#fff"/><text x="40" y="45" class="title">流程一：采集候选到正式文献</text>
+  <rect x="50" y="110" width="130" height="64" class="box"/><text x="115" y="136" text-anchor="middle" class="text">用户/智能体</text><text x="115" y="157" text-anchor="middle" class="small">topic 或显式 ID</text>
+  <rect x="230" y="95" width="160" height="94" class="box"/><text x="310" y="125" text-anchor="middle" class="text">collector</text><text x="310" y="147" text-anchor="middle" class="small">discover / normalize</text><text x="310" y="168" text-anchor="middle" class="small">fetch / gate</text>
+  <rect x="440" y="95" width="155" height="94" class="store"/><text x="518" y="125" text-anchor="middle" class="text">候选层</text><text x="518" y="147" text-anchor="middle" class="small">intake_candidates</text><text x="518" y="168" text-anchor="middle" class="small">_collector_cache</text>
+  <rect x="645" y="110" width="150" height="64" class="box"/><text x="720" y="136" text-anchor="middle" class="text">web /intake</text><text x="720" y="157" text-anchor="middle" class="small">人工批准</text>
+  <rect x="845" y="110" width="155" height="64" class="box"/><text x="922" y="136" text-anchor="middle" class="text">ingest_bridge</text><text x="922" y="157" text-anchor="middle" class="small">复用 ingest 核</text>
+  <rect x="1045" y="110" width="100" height="64" class="store"/><text x="1095" y="136" text-anchor="middle" class="text">works</text><text x="1095" y="157" text-anchor="middle" class="small">正式文献</text>
+  <line x1="180" y1="142" x2="230" y2="142" class="line"/><line x1="390" y1="142" x2="440" y2="142" class="line"/><line x1="595" y1="142" x2="645" y2="142" class="line"/><line x1="795" y1="142" x2="845" y2="142" class="line"/><line x1="1000" y1="142" x2="1045" y2="142" class="line"/>
+  <text x="230" y="255" class="small">边界：collector 不直接写 works。批准后的候选通过 ingest_bridge 写入临时 inbox，并复用 ingest 全链路生成 source_files 与 parse_runs pending。</text>
+</svg>

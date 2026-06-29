@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500" role="img" aria-labelledby="title">
+  <title id="title">Scripts 子项目架构</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.4;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1100" height="500" fill="#fff"/><text x="40" y="45" class="title">Scripts 子项目架构</text>
+  <rect x="70" y="95" width="170" height="58" class="box"/><text x="155" y="129" text-anchor="middle" class="text">literature_ingest.py</text>
+  <rect x="70" y="180" width="170" height="58" class="box"/><text x="155" y="214" text-anchor="middle" class="text">literature_batch_parse.py</text>
+  <rect x="70" y="265" width="170" height="58" class="box"/><text x="155" y="299" text-anchor="middle" class="text">metadata / classify</text>
+  <rect x="70" y="350" width="170" height="58" class="box"/><text x="155" y="384" text-anchor="middle" class="text">analyze / dedup</text>
+  <rect x="350" y="80" width="170" height="58" class="store"/><text x="435" y="104" text-anchor="middle" class="text">文件区</text><text x="435" y="124" text-anchor="middle" class="small">_inbox / works / archive</text>
+  <rect x="350" y="180" width="170" height="58" class="box"/><text x="435" y="214" text-anchor="middle" class="text">parser/core/mineru</text>
+  <rect x="350" y="285" width="170" height="58" class="store"/><text x="435" y="319" text-anchor="middle" class="text">literature.sqlite</text>
+  <rect x="625" y="105" width="170" height="58" class="box"/><text x="710" y="139" text-anchor="middle" class="text">healthcheck</text>
+  <rect x="625" y="205" width="170" height="58" class="box"/><text x="710" y="239" text-anchor="middle" class="text">migrate_*.py</text>
+  <rect x="625" y="305" width="170" height="58" class="box"/><text x="710" y="339" text-anchor="middle" class="text">run_api.py</text>
+  <rect x="875" y="305" width="140" height="58" class="store"/><text x="945" y="339" text-anchor="middle" class="text">api/main.py</text>
+  <line x1="240" y1="124" x2="350" y2="109" class="line"/><line x1="240" y1="209" x2="350" y2="209" class="line"/><line x1="240" y1="294" x2="350" y2="314" class="line"/><line x1="240" y1="379" x2="350" y2="314" class="line"/><line x1="520" y1="314" x2="625" y2="134" class="line"/><line x1="520" y1="314" x2="625" y2="234" class="line"/><line x1="795" y1="334" x2="875" y2="334" class="line"/>
+  <text x="70" y="455" class="small">CLI 可以直接读写 DB 和文件区，因此每个脚本都必须遵守路径与数据库同步、归档/隔离优先的约束。</text>
+</svg>

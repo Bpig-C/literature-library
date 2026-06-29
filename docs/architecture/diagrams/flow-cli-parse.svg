@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title">
+  <title id="title">解析触发与 content.md 生成</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.external{fill:#fff7ed;stroke:#c2410c;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.5;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1180" height="360" fill="#fff"/><text x="40" y="45" class="title">流程四：解析触发与 content.md 生成</text>
+  <rect x="60" y="110" width="120" height="64" class="box"/><text x="120" y="136" text-anchor="middle" class="text">触发入口</text><text x="120" y="157" text-anchor="middle" class="small">CLI / API / UI</text>
+  <rect x="230" y="100" width="180" height="84" class="box"/><text x="320" y="132" text-anchor="middle" class="text">literature_batch_parse.py</text><text x="320" y="156" text-anchor="middle" class="small">查询 pending</text>
+  <rect x="465" y="110" width="140" height="64" class="store"/><text x="535" y="136" text-anchor="middle" class="text">SQLite</text><text x="535" y="157" text-anchor="middle" class="small">parse_runs</text>
+  <rect x="660" y="100" width="165" height="84" class="box"/><text x="742" y="132" text-anchor="middle" class="text">route_and_parse</text><text x="742" y="156" text-anchor="middle" class="small">文本层/扫描型路由</text>
+  <rect x="880" y="75" width="145" height="64" class="box"/><text x="952" y="102" text-anchor="middle" class="text">PyMuPDF</text><text x="952" y="123" text-anchor="middle" class="small">本地直抽</text>
+  <rect x="880" y="170" width="145" height="64" class="external"/><text x="952" y="197" text-anchor="middle" class="text">MinerU cloud</text><text x="952" y="218" text-anchor="middle" class="small">VLM 主链路</text>
+  <rect x="1060" y="110" width="95" height="64" class="store"/><text x="1108" y="136" text-anchor="middle" class="text">产物</text><text x="1108" y="157" text-anchor="middle" class="small">content.md</text>
+  <line x1="180" y1="142" x2="230" y2="142" class="line"/><line x1="410" y1="142" x2="465" y2="142" class="line"/><line x1="605" y1="142" x2="660" y2="142" class="line"/><line x1="825" y1="130" x2="880" y2="107" class="line"/><line x1="825" y1="155" x2="880" y2="202" class="line"/><line x1="1025" y1="107" x2="1060" y2="137" class="line"/><line x1="1025" y1="202" x2="1060" y2="150" class="line"/><line x1="1108" y1="174" x2="535" y2="174" class="line"/>
+  <text x="230" y="258" class="small">结果：写 content.md/content.json，并更新 literature_parse_runs、parse_artifacts 与 works.parse_status。</text>
+</svg>

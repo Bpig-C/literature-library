@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="430" viewBox="0 0 1100 430" role="img" aria-labelledby="title">
+  <title id="title">Collector 子项目架构</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.4;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1100" height="430" fill="#fff"/><text x="40" y="45" class="title">Collector 子项目架构</text>
+  <rect x="55" y="105" width="135" height="58" class="box"/><text x="122" y="139" text-anchor="middle" class="text">topics</text>
+  <rect x="55" y="205" width="135" height="58" class="box"/><text x="122" y="239" text-anchor="middle" class="text">显式/引用发现</text>
+  <rect x="250" y="155" width="130" height="58" class="box"/><text x="315" y="189" text-anchor="middle" class="text">collect.py</text>
+  <rect x="435" y="155" width="145" height="58" class="box"/><text x="508" y="181" text-anchor="middle" class="text">adapters</text><text x="508" y="201" text-anchor="middle" class="small">arxiv / github</text>
+  <rect x="635" y="95" width="130" height="58" class="box"/><text x="700" y="129" text-anchor="middle" class="text">normalize</text>
+  <rect x="635" y="210" width="130" height="58" class="box"/><text x="700" y="244" text-anchor="middle" class="text">fetch</text>
+  <rect x="820" y="80" width="140" height="58" class="store"/><text x="890" y="114" text-anchor="middle" class="text">_collector_cache</text>
+  <rect x="820" y="170" width="140" height="58" class="box"/><text x="890" y="204" text-anchor="middle" class="text">gate</text>
+  <rect x="820" y="260" width="140" height="58" class="store"/><text x="890" y="286" text-anchor="middle" class="text">candidate_store</text><text x="890" y="306" text-anchor="middle" class="small">SQLite</text>
+  <rect x="435" y="300" width="145" height="58" class="box"/><text x="508" y="334" text-anchor="middle" class="text">ingest_bridge</text>
+  <rect x="635" y="300" width="130" height="58" class="store"/><text x="700" y="324" text-anchor="middle" class="text">临时 inbox</text><text x="700" y="344" text-anchor="middle" class="small">复用 ingest</text>
+  <line x1="190" y1="134" x2="250" y2="175" class="line"/><line x1="190" y1="234" x2="250" y2="193" class="line"/><line x1="380" y1="184" x2="435" y2="184" class="line"/><line x1="580" y1="184" x2="635" y2="124" class="line"/><line x1="580" y1="184" x2="635" y2="239" class="line"/><line x1="765" y1="239" x2="820" y2="109" class="line"/><line x1="765" y1="239" x2="820" y2="199" class="line"/><line x1="890" y1="228" x2="890" y2="260" class="line"/><line x1="820" y1="289" x2="580" y2="329" class="line"/><line x1="580" y1="329" x2="635" y2="329" class="line"/>
+</svg>

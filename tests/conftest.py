@@ -345,6 +345,38 @@ def sample_db(tmp_path_factory):
         (now,),
     )
 
+    # Seed classification_extractions (for vocab-bypass tests)
+    valid_extracted = json.dumps({
+        "primary_doc_type": "research_article",
+        "reading_lane": ["evaluation_method"],
+        "artifact_focus": ["benchmark"],
+        "risk_domain": ["deception"],
+        "method_tags": ["benchmark_construction"],
+        "evidence": {
+            "primary_doc_type": "from abstract",
+            "reading_lane": "test",
+            "artifact_focus": "test",
+            "risk_domain": "test",
+            "method_tags": "test",
+        },
+    }, ensure_ascii=False)
+    valid_confidence = json.dumps({
+        "primary_doc_type": "high",
+        "reading_lane": "medium",
+        "artifact_focus": "medium",
+        "risk_domain": "medium",
+        "method_tags": "medium",
+    }, ensure_ascii=False)
+    conn.execute(
+        "INSERT INTO classification_extractions "
+        "(id, work_id, model_name, extracted_json, confidence_json, "
+        "ambiguity_score, review_status, applied, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("CE-valid-001", "W-sample-001", "test-model",
+         valid_extracted, valid_confidence,
+         5, "pending", 0, now, now),
+    )
+
     conn.commit()
     conn.close()
 

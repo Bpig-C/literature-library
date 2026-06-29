@@ -1,0 +1,55 @@
+# 系统架构图
+
+> 最后更新：2026-06-29  
+> 范围：`literature_library` 根项目及 `api`、`web`、`collector`、`parser`、`scripts` 子项目。
+
+## 维护边界
+
+这张图是系统级总图，用来回答“谁和谁协作、数据从哪里进出、哪些组件是稳定契约”。内部实现细节分别维护在：
+
+- `api/docs/architecture.md`
+- `collector/docs/architecture.md`
+- `parser/docs/architecture.md`
+- `web/docs/architecture.md`
+- `scripts/docs/architecture.md`
+
+## 系统总图
+
+![系统总图](diagrams/system-architecture.svg)
+
+## 主流水线视角
+
+```text
+手动 _inbox 或 collector 候选
+  -> ingest / ingest_bridge
+  -> 技术入库：works + source_files + literature_parse_runs(pending)
+  -> 基础去重/关系/隔离审核（可先做，但不是解析硬门禁）
+  -> parser 解析：content.md / content.json
+  -> 元数据抽取 -> 元数据审核 -> 回填 works
+  -> 可基于回填后的 works.title 重跑标题重复扫描
+  -> 分类抽取 -> 分类审核 -> 回填 works + work_classification_tags
+```
+
+注意：这是一条推荐治理顺序，不是所有步骤的硬门禁。代码层面，解析消费 `literature_parse_runs(pending)`；元数据和分类抽取以解析成功并存在 `content_md_path` 为入口条件。去重治理可以在摄入后先做，也可以在元数据回填标题后迭代重扫。
+
+## 运行时组件
+
+| 组件 | 主要目录 | 职责 | 主要契约 |
+| --- | --- | --- | --- |
+| Vue SPA | `web/` | 浏览器操作入口：文献、详情、去重、关系、元数据、分类、采集、inbox、主题 | 通过 `/api` 调 FastAPI |
+| FastAPI | `api/` | 对 UI 和 agent 暴露文献库 API，封装 DB 与文件操作 | `api/routes/*.py` |
+| Collector | `collector/` | 发现、规范化、下载、门控、候选审核、提升入库 | `intake` API、采集 CLI、SQLite 表 |
+| Parser | `parser/` | PDF/文档解析，输出 `content.md` 和结构化产物 | `parser/core/mineru/*`、可选 Agent API |
+| Scripts | `scripts/` | 日常维护、迁移、摄入、解析、抽取、分析、健康检查 | argparse CLI |
+| SQLite | `literature.sqlite` | 逻辑关系中心 | `works`、`source_files`、`literature_parse_runs`、`metadata_extractions`、`analysis_runs` 等 |
+| 文件区 | `_inbox/`、`works/`、`_archive/`、`_quarantine/`、`_duplicates/`、`_collector_cache/` | 物理 PDF、解析产物、归档、隔离、采集缓存 | 文件路径必须与 DB 同步 |
+
+## 核心约束
+
+- SQLite 是逻辑中心，文件系统只保存物理文件和产物。
+- 新 PDF 先进入 `_inbox`，再由 ingest 流程复制到 `works/{work_id}/source`。
+- inbox 摄入是可信源旁路，直接写 `works`；collector 摄入必须先落候选，经审核后通过 `ingest_bridge` 复用 ingest 核心。
+- 解析状态以 `literature_parse_runs` 为准，`parse_ledger.json` 属历史产物。
+- `MinerU selfdeploy` 是降级兼容路径，当前主链路是 PyMuPDF 本地直抽或 MinerU cloud VLM。
+- 模型抽取结果先进入审核表，批准后才回填稳定层。
+- 所有删除类操作优先归档或隔离，不直接删除源文件。

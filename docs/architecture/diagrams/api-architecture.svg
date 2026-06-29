@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500" role="img" aria-labelledby="title">
+  <title id="title">API 子项目架构</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.4;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1100" height="500" fill="#fff"/><text x="40" y="45" class="title">API 子项目架构</text>
+  <rect x="455" y="70" width="180" height="64" class="box"/><text x="545" y="108" text-anchor="middle" class="text">api/main.py</text>
+  <rect x="90" y="190" width="130" height="52" class="box"/><text x="155" y="222" text-anchor="middle" class="small">works / files</text>
+  <rect x="250" y="190" width="130" height="52" class="box"/><text x="315" y="222" text-anchor="middle" class="small">relations</text>
+  <rect x="410" y="190" width="130" height="52" class="box"/><text x="475" y="222" text-anchor="middle" class="small">duplicates</text>
+  <rect x="570" y="190" width="130" height="52" class="box"/><text x="635" y="222" text-anchor="middle" class="small">metadata</text>
+  <rect x="730" y="190" width="130" height="52" class="box"/><text x="795" y="222" text-anchor="middle" class="small">classification</text>
+  <rect x="890" y="190" width="130" height="52" class="box"/><text x="955" y="222" text-anchor="middle" class="small">intake / parse / ingest</text>
+  <rect x="220" y="335" width="170" height="64" class="store"/><text x="305" y="362" text-anchor="middle" class="text">literature.sqlite</text><text x="305" y="383" text-anchor="middle" class="small">api/db.py</text>
+  <rect x="465" y="335" width="170" height="64" class="store"/><text x="550" y="362" text-anchor="middle" class="text">文件区</text><text x="550" y="383" text-anchor="middle" class="small">works / quarantine</text>
+  <rect x="710" y="335" width="170" height="64" class="box"/><text x="795" y="362" text-anchor="middle" class="text">跨模块调用</text><text x="795" y="383" text-anchor="middle" class="small">collector / parser / scripts</text>
+  <line x1="545" y1="134" x2="155" y2="190" class="line"/><line x1="545" y1="134" x2="315" y2="190" class="line"/><line x1="545" y1="134" x2="475" y2="190" class="line"/><line x1="545" y1="134" x2="635" y2="190" class="line"/><line x1="545" y1="134" x2="795" y2="190" class="line"/><line x1="545" y1="134" x2="955" y2="190" class="line"/>
+  <line x1="475" y1="242" x2="305" y2="335" class="line"/><line x1="635" y1="242" x2="305" y2="335" class="line"/><line x1="155" y1="242" x2="550" y2="335" class="line"/><line x1="955" y1="242" x2="795" y2="335" class="line"/>
+</svg>

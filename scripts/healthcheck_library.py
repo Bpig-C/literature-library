@@ -6,11 +6,13 @@ Detects:
   - Work dirs without DB works.
   - Status inconsistencies (P2-06): quarantined works with active source files,
     intake_candidates with inconsistent status/review_status/ingested_work_id.
+  - P2-POST-04: active source outside works/, quarantine path/status mismatch.
 
 Default mode is read-only. Use --apply to quarantine orphan files.
+Use --repair-quarantine-status to fix source_files.status for quarantined works.
 
 Usage:
-    python scripts/healthcheck_library.py [--library-root PATH] [--apply] [--json]
+    python scripts/healthcheck_library.py [--library-root PATH] [--apply] [--repair-quarantine-status] [--json]
 """
 from __future__ import annotations
 
@@ -50,6 +52,7 @@ class HealthcheckResult:
     work_dirs_without_db: list[str] = field(default_factory=list)
     status_inconsistencies: list[dict[str, str]] = field(default_factory=list)
     applied_fixes: list[str] = field(default_factory=list)
+    repair_plan: list[dict[str, str]] = field(default_factory=list)
 
     def has_issues(self) -> bool:
         return bool(
@@ -66,6 +69,7 @@ class HealthcheckResult:
             "work_dirs_without_db": len(self.work_dirs_without_db),
             "status_inconsistencies": len(self.status_inconsistencies),
             "applied_fixes": len(self.applied_fixes),
+            "repair_plan": len(self.repair_plan),
         }
 
 
@@ -75,7 +79,9 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def run_healthcheck(library_root: Path, *, apply: bool = False) -> HealthcheckResult:
+def run_healthcheck(library_root: Path, *, apply: bool = False,
+                    repair_quarantine_status: bool = False,
+                    dry_run: bool = True) -> HealthcheckResult:
     library_root = library_root.resolve()
     db_path = library_root / "literature.sqlite"
     result = HealthcheckResult()
@@ -94,12 +100,14 @@ def run_healthcheck(library_root: Path, *, apply: bool = False) -> HealthcheckRe
             if any(i["type"] == "missing_table" for i in schema_issues):
                 return result
 
-        # 1. Collect all source_paths from DB
-        db_source_paths: set[str] = set()
-        for row in conn.execute("SELECT source_path FROM source_files").fetchall():
+        # 1. Collect all source_paths from DB (for phantom check — P2-POST-04)
+        db_source_paths_raw: list[tuple[str, str, str]] = []  # (id, source_path, status)
+        for row in conn.execute(
+            "SELECT id, source_path, status FROM source_files"
+        ).fetchall():
             p = row["source_path"]
             if p:
-                db_source_paths.add(str(Path(p).resolve()))
+                db_source_paths_raw.append((row["id"], p, row["status"] or "active"))
 
         # 2. Collect all work IDs from DB
         db_work_ids: set[str] = {
@@ -122,25 +130,33 @@ def run_healthcheck(library_root: Path, *, apply: bool = False) -> HealthcheckRe
                         if f.is_file():
                             disk_source_paths.add(str(f.resolve()))
 
-        # 4. Detect orphan files (on disk but not in DB)
+        # Also collect quarantine dir for path checks
+        quarantine_dir = library_root / "_quarantine"
+
+        # 4. Detect orphan files (on disk under works/*/source/* but not in DB)
+        db_resolved_paths: set[str] = set()
+        for _, p, _ in db_source_paths_raw:
+            db_resolved_paths.add(str(Path(p).resolve()))
         for disk_path in sorted(disk_source_paths):
-            if disk_path not in db_source_paths:
+            if disk_path not in db_resolved_paths:
                 result.orphan_files.append(disk_path)
 
-        # 5. Detect phantom DB entries (in DB but not on disk)
-        for db_path_str in sorted(db_source_paths):
-            if db_path_str not in disk_source_paths:
-                result.phantom_db_entries.append(db_path_str)
+        # 5. P2-POST-04: Detect phantom DB entries — check actual file existence
+        for sf_id, p, status in db_source_paths_raw:
+            resolved = Path(p).resolve()
+            if not resolved.exists():
+                result.phantom_db_entries.append(p)
 
         # 6. Detect work dirs without DB works
         for wid in sorted(disk_work_ids):
             if wid not in db_work_ids:
                 result.work_dirs_without_db.append(wid)
 
-        # 7. P2-06: Status inconsistencies
+        # 7. Status inconsistencies
         has_status_col = "status" in {r[1] for r in conn.execute("PRAGMA table_info(source_files)").fetchall()}
-        # 7a. quarantined works with active source files (requires status column)
+
         if has_status_col:
+            # 7a. quarantined works with active source files
             for row in conn.execute(
                 "SELECT sf.id, sf.source_path, sf.work_id "
                 "FROM source_files sf "
@@ -153,6 +169,48 @@ def run_healthcheck(library_root: Path, *, apply: bool = False) -> HealthcheckRe
                     "work_id": row["work_id"],
                     "source_path": row["source_path"],
                 })
+
+            # 7d. P2-POST-04: active source pointing to _quarantine path
+            quarantine_prefix = str(quarantine_dir.resolve())
+            for row in conn.execute(
+                "SELECT id, source_path, work_id, status FROM source_files WHERE status = 'active'"
+            ).fetchall():
+                resolved = str(Path(row["source_path"]).resolve())
+                if resolved.startswith(quarantine_prefix):
+                    result.status_inconsistencies.append({
+                        "type": "active_source_in_quarantine",
+                        "source_file_id": row["id"],
+                        "work_id": row["work_id"],
+                        "source_path": row["source_path"],
+                    })
+
+            # 7e. P2-POST-04: source in _quarantine but status != 'quarantined'
+            for row in conn.execute(
+                "SELECT id, source_path, work_id, status FROM source_files WHERE status != 'quarantined'"
+            ).fetchall():
+                resolved = str(Path(row["source_path"]).resolve())
+                if resolved.startswith(quarantine_prefix):
+                    result.status_inconsistencies.append({
+                        "type": "quarantine_path_status_mismatch",
+                        "source_file_id": row["id"],
+                        "work_id": row["work_id"],
+                        "source_path": row["source_path"],
+                        "current_status": row["status"],
+                    })
+
+            # 7f. P2-POST-04: active source outside works/ (not in quarantine either)
+            works_prefix = str(works_dir.resolve())
+            for row in conn.execute(
+                "SELECT id, source_path, work_id, status FROM source_files WHERE status = 'active'"
+            ).fetchall():
+                resolved = str(Path(row["source_path"]).resolve())
+                if not resolved.startswith(works_prefix) and not resolved.startswith(quarantine_prefix):
+                    result.status_inconsistencies.append({
+                        "type": "active_source_outside_works",
+                        "source_file_id": row["id"],
+                        "work_id": row["work_id"],
+                        "source_path": row["source_path"],
+                    })
 
         # 7b/7c: intake_candidates checks (table may not exist in all DBs)
         has_ic = conn.execute(
@@ -183,10 +241,42 @@ def run_healthcheck(library_root: Path, *, apply: bool = False) -> HealthcheckRe
                     "status": row["status"],
                     "ingested_work_id": row["ingested_work_id"],
                 })
+
+        # 8. P2-POST-03: Build repair plan for quarantined works with active source_files
+        if has_status_col and repair_quarantine_status:
+            for row in conn.execute(
+                "SELECT sf.id, sf.source_path, sf.work_id, sf.status, sf.archive_reason "
+                "FROM source_files sf "
+                "JOIN works w ON w.id = sf.work_id "
+                "WHERE w.read_status = 'quarantined' AND sf.status = 'active'"
+            ).fetchall():
+                plan_entry = {
+                    "source_file_id": row["id"],
+                    "work_id": row["work_id"],
+                    "source_path": row["source_path"],
+                    "current_status": row["status"],
+                    "proposed_status": "quarantined",
+                    "current_archive_reason": row["archive_reason"] or "",
+                    "proposed_archive_reason": "auto-repair: work is quarantined",
+                }
+                result.repair_plan.append(plan_entry)
+
+                if not dry_run:
+                    conn.execute(
+                        "UPDATE source_files SET status = 'quarantined', "
+                        "archive_reason = ? WHERE id = ?",
+                        ("auto-repair: work is quarantined", row["id"]),
+                    )
+                    result.applied_fixes.append(
+                        f"source_files[{row['id']}]: status {row['status']} -> quarantined"
+                    )
+            if not dry_run and result.applied_fixes:
+                conn.commit()
+
     finally:
         conn.close()
 
-    # 8. Apply fixes if requested (--apply is the only mode that writes)
+    # 9. Apply fixes if requested (--apply is the only mode that moves files)
     if apply:
         from scripts.literature_ingest import ensure_core_schema
         conn = _connect(db_path)
@@ -217,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Library consistency healthcheck.")
     parser.add_argument("--library-root", type=Path, default=None)
     parser.add_argument("--apply", action="store_true", help="Fix orphan files by moving to quarantine.")
+    parser.add_argument("--repair-quarantine-status", action="store_true",
+                        help="Repair source_files.status for quarantined works (dry-run unless --apply).")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON.")
     args = parser.parse_args(argv)
 
@@ -225,7 +317,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         library_root = Path(__file__).resolve().parents[1]
 
-    result = run_healthcheck(library_root, apply=args.apply)
+    repair = args.repair_quarantine_status
+    dry_run = not args.apply
+
+    result = run_healthcheck(library_root, apply=args.apply,
+                             repair_quarantine_status=repair, dry_run=dry_run)
 
     if args.json_output:
         print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
@@ -243,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Status inconsistencies: {len(result.status_inconsistencies)}")
         for inc in result.status_inconsistencies:
             print(f"    - {inc}")
+        if result.repair_plan:
+            label = "Repair plan" if dry_run else "Applied repairs"
+            print(f"  {label}: {len(result.repair_plan)}")
+            for entry in result.repair_plan:
+                print(f"    - {entry['source_file_id']}: {entry['current_status']} -> {entry['proposed_status']}")
         if result.applied_fixes:
             print(f"  Applied fixes: {len(result.applied_fixes)}")
             for fix in result.applied_fixes:

@@ -200,7 +200,6 @@
                   :options="getNSelectOptions(f)"
                   multiple
                   filterable
-                  tag
                   placeholder="选择或搜索..."
                   clearable
                 />
@@ -216,7 +215,6 @@
                   v-model:value="editForm[f.key]"
                   :options="[{ label: '未知 (unknown)', value: null }, ...getNSelectOptions(f)]"
                   filterable
-                  tag
                   placeholder="检索或输入..."
                   clearable
                 />

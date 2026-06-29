@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..db import LIBRARY_ROOT, get_conn, table_exists
 from ..models import QuarantineAction
+from ..path_safety import _safe_dest_name, _unique_dest
 from ..classification_vocab import get_vocab, validate_tag_value
 from ..classification_ambiguity import compute_ambiguity
 from ..security import build_status_filter, validate_status
@@ -42,6 +43,61 @@ class TagReview(BaseModel):
 
 def _make_tag_id() -> str:
     return f"CT-{uuid.uuid4().hex[:12]}"
+
+
+_TAG_GROUPS = ["reading_lane", "artifact_focus", "risk_domain", "method_tags"]
+
+
+def _validate_and_write_tags(
+    conn,
+    work_id: str,
+    extracted: dict,
+    merged_confidence: dict,
+    evidence: dict,
+    now: str,
+    *,
+    source: str = "model",
+) -> None:
+    """Validate all tag values against vocab and write to DB.
+
+    Raises HTTPException(400) listing every invalid group/value pair so the
+    caller can surface actionable feedback.  On success, tags are inserted
+    (skip-if-exists semantics matching the old inline code).
+    """
+    invalid: list[str] = []
+    tag_writes: list[tuple[str, str]] = []  # (group, value)
+
+    for group in _TAG_GROUPS:
+        values = extracted.get(group) or []
+        for v in values:
+            if not validate_tag_value(group, v):
+                invalid.append(f"{group}={v}")
+            else:
+                tag_writes.append((group, v))
+
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid tag values not in vocab: {', '.join(invalid)}",
+        )
+
+    for group, v in tag_writes:
+        existing = conn.execute(
+            "SELECT 1 FROM work_classification_tags WHERE work_id = ? AND tag_group = ? AND tag_value = ?",
+            (work_id, group, v),
+        ).fetchone()
+        if not existing:
+            tag_id = _make_tag_id()
+            conn.execute(
+                "INSERT INTO work_classification_tags "
+                "(id, work_id, tag_group, tag_value, source, confidence, evidence, "
+                "review_status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)",
+                (tag_id, work_id, group, v, source,
+                 merged_confidence.get(group, "low"),
+                 evidence.get(group, ""),
+                 now, now),
+            )
 
 
 @router.get("/classification/tags/{work_id}")
@@ -552,27 +608,11 @@ def review_extraction(ext_id: str, body: ExtractionReview):
                     params,
                 )
 
-            # Write multi-value tags
-            TAG_GROUPS = ["reading_lane", "artifact_focus", "risk_domain", "method_tags"]
-            for group in TAG_GROUPS:
-                values = extracted.get(group) or []
-                for v in values:
-                    existing = conn.execute(
-                        "SELECT 1 FROM work_classification_tags WHERE work_id = ? AND tag_group = ? AND tag_value = ?",
-                        (work_id, group, v),
-                    ).fetchone()
-                    if not existing:
-                        tag_id = f"CT-{uuid.uuid4().hex[:12]}"
-                        conn.execute(
-                            "INSERT INTO work_classification_tags "
-                            "(id, work_id, tag_group, tag_value, source, confidence, evidence, "
-                            "review_status, created_at, updated_at) "
-                            "VALUES (?, ?, ?, ?, 'model', ?, ?, 'approved', ?, ?)",
-                            (tag_id, work_id, group, v,
-                             merged_confidence.get(group, "low"),
-                             (extracted.get("evidence") or {}).get(group, ""),
-                             now, now),
-                        )
+            # Write multi-value tags (validates against vocab first)
+            _validate_and_write_tags(
+                conn, work_id, extracted, merged_confidence,
+                extracted.get("evidence") or {}, now,
+            )
 
             # Mark extraction as applied
             conn.execute(
@@ -683,27 +723,11 @@ def batch_approve_low_ambiguity():
                         params.append(work_id)
                         conn.execute(f"UPDATE works SET {', '.join(sets)} WHERE id = ?", params)
 
-                # Write multi-value tags
-                TAG_GROUPS = ["reading_lane", "artifact_focus", "risk_domain", "method_tags"]
-                for group in TAG_GROUPS:
-                    values = extracted.get(group) or []
-                    for v in values:
-                        existing = conn.execute(
-                            "SELECT 1 FROM work_classification_tags WHERE work_id = ? AND tag_group = ? AND tag_value = ?",
-                            (work_id, group, v),
-                        ).fetchone()
-                        if not existing:
-                            tag_id = f"CT-{uuid.uuid4().hex[:12]}"
-                            conn.execute(
-                                "INSERT INTO work_classification_tags "
-                                "(id, work_id, tag_group, tag_value, source, confidence, evidence, "
-                                "review_status, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, 'model', ?, ?, 'approved', ?, ?)",
-                                (tag_id, work_id, group, v,
-                                 merged_confidence.get(group, "low"),
-                                 evidence.get(group, ""),
-                                 now, now),
-                            )
+                # Write multi-value tags (validates against vocab first)
+                _validate_and_write_tags(
+                    conn, work_id, extracted, merged_confidence,
+                    evidence, now,
+                )
 
                 # Mark extraction as applied
                 conn.execute(
@@ -823,27 +847,11 @@ def batch_approve_with_tag(body: BatchApproveWithTag):
                         params.append(work_id)
                         conn.execute(f"UPDATE works SET {', '.join(sets)} WHERE id = ?", params)
 
-                # Write multi-value tags
-                TAG_GROUPS = ["reading_lane", "artifact_focus", "risk_domain", "method_tags"]
-                for group in TAG_GROUPS:
-                    values = extracted.get(group) or []
-                    for v in values:
-                        existing = conn.execute(
-                            "SELECT 1 FROM work_classification_tags WHERE work_id = ? AND tag_group = ? AND tag_value = ?",
-                            (work_id, group, v),
-                        ).fetchone()
-                        if not existing:
-                            tag_id = f"CT-{uuid.uuid4().hex[:12]}"
-                            conn.execute(
-                                "INSERT INTO work_classification_tags "
-                                "(id, work_id, tag_group, tag_value, source, confidence, evidence, "
-                                "review_status, created_at, updated_at) "
-                                "VALUES (?, ?, ?, ?, 'model', ?, ?, 'approved', ?, ?)",
-                                (tag_id, work_id, group, v,
-                                 merged_confidence.get(group, "low"),
-                                 evidence.get(group, ""),
-                                 now, now),
-                            )
+                # Write multi-value tags (validates against vocab first)
+                _validate_and_write_tags(
+                    conn, work_id, extracted, merged_confidence,
+                    evidence, now,
+                )
 
                 # Mark extraction as applied
                 conn.execute(
@@ -954,10 +962,8 @@ def quarantine_from_classification_review(ext_id: str, body: QuarantineAction):
             src = Path(s["source_path"])
             if src.exists():
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest_name = Path(s["original_name"]).name if s["original_name"] else src.name
-                if ".." in dest_name or Path(dest_name).is_absolute():
-                    raise HTTPException(status_code=422, detail=f"Invalid original_name: {s['original_name']}")
-                dest = quarantine_dir / dest_name
+                dest_name = _safe_dest_name(dict(s), s["source_path"])
+                dest = _unique_dest(quarantine_dir / dest_name)
                 shutil.move(str(src), str(dest))
                 conn.execute(
                     "UPDATE source_files SET source_path = ? WHERE id = ?",

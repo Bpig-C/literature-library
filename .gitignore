@@ -69,3 +69,9 @@ _cloud_trial/
 
 # collector runtime cache (PDFs staged for ingestion)
 _collector_cache/
+
+# Codex/agent temp working directory
+.codex_tmp/
+
+# Parser archive large files (diffs, binary docs)
+parser/docs/archive/latest_changes.diff

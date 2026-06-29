@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title">
+  <title id="title">用户浏览器摄入新 PDF</title>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker><style>.box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:10}.store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:10}.text{font:15px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.title{font:700 22px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}.small{font:13px "Microsoft YaHei",Arial,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:1.5;fill:none;marker-end:url(#arrow)}</style></defs>
+  <rect width="1180" height="360" fill="#fff"/><text x="40" y="45" class="title">流程二：用户浏览器摄入新 PDF</text>
+  <rect x="55" y="110" width="125" height="64" class="box"/><text x="118" y="147" text-anchor="middle" class="text">用户</text>
+  <rect x="230" y="110" width="150" height="64" class="store"/><text x="305" y="136" text-anchor="middle" class="text">_inbox</text><text x="305" y="157" text-anchor="middle" class="small">放入 PDF</text>
+  <rect x="430" y="110" width="150" height="64" class="box"/><text x="505" y="136" text-anchor="middle" class="text">web /inbox</text><text x="505" y="157" text-anchor="middle" class="small">dry-run plan</text>
+  <rect x="630" y="110" width="165" height="64" class="box"/><text x="713" y="136" text-anchor="middle" class="text">FastAPI ingest</text><text x="713" y="157" text-anchor="middle" class="small">plan / execute</text>
+  <rect x="845" y="92" width="150" height="100" class="store"/><text x="920" y="122" text-anchor="middle" class="text">文件区</text><text x="920" y="145" text-anchor="middle" class="small">works/source</text><text x="920" y="166" text-anchor="middle" class="small">_archive</text><text x="920" y="187" text-anchor="middle" class="small">_duplicates</text>
+  <rect x="1040" y="110" width="105" height="64" class="store"/><text x="1092" y="136" text-anchor="middle" class="text">SQLite</text><text x="1092" y="157" text-anchor="middle" class="small">pending</text>
+  <line x1="180" y1="142" x2="230" y2="142" class="line"/><line x1="380" y1="142" x2="430" y2="142" class="line"/><line x1="580" y1="142" x2="630" y2="142" class="line"/><line x1="795" y1="142" x2="845" y2="142" class="line"/><line x1="995" y1="142" x2="1040" y2="142" class="line"/>
+  <text x="230" y="245" class="small">执行结果：复制源文件，归档 inbox 原件；精确重复进入 _duplicates；写 works/source_files/literature_parse_runs(pending)。</text>
+</svg>
