@@ -270,6 +270,25 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate_source_files_columns(conn: sqlite3.Connection) -> None:
+    """Add status/archived_at/archive_path/archive_reason to source_files if missing."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(source_files)").fetchall()}
+    migrations = [
+        ("status", "TEXT DEFAULT 'active'"),
+        ("archived_at", "TEXT"),
+        ("archive_path", "TEXT"),
+        ("archive_reason", "TEXT"),
+    ]
+    for col_name, col_def in migrations:
+        if col_name not in existing:
+            conn.execute(f"ALTER TABLE source_files ADD COLUMN {col_name} {col_def}")
+    # Backfill: existing rows without status get 'active'
+    conn.execute(
+        "UPDATE source_files SET status = 'active' WHERE status IS NULL"
+    )
+    conn.commit()
+
+
 def ensure_core_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
@@ -298,7 +317,11 @@ def ensure_core_schema(conn: sqlite3.Connection) -> None:
             file_size INTEGER,
             file_ext TEXT,
             import_time TEXT,
-            mtime TEXT
+            mtime TEXT,
+            status TEXT DEFAULT 'active',
+            archived_at TEXT,
+            archive_path TEXT,
+            archive_reason TEXT
         );
         CREATE TABLE IF NOT EXISTS literature_parse_runs (
             id TEXT PRIMARY KEY,
@@ -348,6 +371,7 @@ def ensure_core_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    _migrate_source_files_columns(conn)
 
 
 def fetch_existing_state(conn: sqlite3.Connection) -> dict[str, Any]:

@@ -15,6 +15,49 @@ from ..models import WorkUpdate, QuarantineAction
 router = APIRouter()
 
 
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a filename from DB to prevent path traversal.
+
+    Rejects absolute paths and path components like '..'. Returns only the
+    basename portion, stripping any directory separators.
+    """
+    p = Path(name)
+    # Reject absolute paths (Windows C:\\... or Unix /...)
+    if p.is_absolute():
+        raise HTTPException(status_code=422, detail=f"Invalid filename (absolute path): {name}")
+    # Reject any '..' components
+    if ".." in p.parts:
+        raise HTTPException(status_code=422, detail=f"Invalid filename (path traversal): {name}")
+    # Take only the final basename (strips any / or \ in the string)
+    clean = p.name
+    if not clean or clean in (".", ".."):
+        raise HTTPException(status_code=422, detail=f"Invalid filename: {name}")
+    return clean
+
+
+def _safe_dest_name(row: dict, fallback_path: str) -> str:
+    """Return sanitized original_name if non-empty, else basename of fallback_path."""
+    name = row.get("original_name")
+    if name:
+        return _sanitize_filename(name)
+    return Path(fallback_path).name
+
+
+def _unique_dest(dest: Path) -> Path:
+    """If dest already exists, append __2, __3, etc. until unique."""
+    if not dest.exists():
+        return dest
+    stem = dest.stem
+    suffix = dest.suffix
+    parent = dest.parent
+    counter = 2
+    while True:
+        candidate = parent / f"{stem}__{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
 def _safe_json(value: str | None, default=None):
     if not value:
         return default
@@ -356,34 +399,47 @@ def quarantine_work(work_id: str, body: QuarantineAction = QuarantineAction()):
 
         quarantine_dir = LIBRARY_ROOT / "_quarantine" / work_id
         moved_files = []
+        missing_files = []
 
-        # Move source files to _quarantine/{work_id}/
         sources = conn.execute(
             "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
             (work_id,),
         ).fetchall()
+
+        # Pre-check: collect all dest paths and verify sources exist
+        planned_moves: list[tuple[Path, Path, dict]] = []
         for s in sources:
             src = Path(s["source_path"])
-            if src.exists():
-                dest = quarantine_dir / s["original_name"] or src.name
-                quarantine_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(src), str(dest))
-                moved_files.append(str(dest))
+            if not src.exists():
+                missing_files.append(str(src))
+                continue
+            dest_name = _safe_dest_name(dict(s), s["source_path"])
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            dest = _unique_dest(quarantine_dir / dest_name)
+            planned_moves.append((src, dest, dict(s)))
 
-        # Update DB
+        if missing_files:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "missing_source_files", "missing": missing_files},
+            )
+
+        # Move files
+        for src, dest, _ in planned_moves:
+            shutil.move(str(src), str(dest))
+            moved_files.append(str(dest))
+
+        # Update DB: work status
         conn.execute(
             "UPDATE works SET read_status = 'quarantined', updated_at = datetime('now') WHERE id = ?",
             (work_id,),
         )
-        # Update source_paths to point to quarantine
-        for s in sources:
-            src = Path(s["source_path"])
-            if src.name:
-                new_path = str(quarantine_dir / src.name)
-                conn.execute(
-                    "UPDATE source_files SET source_path = ? WHERE id = ?",
-                    (new_path, s["id"]),
-                )
+        # Update source_paths to point to quarantine (use same dest name as file move)
+        for _, dest, s in planned_moves:
+            conn.execute(
+                "UPDATE source_files SET source_path = ? WHERE id = ?",
+                (str(dest), s["id"]),
+            )
         # Add bad_source code
         try:
             conn.execute(
@@ -410,34 +466,47 @@ def restore_work(work_id: str):
 
         work_dir = LIBRARY_ROOT / "works" / work_id / "source"
         moved_files = []
+        missing_files = []
 
-        # Move source files back from _quarantine/{work_id}/ to works/{work_id}/source/
         sources = conn.execute(
             "SELECT id, source_path, original_name FROM source_files WHERE work_id = ?",
             (work_id,),
         ).fetchall()
+
+        # Pre-check: collect all dest paths and verify sources exist
+        planned_moves: list[tuple[Path, Path, dict]] = []
         for s in sources:
             src = Path(s["source_path"])
-            if src.exists():
-                work_dir.mkdir(parents=True, exist_ok=True)
-                dest = work_dir / s["original_name"] or src.name
-                shutil.move(str(src), str(dest))
-                moved_files.append(str(dest))
+            if not src.exists():
+                missing_files.append(str(src))
+                continue
+            dest_name = _safe_dest_name(dict(s), s["source_path"])
+            work_dir.mkdir(parents=True, exist_ok=True)
+            dest = _unique_dest(work_dir / dest_name)
+            planned_moves.append((src, dest, dict(s)))
 
-        # Update DB
+        if missing_files:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "missing_source_files", "missing": missing_files},
+            )
+
+        # Move files
+        for src, dest, _ in planned_moves:
+            shutil.move(str(src), str(dest))
+            moved_files.append(str(dest))
+
+        # Update DB: work status
         conn.execute(
             "UPDATE works SET read_status = 'unread', updated_at = datetime('now') WHERE id = ?",
             (work_id,),
         )
-        # Update source_paths back to works dir
-        for s in sources:
-            src = Path(s["source_path"])
-            if src.name:
-                new_path = str(work_dir / src.name)
-                conn.execute(
-                    "UPDATE source_files SET source_path = ? WHERE id = ?",
-                    (new_path, s["id"]),
-                )
+        # Update source_paths back to works dir (use same dest name as file move)
+        for _, dest, s in planned_moves:
+            conn.execute(
+                "UPDATE source_files SET source_path = ? WHERE id = ?",
+                (str(dest), s["id"]),
+            )
         # Remove quarantine-related codes
         conn.execute(
             "DELETE FROM work_codes WHERE work_id = ? AND code IN ('bad_source', 'quarantined')",

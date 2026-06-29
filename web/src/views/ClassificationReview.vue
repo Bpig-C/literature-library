@@ -6,13 +6,13 @@
       <div class="stats-bar">
         <div class="ambiguity-bar">
           <span class="amb-label">模糊度:</span>
-          <button class="amb-btn" :class="{ active: ambFilter === 'high' }" @click="ambFilter = ambFilter === 'high' ? null : 'high'">
+          <button class="amb-btn" :class="{ active: ambFilter === 'high' }" @click="ambFilter = ambFilter === 'high' ? null : 'high'; resetAndLoad()">
             高 ({{ summary.ambiguity?.high || 0 }})
           </button>
-          <button class="amb-btn" :class="{ active: ambFilter === 'medium' }" @click="ambFilter = ambFilter === 'medium' ? null : 'medium'">
+          <button class="amb-btn" :class="{ active: ambFilter === 'medium' }" @click="ambFilter = ambFilter === 'medium' ? null : 'medium'; resetAndLoad()">
             中 ({{ summary.ambiguity?.medium || 0 }})
           </button>
-          <button class="amb-btn" :class="{ active: ambFilter === 'low' }" @click="ambFilter = ambFilter === 'low' ? null : 'low'">
+          <button class="amb-btn" :class="{ active: ambFilter === 'low' }" @click="ambFilter = ambFilter === 'low' ? null : 'low'; resetAndLoad()">
             低 ({{ summary.ambiguity?.low || 0 }})
           </button>
           <button v-if="statusFilter === 'pending' && summary.ambiguity?.low > 0" class="batch-btn" @click="doBatchApprove">
@@ -21,7 +21,7 @@
         </div>
         <div class="status-bar">
           <div v-for="s in STATUSES" :key="s.key" class="stat-card"
-            :class="{ active: statusFilter === s.key }" @click="statusFilter = s.key; loadList()">
+            :class="{ active: statusFilter === s.key }" @click="statusFilter = s.key; resetAndLoad()">
             <b>{{ summary[s.key] || 0 }}</b><span>{{ s.label }}</span>
           </div>
         </div>
@@ -561,6 +561,7 @@ async function loadList() {
     sort: sortKey.value,
     order: sortDir.value,
   }
+  if (ambFilter.value) params.ambiguity_level = ambFilter.value
   const res = await getClassificationExtractions(params)
   extractions.value = res.extractions
   total.value = res.total

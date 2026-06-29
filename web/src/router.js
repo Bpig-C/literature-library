@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from './views/Dashboard.vue'
-import Works from './views/Works.vue'
-import WorkDetail from './views/WorkDetail.vue'
-import Duplicates from './views/Duplicates.vue'
-import Relations from './views/Relations.vue'
-import MetadataReview from './views/MetadataReview.vue'
-import ClassificationReview from './views/ClassificationReview.vue'
-import IntakeReview from './views/IntakeReview.vue'
-import InboxReview from './views/InboxReview.vue'
-import TopicsReview from './views/TopicsReview.vue'
+
+const Dashboard = () => import('./views/Dashboard.vue')
+const Works = () => import('./views/Works.vue')
+const WorkDetail = () => import('./views/WorkDetail.vue')
+const Duplicates = () => import('./views/Duplicates.vue')
+const Relations = () => import('./views/Relations.vue')
+const MetadataReview = () => import('./views/MetadataReview.vue')
+const ClassificationReview = () => import('./views/ClassificationReview.vue')
+const IntakeReview = () => import('./views/IntakeReview.vue')
+const InboxReview = () => import('./views/InboxReview.vue')
+const TopicsReview = () => import('./views/TopicsReview.vue')
 
 const routes = [
   { path: '/', component: Dashboard },

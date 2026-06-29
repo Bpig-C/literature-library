@@ -60,11 +60,11 @@ literature_library/
 
 ### FastAPI 后端
 
-`api/main.py` 启动 FastAPI 应用，挂载 5 组路由。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
+`api/main.py` 启动 FastAPI 应用，挂载 9 组路由：works、relations、duplicates、files、metadata、classification、intake、parse、ingest。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
 
 ### Vue 前端
 
-单页应用，6 个页面：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview。通过 `/api` 前缀与后端通信。
+单页应用，10 个页面：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview、IntakeReview、InboxReview、TopicsReview。通过 `/api` 前缀与后端通信。
 
 ### MinerU / content.md 解析链路
 
@@ -345,17 +345,20 @@ MetadataReview 页面（`/metadata`）提供人工审核门禁：
 
 ### 前端管理
 
-Vue SPA 提供 7 个页面：
+Vue SPA 提供 10 个页面：
 
 | 页面 | 路径 | 职责 |
 |---|---|---|
 | Dashboard | `/` | 统计总览、快捷入口 |
 | Works | `/works` | 文献列表，搜索/筛选/分页，隔离/恢复操作 |
 | WorkDetail | `/works/:id` | 文献详情，编辑元数据，查看 content.md，管理关系 |
-| Duplicates | `/duplicates` | 去重候选组，决策按钮 |
+| Duplicates | `/duplicates` | 去重候选组，决策按钮，合并预览 |
 | Relations | `/relations` | 文献关系管理 |
 | MetadataReview | `/metadata` | 元数据抽取结果审核（双模型对比、覆盖式批准） |
 | ClassificationReview | `/classification` | 分类标签审核（primary_doc_type、risk_domain、method_tags 等） |
+| IntakeReview | `/intake` | 采集候选审核（resolution、review_status、promote） |
+| InboxReview | `/inbox` | Inbox 摄入 dry-run 预览与确认 |
+| TopicsReview | `/topics` | 采集主题管理（成熟度转换、mapped_tags） |
 
 ## 6. API 概览
 
@@ -371,6 +374,7 @@ Vue SPA 提供 7 个页面：
 | DELETE | `/api/relations` | 删除关系 |
 | GET | `/api/duplicates` | 重复组列表（含候选条目） |
 | POST | `/api/duplicates/{group_id}/review` | 审查重复组决策 |
+| GET | `/api/duplicates/{group_id}/merge-preview` | 预览合并推荐（得分、推荐主条目） |
 | GET | `/api/files/{work_id}/content` | 获取 content.md 原文 |
 | GET | `/api/files/{work_id}/pdf` | 获取 PDF 文件 |
 | GET | `/api/metadata` | 元数据抽取列表（按状态/模型/风险筛选） |
@@ -378,6 +382,27 @@ Vue SPA 提供 7 个页面：
 | PATCH | `/api/metadata/{ext_id}/review` | 审核单条抽取结果（批准/需修正/拒绝） |
 | POST | `/api/metadata/apply-approved` | 批量应用已批准的抽取结果 |
 | POST | `/api/metadata/batch-approve-low-risk` | 批量批准低风险待审抽取（Mimo 优先） |
+| POST | `/api/metadata/{ext_id}/quarantine` | 从元数据审核页隔离文献 |
+| GET | `/api/classification/tags/{work_id}` | 获取文献分类标签 |
+| POST | `/api/classification/tags/{work_id}` | 创建分类标签 |
+| DELETE | `/api/classification/tags/{tag_id}` | 删除分类标签 |
+| GET | `/api/classification/vocab` | 分类词汇表 |
+| GET | `/api/classification/extractions` | 分类抽取列表 |
+| GET | `/api/classification/extractions/{ext_id}` | 分类抽取详情 |
+| PATCH | `/api/classification/extractions/{ext_id}/review` | 审核分类抽取结果 |
+| POST | `/api/classification/extractions/batch-approve-low-risk` | 批量批准低歧义分类抽取 |
+| GET | `/api/intake/candidates` | 采集候选列表 |
+| GET | `/api/intake/stats` | 采集统计 |
+| POST | `/api/intake/resolve` | 触发 SHA256 门控解析 |
+| PATCH | `/api/intake/candidates/{candidate_id}/review` | 审核采集候选 |
+| POST | `/api/intake/promote` | 批量提升已批准候选为正式文献 |
+| GET | `/api/intake/topics` | 采集主题列表 |
+| POST | `/api/intake/topics` | 主题成熟度转换 |
+| POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
+| GET | `/api/parse/status` | 解析状态汇总或单篇查询 |
+| POST | `/api/parse/trigger` | 触发解析 |
+| GET | `/api/ingest/plan` | 摄入 dry-run 预览 |
+| POST | `/api/ingest/execute` | 执行摄入 |
 
 ## 7. CLI 工具
 
@@ -410,7 +435,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 ## 9. 质量护栏
 
 - **健康检查**：`scripts/literature_healthcheck.py` 一次性检查 DB 记录、PDF 路径、content_md_path、ledger、index、analysis_runs 的一致性，输出报告到 `views/healthcheck.md`。
-- **测试**：`uv run pytest` 运行全部测试（97 passed, 6 skipped）。`tests/test_api.py` 测试核心 API 端点，`tests/test_analysis_runs.py` 测试分析运行闭环，均使用临时 DB + 临时 LIBRARY_ROOT，不污染真实数据。
+- **测试**：`uv run pytest` 运行全部测试。`tests/test_api.py` 测试核心 API 端点（需真实 DB 快照，标记 `live_snapshot`），`tests/test_analysis_runs.py` 测试分析运行闭环（标记 `live_snapshot`），`tests/test_sample_db_api.py` 使用合成 fixture 数据测试核心路径（无需真实 DB）。`parser/tests/` 为 parser 子项目 smoke 测试；旧测试已归档至 `parser/tests_legacy/`（含过时的 `Ledger` 和 `scripts.literature_inventory` 导入）。
 - **不直接删除文件**：所有删除操作都是归档（`_archive/`）或隔离（`_quarantine/`）。
 - **不绕过 DB 移动源文件**：文件移动必须同步更新 `source_files.source_path`。
 - **metadata_extractions 先审后回填**：模型抽取结果不自动写入 works，必须经过审核门禁。
@@ -425,6 +450,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 - 综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面尚未实现。
 - 引用导出（BibTeX/RIS）尚未实现。
 - `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。
+- 前端路由已改为惰性加载（`router.js`），构建产物按页面拆分 chunk，避免单 chunk 过大。
 - 26 个隔离文献中 24 个有 `_quarantine/{work_id}` 目录（含 active source），2 个为 archived source 状态无 quarantine 目录（W-sha-50c7c11439c3、W-sha-e2a35f439caf）。
 - P1.1 全库 digest 尚未批量生成（当前 5/112 覆盖率）。
 

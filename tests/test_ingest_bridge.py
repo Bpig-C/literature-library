@@ -4,8 +4,11 @@ from pathlib import Path
 from collector import ingest_bridge as br
 
 def test_promote_creates_work_and_backfills(tmp_path, monkeypatch):
+    import api.db
     import scripts.literature_ingest as ingest
-    pdf = tmp_path / "c.pdf"
+    cache_dir = tmp_path / "_collector_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pdf = cache_dir / "c.pdf"
     pdf.write_bytes(b"%PDF-1.4 real content here for ingest")  # 非空 PDF 内容
     db_path = tmp_path / "literature.sqlite"
     conn = sqlite3.connect(db_path)
@@ -22,6 +25,7 @@ def test_promote_creates_work_and_backfills(tmp_path, monkeypatch):
         c.row_factory = sqlite3.Row  # match api.db.get_conn row_factory
         return c
     monkeypatch.setattr(br, "get_conn", _get_conn)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
     work_id = br.promote("IC-1", library_root=tmp_path)
     assert work_id and work_id.startswith("W-")
     conn = sqlite3.connect(db_path)

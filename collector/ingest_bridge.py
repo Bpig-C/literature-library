@@ -33,7 +33,10 @@ def _do_ingest(candidate_id: str, library_root: Path) -> str:
         local_pdf, arxiv_id, title = row["local_pdf_path"], row["arxiv_id"], row["title"]
         if not local_pdf:
             raise FileNotFoundError(f"candidate pdf missing: {local_pdf}")
-        resolved_pdf = resolve_pdf_path(local_pdf)
+        try:
+            resolved_pdf = resolve_pdf_path(local_pdf)
+        except ValueError as e:
+            raise FileNotFoundError(f"candidate pdf path rejected: {e}") from e
         if not resolved_pdf.exists():
             raise FileNotFoundError(f"candidate pdf missing: {local_pdf}")
     finally:

@@ -3,6 +3,8 @@
 Uses a temporary copy of the database to verify analysis run workflows,
 ensuring tests never modify the real library data.
 Run with: $env:PYTHONPATH=(Get-Location).Path; uv run pytest tests/test_analysis_runs.py -v
+
+Marked ``live_snapshot`` — requires a real literature.sqlite snapshot.
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from pathlib import Path
 import pytest
 
 from api.db import DB_PATH
+
+pytestmark = pytest.mark.live_snapshot
 
 LIBRARY_ROOT = Path(__file__).resolve().parents[1]
 

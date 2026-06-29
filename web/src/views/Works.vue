@@ -3,10 +3,10 @@
     <h1>文献</h1>
     <div class="toolbar">
       <n-input v-model:value="search" type="text" placeholder="搜索标题、ID、arXiv..." clearable @input="debouncedLoad" style="width: 240px" />
-      <n-select v-model:value="statusFilter" :options="STATUS_OPTIONS" style="width: 120px" @update:value="loadData" />
-      <n-select v-model:value="typeFilter" :options="DOC_TYPE_OPTIONS" style="width: 120px" @update:value="loadData" />
-      <n-select v-model:value="langFilter" :options="LANG_OPTIONS" style="width: 100px" @update:value="loadData" />
-      <n-select v-model:value="sortKey" :options="sortOptions" style="width: 120px" @update:value="loadData" />
+      <n-select v-model:value="statusFilter" :options="STATUS_OPTIONS" style="width: 120px" @update:value="resetAndLoad" />
+      <n-select v-model:value="typeFilter" :options="DOC_TYPE_OPTIONS" style="width: 120px" @update:value="resetAndLoad" />
+      <n-select v-model:value="langFilter" :options="LANG_OPTIONS" style="width: 100px" @update:value="resetAndLoad" />
+      <n-select v-model:value="sortKey" :options="sortOptions" style="width: 120px" @update:value="resetAndLoad" />
       <n-button quaternary @click="toggleSortDir" :title="sortDir === 'desc' ? '降序（最新在前）' : '升序（最旧在前）'">
         {{ sortDir === 'desc' ? '↓ 新→旧' : '↑ 旧→新' }}
       </n-button>
@@ -17,7 +17,7 @@
 
     <div class="advanced-filters" v-if="showAdvanced">
       <div class="classified-bar">
-        <n-switch v-model:value="classifiedOnly" @update:value="loadData" />
+        <n-switch v-model:value="classifiedOnly" @update:value="resetAndLoad" />
         <span class="classified-label">仅已分类</span>
         <n-tag v-if="classifiedOnly" type="success" size="small" round>{{ totalMatching }} 篇</n-tag>
         <n-divider vertical />
@@ -27,31 +27,31 @@
       <div class="filter-grid">
         <div class="filter-item">
           <label>主文档类型</label>
-          <n-select v-model:value="primaryDocTypeFilter" :options="PRIMARY_DOC_TYPE_OPTIONS" clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="primaryDocTypeFilter" :options="PRIMARY_DOC_TYPE_OPTIONS" clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item">
           <label>发布状态</label>
-          <n-select v-model:value="publicationStatusFilter" :options="PUBLICATION_STATUS_OPTIONS" clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="publicationStatusFilter" :options="PUBLICATION_STATUS_OPTIONS" clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item">
           <label>入库状态</label>
-          <n-select v-model:value="ingestionStateFilter" :options="INGESTION_STATE_OPTIONS" clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="ingestionStateFilter" :options="INGESTION_STATE_OPTIONS" clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item">
           <label>优先级</label>
-          <n-select v-model:value="priorityFilter" :options="PRIORITY_OPTIONS" clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="priorityFilter" :options="PRIORITY_OPTIONS" clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item wide">
           <label>阅读用途</label>
-          <n-select v-model:value="readingLaneFilter" :options="READING_LANE_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="readingLaneFilter" :options="READING_LANE_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item wide">
           <label>风险领域</label>
-          <n-select v-model:value="riskDomainFilter" :options="RISK_DOMAIN_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="riskDomainFilter" :options="RISK_DOMAIN_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
         <div class="filter-item wide">
           <label>关注对象</label>
-          <n-select v-model:value="artifactFocusFilter" :options="ARTIFACT_FOCUS_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="loadData" />
+          <n-select v-model:value="artifactFocusFilter" :options="ARTIFACT_FOCUS_OPTIONS" multiple filterable clearable placeholder="全部" @update:value="resetAndLoad" />
         </div>
       </div>
     </div>
@@ -330,9 +330,14 @@ function debouncedLoad() {
   timer = setTimeout(() => { reset(); loadData() }, 300)
 }
 
+function resetAndLoad() {
+  reset()
+  loadData()
+}
+
 function toggleSortDir() {
   sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
-  loadData()
+  resetAndLoad()
 }
 
 function goToWork(id) {

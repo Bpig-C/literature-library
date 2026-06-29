@@ -178,7 +178,7 @@
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">阅读用途</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable tag size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.reading_lane" :options="readingLaneOptions" multiple filterable clearable size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
               <span v-for="v in (work.classification_tags?.reading_lane || [])" :key="v" class="tag-with-conf">
                 <n-tag size="small" round :type="isInvalidTag('reading_lane', v) ? 'warning' : 'default'">{{ label(READING_LANE_LABELS, v) || v }}</n-tag>
@@ -189,7 +189,7 @@
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">关注对象</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable tag size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.artifact_focus" :options="artifactFocusOptions" multiple filterable clearable size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
               <span v-for="v in (work.classification_tags?.artifact_focus || [])" :key="v" class="tag-with-conf">
                 <n-tag size="small" round :type="isInvalidTag('artifact_focus', v) ? 'warning' : 'default'">{{ label(ARTIFACT_FOCUS_LABELS, v) || v }}</n-tag>
@@ -200,7 +200,7 @@
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">风险领域</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable tag size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.risk_domain" :options="riskDomainOptions" multiple filterable clearable size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
               <span v-for="v in (work.classification_tags?.risk_domain || [])" :key="v" class="tag-with-conf">
                 <n-tag size="small" round :type="isInvalidTag('risk_domain', v) ? 'warning' : 'default'">{{ label(RISK_DOMAIN_LABELS, v) || v }}</n-tag>
@@ -211,7 +211,7 @@
           </div>
           <div class="cls-tag-row">
             <span class="cls-tag-label">方法标签</span>
-            <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable tag size="small" style="flex:1" />
+            <n-select v-if="editingCls" v-model:value="clsForm.method_tags" :options="methodTagOptions" multiple filterable clearable size="small" style="flex:1" />
             <div v-else class="cls-tag-chips">
               <span v-for="v in (work.classification_tags?.method_tags || [])" :key="v" class="tag-with-conf">
                 <n-tag size="small" round :type="isInvalidTag('method_tags', v) ? 'warning' : 'default'">{{ label(METHOD_TAG_LABELS, v) || v }}</n-tag>
@@ -614,7 +614,21 @@ async function loadList() {
     params.classified_only = true
     if (listSearch.value) params.search = listSearch.value
   }
-  const q = new URLSearchParams(params).toString()
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      searchParams.append(key, value)
+    }
+  }
+  // Use repeated params for array values (matches Works.vue behavior)
+  const arrayParams = { reading_lane: params.reading_lane, risk_domain: params.risk_domain, artifact_focus: params.artifact_focus }
+  for (const [key, values] of Object.entries(arrayParams)) {
+    if (Array.isArray(values)) {
+      searchParams.delete(key)
+      for (const v of values) searchParams.append(key, v)
+    }
+  }
+  const q = searchParams.toString()
   const res = await getWorks('?' + q)
   worksList.value = res.works
   listTotal.value = res.total_matching
@@ -698,25 +712,32 @@ function startEditCls() {
 }
 
 async function saveEditCls() {
-  // Save scalar fields
   const { reading_lane, artifact_focus, risk_domain, method_tags, ...scalarFields } = clsForm.value
+
+  // Save scalar fields first; if this fails, nothing else is touched
   await updateWork(props.id, scalarFields)
 
   // Save multi-value tags: diff and apply
+  // If a tag operation fails, old tags may already be deleted → show error, don't show misleading success
   const TAG_GROUPS = { reading_lane, artifact_focus, risk_domain, method_tags }
   const oldTags = work.value.classification_tags || {}
-  for (const [group, newValues] of Object.entries(TAG_GROUPS)) {
-    const oldValues = oldTags[group] || []
-    const toDelete = oldValues.filter(v => !newValues.includes(v))
-    const toAdd = newValues.filter(v => !oldValues.includes(v))
-    // Delete removed tags
-    for (const t of (allTags.value.filter(t => t.tag_group === group && toDelete.includes(t.tag_value)))) {
-      await deleteTag(t.id)
+  try {
+    for (const [group, newValues] of Object.entries(TAG_GROUPS)) {
+      const oldValues = oldTags[group] || []
+      const toDelete = oldValues.filter(v => !newValues.includes(v))
+      const toAdd = newValues.filter(v => !oldValues.includes(v))
+      for (const t of (allTags.value.filter(t => t.tag_group === group && toDelete.includes(t.tag_value)))) {
+        await deleteTag(t.id)
+      }
+      for (const v of toAdd) {
+        await createTag(props.id, { tag_group: group, tag_value: v, source: 'human', confidence: 'high' })
+      }
     }
-    // Create new tags
-    for (const v of toAdd) {
-      await createTag(props.id, { tag_group: group, tag_value: v, source: 'human', confidence: 'high' })
-    }
+  } catch (e) {
+    message.error('标签保存失败，请重新加载页面检查当前状态：' + (e.message || e))
+    editingCls.value = false
+    await loadWork()
+    return
   }
 
   editingCls.value = false

@@ -148,17 +148,54 @@ def promote_candidates(body: PromoteBody):
     conn = get_conn()
     try:
         placeholders = ",".join("?" * len(body.ids))
-        approved = {
-            r["id"] for r in conn.execute(
-                f"SELECT id FROM intake_candidates "
-                f"WHERE id IN ({placeholders}) AND review_status='approved'",
-                list(body.ids),
-            ).fetchall()
-        }
+        rows = conn.execute(
+            f"SELECT id, status, review_status, ingested_work_id FROM intake_candidates "
+            f"WHERE id IN ({placeholders})",
+            list(body.ids),
+        ).fetchall()
+        row_map = {r["id"]: dict(r) for r in rows}
     finally:
         conn.close()
+
     promoted, failed = [], []
     for cid in body.ids:
+        info = row_map.get(cid)
+        if not info:
+            failed.append({"id": cid, "error": f"candidate not found: {cid}"})
+            continue
+        # Idempotency: if already ingested with a work_id, return it
+        if info["status"] == "ingested" and info.get("ingested_work_id"):
+            promoted.append({"id": cid, "work_id": info["ingested_work_id"], "already_ingested": True})
+            continue
+        if info["status"] == "ingested" and not info.get("ingested_work_id"):
+            failed.append({"id": cid, "error": "status=ingested but no ingested_work_id (409 conflict)"})
+            continue
+
+    # Re-check: only pass truly non-ingested approved candidates to ingest_bridge
+    conn = get_conn()
+    try:
+        non_ingested_ids = [cid for cid in body.ids
+                           if cid in row_map
+                           and row_map[cid]["status"] != "ingested"]
+        if non_ingested_ids:
+            ph = ",".join("?" * len(non_ingested_ids))
+            approved = {
+                r["id"] for r in conn.execute(
+                    f"SELECT id FROM intake_candidates "
+                    f"WHERE id IN ({ph}) AND review_status='approved'",
+                    list(non_ingested_ids),
+                ).fetchall()
+            }
+        else:
+            approved = set()
+    finally:
+        conn.close()
+
+    for cid in body.ids:
+        if cid not in row_map:
+            continue  # already handled above
+        if row_map[cid]["status"] == "ingested":
+            continue  # already handled above
         if cid not in approved:
             failed.append({"id": cid, "error": "not approved (review_status != 'approved')"})
             continue

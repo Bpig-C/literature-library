@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY_ROOT
 from ..models import MetadataReviewAction, MetadataSupersedeAction, QuarantineAction
 from ..risk import compute_risk
+from ..security import build_status_filter, validate_status
 
 router = APIRouter()
 
@@ -82,6 +83,7 @@ def list_metadata(
     conn = get_conn()
     try:
         ensure_metadata_review_columns(conn)
+        validate_status(status)
 
         # Base filter: exclude quarantined works unless requested
         quarantined_filter = "" if include_quarantined else "AND w.read_status != 'quarantined'"
@@ -99,20 +101,21 @@ def list_metadata(
         summary["all"] = sum(summary.values())
 
         # Risk summary (follows status filter, excluding quarantined)
-        risk_status_filter = "" if status == "all" else f"AND me.review_status = '{status}'"
+        risk_status_sql, risk_status_params = build_status_filter(status, "me.review_status")
         risk_summary = {}
         risk_total = conn.execute(
             f"SELECT COUNT(*) FROM metadata_extractions me "
             f"JOIN works w ON w.id = me.work_id "
-            f"WHERE 1=1 {risk_status_filter} {quarantined_filter}",
+            f"WHERE 1=1 {risk_status_sql} {quarantined_filter}",
+            risk_status_params,
         ).fetchone()[0]
         risk_summary["all"] = risk_total
         for r in ("low", "medium", "high"):
             risk_summary[r] = conn.execute(
                 f"SELECT COUNT(*) FROM metadata_extractions me "
                 f"JOIN works w ON w.id = me.work_id "
-                f"WHERE me.risk_level = ? {risk_status_filter} {quarantined_filter}",
-                (r,),
+                f"WHERE me.risk_level = ? {risk_status_sql} {quarantined_filter}",
+                [r] + risk_status_params,
             ).fetchone()[0]
         summary["risk"] = risk_summary
 
@@ -122,8 +125,8 @@ def list_metadata(
             model_summary[m_label] = conn.execute(
                 f"SELECT COUNT(*) FROM metadata_extractions me "
                 f"JOIN works w ON w.id = me.work_id "
-                f"WHERE me.model_name LIKE ? {risk_status_filter} {quarantined_filter}",
-                (m_pattern,),
+                f"WHERE me.model_name LIKE ? {risk_status_sql} {quarantined_filter}",
+                [m_pattern] + risk_status_params,
             ).fetchone()[0]
         summary["model"] = model_summary
 
@@ -484,7 +487,10 @@ def quarantine_from_review(ext_id: str, body: QuarantineAction):
             src = Path(s["source_path"])
             if src.exists():
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest = quarantine_dir / (s["original_name"] or src.name)
+                dest_name = Path(s["original_name"]).name if s["original_name"] else src.name
+                if ".." in dest_name or Path(dest_name).is_absolute():
+                    raise HTTPException(status_code=422, detail=f"Invalid original_name: {s['original_name']}")
+                dest = quarantine_dir / dest_name
                 shutil.move(str(src), str(dest))
                 conn.execute(
                     "UPDATE source_files SET source_path = ? WHERE id = ?",

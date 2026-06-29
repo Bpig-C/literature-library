@@ -46,12 +46,15 @@ def test_new_when_no_match(tmp_path, monkeypatch):
 
 # --- heavy_gate tests ---
 import hashlib
+import api.db
 
 def _make_pdf(path, content=b"%PDF-1.4 fake"):
     path.write_bytes(content)
     return hashlib.sha256(content).hexdigest()
 
 def _db_with_source(tmp_path, sha):
+    cache_dir = tmp_path / "_collector_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
     c = sqlite3.connect(db_path)
     c.execute("""CREATE TABLE source_files (id TEXT PRIMARY KEY, work_id TEXT, content_sha256 TEXT)""")
@@ -59,28 +62,33 @@ def _db_with_source(tmp_path, sha):
     c.execute("""CREATE TABLE intake_candidates (id TEXT PRIMARY KEY, local_pdf_path TEXT,
                  fetched_sha256 TEXT, resolution TEXT, resolved_at TEXT)""")
     c.execute("INSERT INTO intake_candidates (id, local_pdf_path, resolution) VALUES ('IC-1', ?, 'new')",
-              (str(tmp_path/"a.pdf"),))
+              (str(cache_dir/"a.pdf"),))
     c.execute("INSERT INTO source_files VALUES ('SF-1','W-x',?)", (sha,))
     c.commit(); c.close()
     return db_path
 
 def test_heavy_gate_sha256_duplicate(tmp_path, monkeypatch):
-    sha = _make_pdf(tmp_path/"a.pdf")
+    cache_dir = tmp_path / "_collector_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    sha = _make_pdf(cache_dir / "a.pdf")
     db = _db_with_source(tmp_path, sha)
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
     monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
     res = gate.heavy_gate("IC-1")
     assert res == "sha256_duplicate"
 
 def test_heavy_gate_new_confirmed(tmp_path, monkeypatch):
-    _make_pdf(tmp_path/"a.pdf")
+    cache_dir = tmp_path / "_collector_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    _make_pdf(cache_dir / "a.pdf")
     db = _db_with_source(tmp_path, sha="0"*64)  # 不同 sha
+    monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
     monkeypatch.setattr(gate, "get_conn", lambda: _row_conn(db))
     res = gate.heavy_gate("IC-1")
     assert res == "new"
 
 
 # --- heavy_gate download-branch tests ---
-import api.db
 from pathlib import Path
 
 def _db_for_download(tmp_path, *, source_type="arxiv", arxiv_id="2212.08073", source_shas=()):
@@ -161,11 +169,14 @@ def test_heavy_gate_github_no_arxiv_id_fetch_failed(tmp_path, monkeypatch):
 
 def test_heavy_gate_existing_pdf_does_not_redownload(tmp_path, monkeypatch):
     # 候选已有绝对路径 local_pdf_path（既有测试风格），不应触发 download_pdf
-    sha = _make_pdf(tmp_path / "a.pdf")
+    cache_dir = tmp_path / "_collector_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pdf_file = cache_dir / "a.pdf"
+    sha = _make_pdf(pdf_file)
     db = _db_for_download(tmp_path, source_shas=[sha])
-    # 把候选的 local_pdf_path 改成既有绝对路径
+    # 把候选的 local_pdf_path 改成既有绝对路径（在 _collector_cache 内）
     c = sqlite3.connect(db)
-    c.execute("UPDATE intake_candidates SET local_pdf_path=? WHERE id='IC-1'", (str(tmp_path / "a.pdf"),))
+    c.execute("UPDATE intake_candidates SET local_pdf_path=? WHERE id='IC-1'", (str(pdf_file),))
     c.commit(); c.close()
     monkeypatch.setattr(api.db, "LIBRARY_ROOT", tmp_path)
     monkeypatch.setattr(api.db, "DB_PATH", db)

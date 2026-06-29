@@ -3,6 +3,8 @@
 Uses a temporary copy of the database to verify core API endpoints,
 ensuring tests never modify the real library data.
 Run with: uv run python -m pytest tests/test_api.py -v
+
+Marked ``live_snapshot`` — requires a real literature.sqlite snapshot.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ from fastapi.testclient import TestClient
 
 from api.db import DB_PATH
 from api.main import app
+
+pytestmark = pytest.mark.live_snapshot
 
 # Create a temporary copy of the real DB for testing
 _tmp_dir = tempfile.mkdtemp(prefix="litlib_test_")
@@ -1148,7 +1152,8 @@ class TestQuarantineEdgeCases(unittest.TestCase):
         conn.close()
 
     def test_restore_cleans_quarantined_code(self):
-        """Restore should remove both bad_source and quarantined codes."""
+        """Restore should remove both bad_source and quarantined codes.
+        If source files don't exist on disk, restore returns 409 (new behavior)."""
         conn = _test_get_conn()
         row = conn.execute(
             "SELECT id FROM works WHERE read_status != 'quarantined' LIMIT 1"
@@ -1166,20 +1171,36 @@ class TestQuarantineEdgeCases(unittest.TestCase):
             (work_id,),
         )
         conn.commit()
+
+        # Check if source files exist on disk
+        sources = conn.execute(
+            "SELECT source_path FROM source_files WHERE work_id = ?", (work_id,)
+        ).fetchall()
+        files_exist = any(Path(s["source_path"]).exists() for s in sources)
         conn.close()
 
         # Restore
         resp = client.post(f"/api/works/{work_id}/restore")
-        self.assertEqual(resp.status_code, 200)
+        if files_exist:
+            self.assertEqual(resp.status_code, 200)
+        else:
+            # No source files on disk → 409 (new safe behavior)
+            self.assertEqual(resp.status_code, 409)
 
-        # Verify quarantined code was removed
+        # Verify quarantined code was removed (even if restore returned 409,
+        # the DB update happens before the file move check in the success path)
         conn = _test_get_conn()
         code_row = conn.execute(
             "SELECT * FROM work_codes WHERE work_id = ? AND code = 'quarantined'",
             (work_id,),
         ).fetchone()
         conn.close()
-        self.assertIsNone(code_row, "quarantined code should be removed after restore")
+
+        if files_exist:
+            self.assertIsNone(code_row, "quarantined code should be removed after successful restore")
+        else:
+            # On 409, DB is not modified (pre-check fails before DB update)
+            self.assertIsNotNone(code_row, "code should remain when restore fails with 409")
 
     def test_quarantine_preserves_existing_review_note(self):
         """Quarantining a work should not overwrite review_note on other extractions."""

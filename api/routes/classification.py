@@ -15,6 +15,7 @@ from ..db import LIBRARY_ROOT, get_conn, table_exists
 from ..models import QuarantineAction
 from ..classification_vocab import get_vocab, validate_tag_value
 from ..classification_ambiguity import compute_ambiguity
+from ..security import build_status_filter, validate_status
 
 router = APIRouter()
 
@@ -298,9 +299,12 @@ def list_extractions(
     include_quarantined: bool = Query(False),
     sort: str = Query("created_at"),
     order: str = Query("desc"),
+    ambiguity_level: str | None = Query(None),
 ):
     conn = get_conn()
     try:
+        validate_status(status)
+
         where_parts = []
         params: list = []
 
@@ -318,6 +322,13 @@ def list_extractions(
         if priority:
             where_parts.append("w.priority = ?")
             params.append(priority)
+
+        if ambiguity_level:
+            amb_ranges = {"high": (50, 10000), "medium": (20, 50), "low": (0, 20)}
+            if ambiguity_level in amb_ranges:
+                lo, hi = amb_ranges[ambiguity_level]
+                where_parts.append("ce.ambiguity_score >= ? AND ce.ambiguity_score < ?")
+                params.extend([lo, hi])
 
         where_sql = " AND ".join(where_parts) if where_parts else "1=1"
 
@@ -349,24 +360,24 @@ def list_extractions(
         ).fetchone()["cnt"]
 
         # Ambiguity summary (follows status filter, non-overlapping ranges)
-        ambiguity_status_filter = "" if status == "all" else f"AND ce.review_status = '{status}'"
+        ambiguity_status_sql, ambiguity_status_params = build_status_filter(status, "ce.review_status")
         for level, (lo, hi) in [("high", (50, 10000)), ("medium", (20, 50)), ("low", (0, 20))]:
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM classification_extractions ce "
                 "JOIN works w ON w.id = ce.work_id "
-                f"WHERE ce.ambiguity_score >= ? AND ce.ambiguity_score < ? {ambiguity_status_filter} {quarantined_filter}",
-                (lo, hi)
+                f"WHERE ce.ambiguity_score >= ? AND ce.ambiguity_score < ? {ambiguity_status_sql} {quarantined_filter}",
+                [lo, hi] + ambiguity_status_params
             ).fetchone()
             summary.setdefault("ambiguity", {})[level] = row["cnt"]
 
         # Priority summary (follows status filter)
-        priority_status_filter = "" if status == "all" else f"AND ce.review_status = '{status}'"
+        priority_status_sql, priority_status_params = build_status_filter(status, "ce.review_status")
         for p in ("P0", "P1", "P2", "P3", "archive"):
             row = conn.execute(
                 "SELECT COUNT(*) as cnt FROM classification_extractions ce "
                 "JOIN works w ON w.id = ce.work_id "
-                f"WHERE w.priority = ? {priority_status_filter} {quarantined_filter}",
-                (p,)
+                f"WHERE w.priority = ? {priority_status_sql} {quarantined_filter}",
+                [p] + priority_status_params
             ).fetchone()
             summary.setdefault("priority", {})[p] = row["cnt"]
 
@@ -943,7 +954,10 @@ def quarantine_from_classification_review(ext_id: str, body: QuarantineAction):
             src = Path(s["source_path"])
             if src.exists():
                 quarantine_dir.mkdir(parents=True, exist_ok=True)
-                dest = quarantine_dir / (s["original_name"] or src.name)
+                dest_name = Path(s["original_name"]).name if s["original_name"] else src.name
+                if ".." in dest_name or Path(dest_name).is_absolute():
+                    raise HTTPException(status_code=422, detail=f"Invalid original_name: {s['original_name']}")
+                dest = quarantine_dir / dest_name
                 shutil.move(str(src), str(dest))
                 conn.execute(
                     "UPDATE source_files SET source_path = ? WHERE id = ?",

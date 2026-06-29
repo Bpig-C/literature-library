@@ -229,6 +229,10 @@ npm run dev
 - `/duplicates` — 去重确认（决策按钮、localStorage 持久化）
 - `/relations` — 关系管理（新增、删除）
 - `/metadata` — 元数据抽取审核（风险分级、原文预览、证据定位、人工编辑、审核回填）
+- `/classification` — 分类标签审核（primary_doc_type、risk_domain、method_tags 等）
+- `/intake` — 采集候选审核（resolution、review_status、promote）
+- `/inbox` — Inbox 摄入 dry-run 预览与确认
+- `/topics` — 采集主题管理（成熟度转换、mapped_tags）
 
 ### 7. 元数据审核与重抽
 
@@ -279,11 +283,14 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | GET | `/api/works` | 文献列表（支持搜索、筛选、分页） |
 | GET | `/api/works/{id}` | 文献详情 |
 | PATCH | `/api/works/{id}` | 更新文献元数据 |
+| POST | `/api/works/{id}/quarantine` | 隔离文献 |
+| POST | `/api/works/{id}/restore` | 恢复隔离文献 |
 | GET | `/api/relations` | 所有关系 |
 | POST | `/api/relations` | 新增关系 |
 | DELETE | `/api/relations` | 删除关系 |
 | GET | `/api/duplicates` | 重复组列表 |
 | POST | `/api/duplicates/{group_id}/review` | 标记重复组已审查 |
+| GET | `/api/duplicates/{group_id}/merge-preview` | 预览合并推荐（得分、推荐主条目） |
 | GET | `/api/files/{work_id}/content` | 获取 content.md 原文 |
 | GET | `/api/files/{work_id}/pdf` | 获取 PDF 文件 |
 | GET | `/api/metadata` | 元数据抽取审核队列 |
@@ -292,7 +299,43 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | POST | `/api/metadata/apply-approved` | 回填已批准且未应用的抽取结果 |
 | POST | `/api/metadata/batch-approve-low-risk` | 批量批准低风险 pending 记录 |
 | GET | `/api/metadata/agent/queue` | agent 修复队列，按风险排序并返回错误模式聚类 |
-| POST | `/api/metadata/{ext_id}/supersede` | 使用外部提供的替换字段创建 superseding extraction；模型重抽请用 CLI |
+| POST | `/api/metadata/{ext_id}/supersede` | 使用外部提供的替换字段创建 superseding extraction |
+| POST | `/api/metadata/{ext_id}/quarantine` | 从元数据审核页隔离文献 |
+| GET | `/api/classification/tags/{work_id}` | 获取文献分类标签 |
+| POST | `/api/classification/tags/{work_id}` | 创建分类标签 |
+| POST | `/api/classification/tags/{work_id}/batch` | 批量创建分类标签 |
+| DELETE | `/api/classification/tags/{tag_id}` | 删除分类标签 |
+| PATCH | `/api/classification/tags/{tag_id}/review` | 审核分类标签 |
+| GET | `/api/classification/vocab` | 分类词汇表（primary_doc_type、reading_lane 等） |
+| GET | `/api/classification/extractions` | 分类抽取列表（按状态/风险筛选） |
+| GET | `/api/classification/extractions/{ext_id}` | 分类抽取详情 |
+| PATCH | `/api/classification/extractions/{ext_id}/save-draft` | 保存分类抽取草稿 |
+| PATCH | `/api/classification/extractions/{ext_id}/review` | 审核分类抽取结果 |
+| POST | `/api/classification/extractions/batch-approve-low-risk` | 批量批准低歧义分类抽取 |
+| POST | `/api/classification/extractions/batch-approve-with-tag` | 批量批准并打标签 |
+| POST | `/api/classification/extractions/{ext_id}/quarantine` | 从分类审核页隔离文献 |
+| GET | `/api/intake/candidates` | 采集候选列表（筛选、分页） |
+| GET | `/api/intake/stats` | 采集统计（按 resolution / review_status） |
+| POST | `/api/intake/resolve` | 触发 SHA256 门控解析 |
+| PATCH | `/api/intake/candidates/{candidate_id}/review` | 审核采集候选 |
+| POST | `/api/intake/promote` | 批量提升已批准候选为正式文献 |
+| GET | `/api/intake/topics` | 采集主题列表 |
+| POST | `/api/intake/topics` | 主题成熟度转换 |
+| POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
+| GET | `/api/parse/status` | 解析状态汇总或单篇查询 |
+| POST | `/api/parse/trigger` | 触发解析（指定 work_ids 或 all_pending） |
+| GET | `/api/ingest/plan` | 摄入 dry-run 预览 |
+| POST | `/api/ingest/execute` | 执行摄入 |
+
+### API-Only Endpoints（无前端入口）
+
+以下端点仅用于编程/脚本调用，前端 SPA 中无对应 UI：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/metadata/agent/queue` | Agent 修复队列，按风险排序并返回错误模式聚类，供自动化脚本消费 |
+| POST | `/api/metadata/{ext_id}/supersede` | 使用外部提供的替换字段创建 superseding extraction，供脚本/API 调用（模型重抽请用 CLI） |
+| POST | `/api/classification/extractions/batch-approve-with-tag` | 按自定义模糊度阈值批量批准分类抽取，并写入统一审核备注标签，供批量处理脚本调用 |
 
 ## 重要约定
 
@@ -302,6 +345,13 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 - `views` 是自动生成视图，后续应由脚本生成，不建议手动维护。
 - 解析失败或坏源文件进入 `_quarantine` 或 `_archive`，不要直接删除。
 - 新文献摄入后默认只是 `pending`，不会自动启动 MinerU。
+
+## 安全约定
+
+- `.env` 已被 `.gitignore` 排除，不会提交到 git 仓库。
+- 脚本和 agent 只应打印环境变量的键名（key），不要打印值（value）。
+- 在共享工作区中，建议将密钥（如 `MinerU_API_KEY`）存放在用户级环境变量或密钥管理工具中，而非项目级 `.env` 文件。
+- API 端点不暴露敏感配置；CORS 仅允许 `localhost:19528`。
 
 ## 已有脚本
 

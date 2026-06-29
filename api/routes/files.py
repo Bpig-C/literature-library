@@ -11,6 +11,18 @@ from ..db import get_conn
 
 router = APIRouter()
 LIBRARY_ROOT = Path(__file__).resolve().parents[2]
+_WORKS_ROOT = (LIBRARY_ROOT / "works").resolve()
+
+
+def _validate_library_path(path_str: str) -> Path:
+    """Ensure a DB-sourced path resolves inside LIBRARY_ROOT/works.
+
+    Prevents path traversal and poisoned-DB arbitrary file reads.
+    """
+    resolved = Path(path_str).resolve()
+    if not resolved.is_relative_to(_WORKS_ROOT):
+        raise HTTPException(status_code=403, detail="Path outside library boundary")
+    return resolved
 
 
 @router.get("/files/{work_id}/content")
@@ -24,7 +36,7 @@ def get_content(work_id: str):
         if not run or not run["content_md_path"]:
             raise HTTPException(status_code=404, detail="No parsed content found")
 
-        md_path = Path(run["content_md_path"])
+        md_path = _validate_library_path(run["content_md_path"])
         if not md_path.exists():
             raise HTTPException(status_code=404, detail="Content file not found")
 
@@ -44,7 +56,7 @@ def get_pdf(work_id: str):
         if not source or not source["source_path"]:
             raise HTTPException(status_code=404, detail="No source file found")
 
-        pdf_path = Path(source["source_path"])
+        pdf_path = _validate_library_path(source["source_path"])
         if not pdf_path.exists():
             raise HTTPException(status_code=404, detail="PDF file not found on disk")
 
