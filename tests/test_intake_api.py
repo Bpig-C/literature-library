@@ -77,6 +77,8 @@ def _migrate_and_seed():
          None, "needs_better_copy", "approved", "W-quar", None, "2026-06-28T00:00:02"),
         ("IC-dddd", "arxiv", "https://arxiv.org/abs/2501.00003", "Paper Three", "2501.00003",
          None, "new", "rejected", None, "CT-1", "2026-06-28T00:00:01"),
+        ("IC-eeee", "arxiv", "https://arxiv.org/abs/2501.00005", "Paper Five", "2501.00005",
+         None, "new", "approved", None, "CT-1", "2026-06-28T00:00:00"),
     ]
     conn.executemany("""INSERT INTO intake_candidates
         (id,source_type,url_canonical,title,arxiv_id,doi,resolution,review_status,
@@ -108,7 +110,7 @@ def test_list_candidates_no_filter_returns_all():
     r = client.get("/api/intake/candidates")
     assert r.status_code == 200
     ids = [c["id"] for c in r.json()["candidates"]]
-    assert set(ids) == {"IC-aaaa", "IC-bbbb", "IC-cccc", "IC-dddd"}
+    assert set(ids) == {"IC-aaaa", "IC-bbbb", "IC-cccc", "IC-dddd", "IC-eeee"}
 
 
 def test_list_candidates_filter_resolution():
@@ -122,7 +124,7 @@ def test_list_candidates_filter_topic():
     r = client.get("/api/intake/candidates", params={"topic": "CT-1"})
     assert r.status_code == 200
     ids = [c["id"] for c in r.json()["candidates"]]
-    assert set(ids) == {"IC-aaaa", "IC-dddd"}
+    assert set(ids) == {"IC-aaaa", "IC-dddd", "IC-eeee"}
 
 
 def test_list_candidates_pagination():
@@ -145,11 +147,11 @@ def test_stats_counts():
     r = client.get("/api/intake/stats")
     assert r.status_code == 200
     s = r.json()
-    assert s["resolution"]["new"] == 2          # IC-aaaa, IC-dddd
+    assert s["resolution"]["new"] == 3          # IC-aaaa, IC-dddd, IC-eeee
     assert s["resolution"]["exact_hit"] == 1
     assert s["resolution"]["needs_better_copy"] == 1
     assert s["review"]["pending"] == 2
-    assert s["review"]["approved"] == 1
+    assert s["review"]["approved"] == 2         # IC-cccc, IC-eeee
     assert s["review"]["rejected"] == 1
 
 
@@ -209,7 +211,7 @@ def test_review_not_found_404(monkeypatch):
 
 
 def test_promote_only_approved_delegates_to_bridge(monkeypatch):
-    # A2 守卫：只有 review_status=approved 的候选才 promote（IC-cccc）；
+    # A2 守卫：只有 review_status=approved 的候选才 promote（IC-eeee，resolution=new）；
     # 未 approved（IC-aaaa pending / IC-dddd rejected）进 failed，且不调 ingest_bridge
     import collector.ingest_bridge as br
     calls = []
@@ -217,25 +219,43 @@ def test_promote_only_approved_delegates_to_bridge(monkeypatch):
         calls.append((cid, str(library_root)))
         return f"W-{cid[-4:]}"
     monkeypatch.setattr(br, "promote", fake_promote)
-    r = client.post("/api/intake/promote", json={"ids": ["IC-cccc", "IC-aaaa", "IC-dddd"]})
+    r = client.post("/api/intake/promote", json={"ids": ["IC-eeee", "IC-aaaa", "IC-dddd"]})
     assert r.status_code == 200
     body = r.json()
-    assert body["promoted"] == [{"id": "IC-cccc", "work_id": "W-cccc"}]
+    assert body["promoted"] == [{"id": "IC-eeee", "work_id": "W-eeee"}]
     assert {f["id"] for f in body["failed"]} == {"IC-aaaa", "IC-dddd"}
-    assert [c[0] for c in calls] == ["IC-cccc"]   # ingest_bridge 只被 approved 候选调用
+    assert [c[0] for c in calls] == ["IC-eeee"]   # ingest_bridge 只被 approved 候选调用
     assert calls[0][1] == str(_tmp_dir)            # 用 patched LIBRARY_ROOT
 
 
+def test_promote_rejects_needs_better_copy(monkeypatch):
+    # P1-03: needs_better_copy 候选即使 approved 也不走 ingest_bridge（否则会建重复 work）。
+    # 安全拦截：进 failed，不调 ingest_bridge，不创建 work。replace 能力为 V1 后续。
+    import collector.ingest_bridge as br
+    calls = []
+    def fake_promote(cid, *, library_root):
+        calls.append(cid)
+        return f"W-{cid[-4:]}"
+    monkeypatch.setattr(br, "promote", fake_promote)
+    r = client.post("/api/intake/promote", json={"ids": ["IC-cccc"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["promoted"] == []
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-cccc"
+    assert "needs_better_copy" in body["failed"][0]["error"]
+    assert calls == []  # ingest_bridge 绝不被调用
+
+
 def test_promote_collects_ingest_failures(monkeypatch):
-    # approved 候选但 ingest 抛错 → 进 failed（批次不中断）
+    # approved 候选（非 needs_better_copy）但 ingest 抛错 → 进 failed（批次不中断）
     import collector.ingest_bridge as br
     def fake_promote(cid, *, library_root):
         raise FileNotFoundError("no pdf")
     monkeypatch.setattr(br, "promote", fake_promote)
-    r = client.post("/api/intake/promote", json={"ids": ["IC-cccc"]})
+    r = client.post("/api/intake/promote", json={"ids": ["IC-eeee"]})
     body = r.json()
     assert body["promoted"] == []
-    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-cccc"
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-eeee"
 
 
 def test_promote_empty_ids_400():

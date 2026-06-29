@@ -149,8 +149,8 @@ def promote_candidates(body: PromoteBody):
     try:
         placeholders = ",".join("?" * len(body.ids))
         rows = conn.execute(
-            f"SELECT id, status, review_status, ingested_work_id FROM intake_candidates "
-            f"WHERE id IN ({placeholders})",
+            f"SELECT id, status, review_status, resolution, matched_work_id, ingested_work_id "
+            f"FROM intake_candidates WHERE id IN ({placeholders})",
             list(body.ids),
         ).fetchall()
         row_map = {r["id"]: dict(r) for r in rows}
@@ -198,6 +198,20 @@ def promote_candidates(body: PromoteBody):
             continue  # already handled above
         if cid not in approved:
             failed.append({"id": cid, "error": "not approved (review_status != 'approved')"})
+            continue
+        # P1-03: needs_better_copy candidates match a quarantined work and must
+        # REPLACE its bad source, not spawn a sibling work. That replacement path
+        # is post-V1; until wired, refuse so we never silently create a duplicate.
+        if row_map[cid].get("resolution") == "needs_better_copy":
+            failed.append({
+                "id": cid,
+                "error": (
+                    "needs_better_copy replacement is not supported in V1; promoting "
+                    "would create a duplicate of the matched quarantined work "
+                    f"(matched_work_id={row_map[cid].get('matched_work_id')}). "
+                    "Replace the source manually or wait for the replace-source promote path."
+                ),
+            })
             continue
         try:
             work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT)
