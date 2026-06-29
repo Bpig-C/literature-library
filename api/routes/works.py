@@ -522,8 +522,8 @@ def archive_source_file(work_id: str, source_file_id: str, body: SourceFileArchi
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         conn.execute(
             "UPDATE source_files SET status='archived', archived_at=?, "
-            "archive_path=?, archive_reason=? WHERE id=?",
-            (now, str(dest), body.reason, source_file_id),
+            "archive_path=?, archive_reason=?, source_path=? WHERE id=?",
+            (now, str(dest), body.reason, str(dest), source_file_id),
         )
 
         parse_status = sync_work_parse_status(conn, work_id)

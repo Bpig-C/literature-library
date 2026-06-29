@@ -142,7 +142,21 @@ class TestSourceFileArchive(unittest.TestCase):
         w = conn.execute("SELECT read_status, parse_status FROM works WHERE id='W1'").fetchone()
         self.assertEqual(w["read_status"], "unread")
         self.assertEqual(w["parse_status"], "succeeded")
+        # source_path must follow the file to its archive location (house convention:
+        # archived rows keep source_path == archive_path, both existing) so that
+        # archiving does NOT create a healthcheck phantom.
+        sf2 = conn.execute(
+            "SELECT source_path, archive_path FROM source_files WHERE id='SF2'"
+        ).fetchone()
+        self.assertEqual(sf2["source_path"], sf2["archive_path"])
+        self.assertTrue(Path(sf2["source_path"]).exists())
         conn.close()
+
+        # Archiving must keep healthcheck clean (no phantom from the moved file)
+        from scripts.healthcheck_library import run_healthcheck
+        hc = run_healthcheck(self.root, dry_run=True)
+        self.assertEqual(hc.phantom_db_entries, [])
+        self.assertFalse(hc.has_issues())
 
     def test_archive_nonexistent_source_returns_404(self):
         conn = _conn(self.db_path)
