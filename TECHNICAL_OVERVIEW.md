@@ -92,7 +92,7 @@ PDF → `parser/` 子项目（`core/mineru/`）→ 输出 `content.md` + `conten
 | `doi` | DOI | 元数据回填 |
 | `doc_type` | 文献类型 | 摄入 |
 | `language` | 语言 | 摄入 |
-| `parse_status` | 解析状态 | 解析脚本 |
+| `parse_status` | 解析状态（按 active 源覆盖计算；唯一权威为 `sync_work_parse_status` 重算 `literature_parse_runs`） | `sync_work_parse_status`（解析触发/批处理/归档端点后调用） |
 | `read_status` | 阅读状态，含 `quarantined` | 手动/API |
 | `title_zh` | 中文标题 | 元数据回填 |
 | `venue` | 发表场所 | 元数据回填 |
