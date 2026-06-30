@@ -333,3 +333,19 @@ def test_intake_collect_unknown_topic_400(monkeypatch):
     monkeypatch.setattr(intake_route, "collect_once", boom)
     resp = client.post("/api/intake/collect", json={"topic_id": "CT-nope"})
     assert resp.status_code == 400
+
+
+# ---- POST /intake/topics invalid mapped_tags → 400 ----
+def test_topics_transition_invalid_mapped_tags_400(monkeypatch):
+    """Invalid mapped_tags should surface as HTTP 400 via the existing ValueError handler."""
+    import collector.topics as t
+    def boom(tid, **kw):
+        raise ValueError("invalid mapped_tags: risk_domain=nonexistent_999 is not in vocab")
+    monkeypatch.setattr(t, "transition", boom)
+    r = client.post("/api/intake/topics", json={
+        "id": "CT-1",
+        "to_map_status": "mapped",
+        "mapped_tags": [{"group": "risk_domain", "value": "nonexistent_999"}],
+    })
+    assert r.status_code == 400
+    assert "not in vocab" in r.json()["detail"]

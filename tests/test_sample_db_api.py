@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from unittest.mock import patch
 
@@ -85,6 +86,150 @@ class TestMetadataFromSample:
     def test_metadata_not_found(self):
         resp = client.get("/api/metadata/ME-nonexistent")
         assert resp.status_code == 404
+
+
+class TestExtractionTriggersFromSample:
+    def _seed_parsed_work(self, sample_db, tmp_path, work_id):
+        content_path = tmp_path / f"{work_id}.md"
+        content_path.write_text(
+            "# Sample Extraction Paper\n\nThis paper describes a benchmark evaluation method.",
+            encoding="utf-8",
+        )
+        conn = _make_conn_factory(sample_db)()
+        conn.execute("DELETE FROM classification_extractions WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM metadata_extractions WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM literature_parse_runs WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM source_files WHERE work_id = ?", (work_id,))
+        conn.execute("DELETE FROM works WHERE id = ?", (work_id,))
+        conn.execute(
+            """
+            INSERT INTO works
+            (id, title, authors, year, doc_type, language, metadata_status,
+             parse_status, read_status, created_at, updated_at)
+            VALUES (?, 'Sample Extraction Paper', '[]', 2026, 'paper', 'en',
+                    'pending', 'succeeded', 'unread', datetime('now'), datetime('now'))
+            """,
+            (work_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO source_files
+            (id, work_id, original_name, source_path, relative_source_path,
+             file_size, file_ext, import_time, status)
+            VALUES (?, ?, 'sample.pdf', ?, ?, 1000, '.pdf', datetime('now'), 'active')
+            """,
+            (f"SF-{work_id}", work_id, str(content_path), f"works/{work_id}/source/sample.pdf"),
+        )
+        conn.execute(
+            """
+            INSERT INTO literature_parse_runs
+            (id, work_id, source_file_id, status, content_md_path, started_at, finished_at)
+            VALUES (?, ?, ?, 'succeeded', ?, datetime('now'), datetime('now'))
+            """,
+            (f"PR-{work_id}", work_id, f"SF-{work_id}", str(content_path)),
+        )
+        conn.commit()
+        conn.close()
+        return content_path
+
+    def test_metadata_extract_creates_pending_candidate(self, sample_db, tmp_path, monkeypatch):
+        from scripts import literature_metadata_extract as meta_script
+
+        work_id = "W-sample-trigger-meta"
+        self._seed_parsed_work(sample_db, tmp_path, work_id)
+        monkeypatch.setattr(meta_script, "DB_PATH", sample_db)
+        monkeypatch.setattr(
+            meta_script.llm_judge,
+            "chat",
+            lambda messages, timeout=120: {
+                "message": {
+                    "content": json.dumps({
+                        "title": "Sample Extraction Paper",
+                        "title_zh": "样例抽取论文",
+                        "publication_date": {"year": 2026, "month": None, "day": None, "raw": "2026", "kind": "exact"},
+                        "authors": ["Ada Example"],
+                        "contributors": [{"name": "Example Lab", "type": "lab", "role": "publisher"}],
+                        "doi": None,
+                        "arxiv_id": None,
+                        "venue": "Example Venue",
+                        "url": "https://example.org/paper",
+                        "abstract": "A short abstract.",
+                        "evidence": {"title": "Sample Extraction Paper"},
+                        "confidence": {"title": "high", "publication_date": "high", "authors": "medium"},
+                        "missing": [],
+                    }, ensure_ascii=False)
+                }
+            },
+        )
+
+        resp = client.post("/api/metadata/extract", json={"work_ids": [work_id], "force": True})
+        assert resp.status_code == 200
+        assert resp.json()["created"] == 1
+
+        conn = _make_conn_factory(sample_db)()
+        row = conn.execute(
+            "SELECT review_status, extracted_json FROM metadata_extractions WHERE work_id = ? ORDER BY created_at DESC LIMIT 1",
+            (work_id,),
+        ).fetchone()
+        conn.close()
+        assert row["review_status"] == "pending"
+        assert json.loads(row["extracted_json"])["title"] == "Sample Extraction Paper"
+
+    def test_classification_extract_creates_pending_candidate(self, sample_db, tmp_path, monkeypatch):
+        from scripts import literature_classification_extract as cls_script
+
+        work_id = "W-sample-trigger-class"
+        self._seed_parsed_work(sample_db, tmp_path, work_id)
+        monkeypatch.setattr(cls_script, "DB_PATH", sample_db)
+        monkeypatch.setattr(
+            cls_script.llm_judge,
+            "chat",
+            lambda messages, timeout=120: {
+                "message": {
+                    "content": json.dumps({
+                        "primary_doc_type": "research_article",
+                        "secondary_doc_type": None,
+                        "publication_status": "published",
+                        "primary_source_actor_type": "university",
+                        "region": "global",
+                        "reading_lane": ["evaluation_method"],
+                        "artifact_focus": ["benchmark"],
+                        "risk_domain": ["deception"],
+                        "method_tags": ["benchmark_construction"],
+                        "ingestion_state": "usable",
+                        "priority": "P2",
+                        "alternative_primary_doc_types": [],
+                        "evidence": {
+                            "primary_doc_type": "paper",
+                            "reading_lane": "evaluation method",
+                            "artifact_focus": "benchmark",
+                        },
+                        "confidence": {
+                            "primary_doc_type": "high",
+                            "publication_status": "high",
+                            "reading_lane": "high",
+                            "artifact_focus": "high",
+                        },
+                    }, ensure_ascii=False)
+                }
+            },
+        )
+
+        resp = client.post("/api/classification/extract", json={"work_ids": [work_id], "force": True})
+        assert resp.status_code == 200
+        assert resp.json()["created"] == 1
+
+        conn = _make_conn_factory(sample_db)()
+        row = conn.execute(
+            "SELECT review_status, ambiguity_score, ambiguity_reasons, extracted_json "
+            "FROM classification_extractions WHERE work_id = ? ORDER BY created_at DESC LIMIT 1",
+            (work_id,),
+        ).fetchone()
+        conn.close()
+        assert row["review_status"] == "pending"
+        assert isinstance(row["ambiguity_score"], int)
+        assert isinstance(json.loads(row["ambiguity_reasons"]), list)
+        assert json.loads(row["extracted_json"])["primary_doc_type"] == "research_article"
 
 
 class TestDuplicatesFromSample:
