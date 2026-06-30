@@ -496,7 +496,7 @@ async function doCreateTopic() {
     }
     await createTopic(payload)
     showCreateForm.value = false
-    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: '', keywords: '', authors: '', institutions: '', known_names: '', known_titles: '', known_urls: '', preferred_domains: '', exclude_terms: '' }
+    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: [], keywords: '', authors: '', institutions: '', known_names: '', known_titles: '', known_urls: '', preferred_domains: '', exclude_terms: '' }
     await reload()
   } catch (e) {
     alert(e.message)
