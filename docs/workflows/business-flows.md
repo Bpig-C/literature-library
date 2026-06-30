@@ -10,9 +10,9 @@
 这张总览按代码事实区分两个层次：
 
 - **技术入库点**：`ingest` 或 `collector -> ingest_bridge -> ingest` 写入 `works`、`source_files`，并创建 `literature_parse_runs(pending)`。从数据库角度，这时已经进入文献库。
-- **治理推荐顺序**：摄入后先做一轮基础去重/关系/隔离审核；解析和元数据回填后，可以继续重跑标题候选扫描并补做去重审核。当前代码没有强制“去重已审核”作为解析或抽取门禁；元数据和分类抽取脚本实际门禁是 `literature_parse_runs.status='succeeded'` 且存在 `content_md_path`。
-- **去重输入来源**：当前 active 代码里的去重候选主要来自强键、SHA256、标题规范化后的 Jaccard 相似度；没有发现 active 去重逻辑直接读取 `content.md`。但元数据审核可能回填 `works.title`，因此解析/抽取之后再做标题去重重扫是合理的治理动作。
-- **新增子项目融入点**：`collector` 是上游候选入口，批准后复用 ingest 链路；`parser` 是摄入后的解析服务，生成后续抽取所需的 `content.md`。
+- **SHA256 精确重复**：在 ingest 内部硬拦截，重复文件直接归档到 `_duplicates/exact_sha256`，不进入后续流程。
+- **标题重复治理**：ingest 会生成 Jaccard 标题相似候选写入 `duplicate_groups`/`duplicate_candidates`，但不阻塞入库。审核可在摄入后或元数据回填 title 后迭代进行。
+- **元数据/分类抽取门禁**：`literature_parse_runs.status='succeeded'` 且存在 `content_md_path`，与去重审核状态无关。
 
 ## 流程一：采集候选到正式文献
 
@@ -24,9 +24,9 @@
 
 ![用户浏览器摄入新 PDF](../architecture/diagrams/flow-inbox-ingest.svg)
 
-## 流程三：去重、关系与隔离治理
+## 流程三：标题重复治理
 
-![去重、关系与隔离治理](../architecture/diagrams/flow-dedup.svg)
+![标题重复治理](../architecture/diagrams/flow-dedup.svg)
 
 ## 流程四：解析触发与 content.md 生成
 

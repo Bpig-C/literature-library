@@ -1,7 +1,7 @@
 # 文献库技术说明
 
-> 更新时间：2026-06-14
-> 适用版本：Phase 0–4 已完成，P1.0 元数据抽取+审核+分类审核已完成，P1.1 AnalysisRun 基础设施已完成（5 篇 digest 试跑），双模型（Ollama + Mimo 2.5 Pro）支持
+> 更新时间：2026-06-29
+> 适用版本：V1 初始发布。collector / parser / inbox / review 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
 
 ## 1. 系统目标
@@ -31,7 +31,7 @@
 literature_library/
   literature.sqlite          # 主数据库，逻辑关系中心
   index.json                 # 前端/脚本可读的文献索引（历史产物，新功能优先查 DB）
-  parse_ledger.json          # (已废弃/归档) 解析状态现以 literature_parse_runs 表为准
+  # parse_ledger.json 已废弃并归档；解析状态现以 literature_parse_runs 表为准
   pyproject.toml             # Python 项目配置（uv）
   _inbox/                    # 新 PDF 临时投递入口
   _duplicates/               # 精确重复文件归档处
@@ -434,10 +434,10 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 
 ## 9. 质量护栏
 
-- **健康检查**：`scripts/literature_healthcheck.py` 一次性检查 DB 记录、PDF 路径、content_md_path、ledger、index、analysis_runs 的一致性，输出报告到 `views/healthcheck.md`。
-- **测试**：`uv run pytest` 运行全部测试。`tests/test_api.py` 测试核心 API 端点（需真实 DB 快照，标记 `live_snapshot`），`tests/test_analysis_runs.py` 测试分析运行闭环（标记 `live_snapshot`），`tests/test_sample_db_api.py` 使用合成 fixture 数据测试核心路径（无需真实 DB）。`parser/tests/` 为 parser 子项目 smoke 测试；旧测试已归档至 `parser/tests_legacy/`（含过时的 `Ledger` 和 `scripts.literature_inventory` 导入）。
+- **健康检查**：`scripts/healthcheck_library.py --json` 是 V1 当前健康检查入口，覆盖孤儿文件、phantom DB 路径、work dir 无 DB、quarantine/source 状态不一致、dangling refs，并提供可选修复模式。旧 `literature_healthcheck.py` 已归档到 `scripts/_archive/`，仅作历史参考。
+- **测试**：`uv run pytest` 或 `.venv\Scripts\python.exe -m pytest tests\ -q` 运行全部测试。V1 发布复核为 348 passed / 7 skipped；`parser/tests/` 为 parser 子项目 smoke 测试；旧测试已归档至 `parser/tests_legacy/`。
 - **不直接删除文件**：所有删除操作都是归档（`_archive/`）或隔离（`_quarantine/`）。
-- **不绕过 DB 移动源文件**：文件移动必须同步更新 `source_files.source_path`。
+- **不绕过 DB 移动源文件**：文件移动必须同步更新 `source_files.source_path` 与 `source_files.status`。
 - **metadata_extractions 先审后回填**：模型抽取结果不自动写入 works，必须经过审核门禁。
 - **analysis_runs 先入库后采信**：模型输出先进入 analysis_runs，审核后才被矩阵和综合层默认采信。
 - **WAL 模式**：SQLite 使用 WAL 日志模式，支持并发读。
@@ -451,7 +451,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 - 引用导出（BibTeX/RIS）尚未实现。
 - `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。
 - 前端路由已改为惰性加载（`router.js`），构建产物按页面拆分 chunk，避免单 chunk 过大。
-- 26 个隔离文献中 24 个有 `_quarantine/{work_id}` 目录（含 active source），2 个为 archived source 状态无 quarantine 目录（W-sha-50c7c11439c3、W-sha-e2a35f439caf）。
+- 隔离/恢复路径已收敛到共享 nucleus `api/quarantine.py`。新 quarantine 操作必须保持 `works.read_status`、`source_files.source_path`、`source_files.status` 一致；以 `healthcheck_library.py` 复核为准。
 - P1.1 全库 digest 尚未批量生成（当前 5/112 覆盖率）。
 
 ## 11. 变更记录

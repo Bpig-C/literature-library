@@ -1,5 +1,10 @@
 # MinerU 运维手册
 
+> 状态：fallback / historical
+> 更新时间：2026-06-29
+>
+> V1 默认解析链路是 `parser/core/mineru/router.py::route_and_parse`：文本层 PDF 走 PyMuPDF 本地直抽，扫描型或质检不过的 PDF 走 MinerU 官网 cloud API。本文档仅用于旧自部署 MinerU 服务的回滚、排障或历史参考，不是日常解析入口。
+
 ## 1. 服务信息
 
 | 项目 | 值 |

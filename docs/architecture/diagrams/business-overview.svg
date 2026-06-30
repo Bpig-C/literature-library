@@ -21,7 +21,7 @@
   </defs>
   <rect width="1420" height="760" fill="#ffffff"/>
   <text x="40" y="52" class="title">业务主流水线总览</text>
-  <text x="40" y="78" class="small">按代码事实绘制：ingest 是技术入库点；去重/关系/隔离是可迭代治理环；解析成功后才能进入元数据/分类抽取。</text>
+  <text x="40" y="78" class="small">按代码事实绘制：ingest 内 SHA256 精确重复是硬拦截；标题重复候选不阻塞入库，审核可迭代进行；解析成功后才能进入元数据/分类抽取。</text>
 
   <rect x="55" y="145" width="160" height="74" class="box"/>
   <text x="135" y="176" text-anchor="middle" class="text">手动 PDF</text>
@@ -36,9 +36,11 @@
   <text x="355" y="312" text-anchor="middle" class="text">候选审核</text>
   <text x="355" y="335" text-anchor="middle" class="small">intake_candidates</text>
 
-  <rect x="275" y="145" width="190" height="74" class="stage"/>
-  <text x="370" y="176" text-anchor="middle" class="text">ingest 核心链路</text>
-  <text x="370" y="199" text-anchor="middle" class="small">literature_ingest.py</text>
+  <rect x="275" y="130" width="190" height="100" class="stage"/>
+  <text x="370" y="158" text-anchor="middle" class="text">ingest 核心链路</text>
+  <text x="370" y="178" text-anchor="middle" class="small">literature_ingest.py</text>
+  <rect x="285" y="188" width="170" height="34" fill="#fee2e2" stroke="#dc2626" stroke-width="1.2" rx="6"/>
+  <text x="370" y="210" text-anchor="middle" class="small" fill="#dc2626">SHA256 精确重复 → 硬拦截归档</text>
 
   <rect x="530" y="120" width="220" height="124" class="store"/>
   <text x="640" y="154" text-anchor="middle" class="text">技术入库点</text>
@@ -47,10 +49,10 @@
   <text x="640" y="220" text-anchor="middle" class="small">literature_parse_runs(pending)</text>
 
   <rect x="815" y="120" width="185" height="124" class="review"/>
-  <text x="908" y="154" text-anchor="middle" class="text">去重/关系/隔离治理</text>
+  <text x="908" y="154" text-anchor="middle" class="text">标题重复治理</text>
   <text x="908" y="178" text-anchor="middle" class="small">duplicate_groups</text>
-  <text x="908" y="199" text-anchor="middle" class="small">work_relations</text>
-  <text x="908" y="220" text-anchor="middle" class="small">可在多阶段迭代</text>
+  <text x="908" y="199" text-anchor="middle" class="small">duplicate_candidates</text>
+  <text x="908" y="220" text-anchor="middle" class="small">可迭代：摄入后 / 回填后</text>
 
   <rect x="1060" y="120" width="175" height="124" class="module"/>
   <text x="1148" y="154" text-anchor="middle" class="text">parser 子项目</text>
@@ -101,5 +103,5 @@
   <text x="790" y="296" class="note">解析不依赖“去重已审核”；直接消费 parse_runs(pending)。</text>
 
   <rect x="55" y="655" width="1270" height="58" fill="#f1f5f9" stroke="#cbd5e1" rx="8"/>
-  <text x="75" y="680" class="note">代码核对：collector gate/ingest/scan_title_duplicates 用强键、SHA256、标题 Jaccard；未发现 active 去重逻辑直接读 content.md。去重治理可在解析前后迭代。</text>
+  <text x="75" y="680" class="note">代码核对：ingest 内 SHA256 精确重复直接归档到 _duplicates/exact_sha256（硬拦截）；标题 Jaccard 候选写入 duplicate_groups/candidates（不阻塞入库）；去重审核可在摄入后或元数据回填后迭代。</text>
 </svg>

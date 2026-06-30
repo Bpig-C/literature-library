@@ -22,6 +22,26 @@ from __future__ import annotations
 import json, secrets
 from datetime import datetime, timezone
 from api.db import get_conn
+from api.classification_vocab import validate_tag_value
+
+# Only these groups are allowed in mapped_tags (collector boundary: reads vocab, never writes it)
+_MAPPED_TAG_GROUPS = {"risk_domain", "reading_lane", "method_tags"}
+
+
+def _validate_mapped_tags(tags: list[dict]) -> None:
+    """Validate mapped_tags against the controlled vocabulary.
+
+    Each tag must be ``{group, value}`` where *group* is in ``_MAPPED_TAG_GROUPS``
+    and *value* exists in ``VOCAB[group]``.
+    """
+    for tag in tags:
+        if not isinstance(tag, dict) or "group" not in tag or "value" not in tag:
+            raise ValueError(f"invalid mapped_tags entry (must be {{group, value}}): {tag!r}")
+        group, value = tag["group"], tag["value"]
+        if group not in _MAPPED_TAG_GROUPS:
+            raise ValueError(f"invalid mapped_tags group: {group!r} (allowed: {sorted(_MAPPED_TAG_GROUPS)})")
+        if not validate_tag_value(group, value):
+            raise ValueError(f"invalid mapped_tags: {group}={value!r} is not in vocab")
 
 ALLOWED_MAP = {"seedling", "proposed", "mapped"}
 ALLOWED_LIFE = {"active", "paused", "retired"}
@@ -117,6 +137,10 @@ def transition(topic_id, *, to_map_status=None, to_lifecycle=None,
         raise ValueError("proposed requires proposed_note (the 4 criteria)")
     if to_lifecycle and to_lifecycle not in ALLOWED_LIFE:
         raise ValueError(f"bad lifecycle {to_lifecycle}")
+    if mapped_tags is not None:
+        if not mapped_tags:
+            raise ValueError("mapped_tags must be a non-empty list (or None to skip)")
+        _validate_mapped_tags(mapped_tags)
     conn = get_conn()
     try:
         sets, args = [], []

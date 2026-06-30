@@ -4,8 +4,10 @@
 
 - 本文档：说明当前项目架构、目录含义、日常使用流程和常用命令。
 - `D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`：记录分阶段建设计划、设计背景和后续路线。
+- `FUTURE_WORK_PLAN.md`：只记录后续尚未完成的维护计划。
+- `docs/PROJECT_HISTORY.md`：记录已完成阶段、历史路线和旧判断。
 
-当前状态：Phase 0–4 均已完成。138 个 Work、140 个 source PDF 全部解析成功。去重确认 13 组（9 SHA256 自动确认 + 4 标题候选已决策），7 个坏源已隔离。Vue SPA + FastAPI 后端可启动使用。
+当前状态：V1.1 前端端到端主流程已打通。FastAPI + Vue SPA 可从前端完成“采集/投递候选 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。V1 发布审查见 `docs/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`。
 
 ## 目录架构
 
@@ -24,7 +26,7 @@ D:\02_academic\doctoral\literature_library
   literature.sqlite    # 主数据库
   pyproject.toml       # Python 项目配置（uv 环境）
   index.json           # 前端/脚本可读的文献索引
-  parse_ledger.json    # (已废弃/归档) 解析状态现以 literature_parse_runs 表为准
+  # parse_ledger.json 已废弃并归档；解析状态以 literature_parse_runs 表为准
 ```
 
 ## 核心概念
@@ -85,51 +87,7 @@ python scripts\literature_ingest.py --execute --leave-inbox
 python scripts\literature_batch_parse.py --execute
 ```
 
-<details>
-<summary>旧的自部署 MinerU 两层设置（降级参考，cloud 模式不需要）</summary>
-
-短期内不需要常驻 MinerU，因为现有 140 个活跃 PDF 已全部解析成功。只有新增文献、重跑解析或处理疑难 PDF 时才启动。
-
-解析链路分两层：
-
-- MinerU：实际 PDF 解析服务，默认端口 `18200`
-- document-parser：本地 FastAPI 封装服务，默认端口 `18201`
-
-启动 document-parser：
-
-```powershell
-cd D:\06_tools\document-parser
-uv run python main.py
-```
-
-如果 MinerU 在远端，先配置：
-
-```powershell
-$env:MINERU_SERVER_URL="http://<远端服务器IP>:18200/file_parse"
-uv run python main.py
-```
-
-健康检查：
-
-```powershell
-curl.exe http://127.0.0.1:18201/health
-curl.exe http://127.0.0.1:18200/health
-```
-
-解析 pending 文献时，在 `D:\06_tools\document-parser` 中运行：
-
-```powershell
-uv run python scripts\literature_batch_parse.py --library-root D:\02_academic\doctoral\literature_library --max-workers 1 --limit 3
-```
-
-建议保持保守并发：
-
-```text
-MINERU_API_MAX_CONCURRENT_REQUESTS=1
-MINERU_PROCESSING_WINDOW_SIZE=32
-```
-
-</details>
+旧的自部署 MinerU / document-parser 两层链路只保留为回滚参考，不是 V1 默认路径。相关历史说明在 `docs/maintain_doc/mineru-ops.md` 和 `_archive/README.md`，日常不要从 `D:\06_tools\document-parser` 触发解析。
 
 ### 3. 查看当前库状态
 
@@ -145,13 +103,13 @@ Get-ChildItem _inbox -Recurse -Filter *.pdf
 python scripts\literature_ingest.py --limit 5
 ```
 
-查看解析 ledger 状态，可直接打开：
+查看解析状态：
 
-```text
-parse_ledger.json
+```powershell
+python scripts\healthcheck_library.py --json
 ```
 
-当前已验证状态是 140 条 `succeeded`。如果新增文献摄入后，会出现新的 `pending` 条目。
+如果需要查看具体 pending/succeeded/failed 行，请查询 SQLite 的 `literature_parse_runs` 表，或使用 API `GET /api/parse/status?work_id=...`。
 
 ### 4. 运行本地脚本测试
 
@@ -225,16 +183,34 @@ npm run dev
 
 - `/` — 总览仪表盘
 - `/works` — 文献列表（搜索、筛选、分页）
-- `/works/:id` — 文献详情（编辑元数据、查看 content.md、管理关系）
+- `/works/:id` — 文献详情（源文件 -> 解析 -> 元数据 -> 分类 workflow bar，编辑元数据、查看 content.md、管理关系）
 - `/duplicates` — 去重确认（决策按钮、localStorage 持久化）
 - `/relations` — 关系管理（新增、删除）
 - `/metadata` — 元数据抽取审核（风险分级、原文预览、证据定位、人工编辑、审核回填）
 - `/classification` — 分类标签审核（primary_doc_type、risk_domain、method_tags 等）
 - `/intake` — 采集候选审核（resolution、review_status、promote）
 - `/inbox` — Inbox 摄入 dry-run 预览与确认
-- `/topics` — 采集主题管理（成熟度转换、mapped_tags）
+- `/topics` — 采集主题管理（新建主题、成熟度转换、mapped_tags、按主题采集）
 
-### 7. 元数据审核与重抽
+### 7. 前端端到端主流程（V1.1 推荐）
+
+V1.1 后，日常使用优先走 Vue SPA，而不是把 CLI 命令串起来手工执行。
+
+推荐流程：
+
+1. 在 `/topics` 新建或选择采集主题，填写显式 arXiv ID、种子文献 ID 或主题说明后发起采集。
+2. 在 `/intake` 审核候选，确认 resolution、review_status 后 promote 为正式 work。
+3. 如果是本地 PDF 投递，先进入 `/inbox` 做 dry-run 预览，再确认摄入。
+4. 进入 `/works/:id`，按照 workflow bar 依次检查源文件、触发解析、触发元数据抽取、触发分类抽取。
+5. 从 workflow bar 的“去审核”进入 `/metadata` 或 `/classification`，审核 pending 候选并批准/修正/拒绝。
+6. 审核通过后，元数据按只填空字段策略回填 `works`；分类标签进入受控词表和人工审核边界，不绕过审核门禁。
+
+当前边界：
+
+- 元数据和分类抽取仍是同步触发，依赖本地 LLM / MiMo 服务可用性；大批量抽取应继续走脚本或后续任务队列。
+- 前端主流程已覆盖日常单篇/小批量使用，但不包含大规模自动检索调度、完整后台任务队列、引用导出和综述矩阵。
+
+### 8. 元数据审核与重抽
 
 当前元数据抽取结果保存在 `metadata_extractions`，不会直接覆盖 `works` 稳定层。推荐流程是先在 SPA 的 `/metadata` 页面审核，再按需要回填。
 
@@ -294,6 +270,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | GET | `/api/files/{work_id}/content` | 获取 content.md 原文 |
 | GET | `/api/files/{work_id}/pdf` | 获取 PDF 文件 |
 | GET | `/api/metadata` | 元数据抽取审核队列 |
+| POST | `/api/metadata/extract` | 触发元数据抽取（指定 work_ids 或小批量） |
 | GET | `/api/metadata/{ext_id}` | 元数据抽取详情 |
 | PATCH | `/api/metadata/{ext_id}/review` | 审核抽取结果；人工编辑字段会提升为可回填来源 |
 | POST | `/api/metadata/apply-approved` | 回填已批准且未应用的抽取结果 |
@@ -308,6 +285,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | PATCH | `/api/classification/tags/{tag_id}/review` | 审核分类标签 |
 | GET | `/api/classification/vocab` | 分类词汇表（primary_doc_type、reading_lane 等） |
 | GET | `/api/classification/extractions` | 分类抽取列表（按状态/风险筛选） |
+| POST | `/api/classification/extract` | 触发分类抽取（指定 work_ids 或小批量） |
 | GET | `/api/classification/extractions/{ext_id}` | 分类抽取详情 |
 | PATCH | `/api/classification/extractions/{ext_id}/save-draft` | 保存分类抽取草稿 |
 | PATCH | `/api/classification/extractions/{ext_id}/review` | 审核分类抽取结果 |
@@ -321,6 +299,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | POST | `/api/intake/promote` | 批量提升已批准候选为正式文献 |
 | GET | `/api/intake/topics` | 采集主题列表 |
 | POST | `/api/intake/topics` | 主题成熟度转换 |
+| POST | `/api/intake/topics/create` | 新建采集主题 |
 | POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
 | GET | `/api/parse/status` | 解析状态汇总或单篇查询 |
 | POST | `/api/parse/trigger` | 触发解析（指定 work_ids 或 all_pending） |
@@ -340,10 +319,10 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 ## 重要约定
 
 - 不要重跑 inventory/migration，除非明确要从原始 `literature_read` 重新构建。
-- 不要手动移动 `works` 下的 PDF；让摄入脚本维护 DB、index、ledger 的一致性。
+- 不要手动移动 `works` 下的 PDF；让摄入、归档、隔离、恢复脚本维护 DB 路径和 `source_files.status` 的一致性。
 - `_inbox` 是临时入口，`works` 才是永久存储。
 - `views` 是自动生成视图，后续应由脚本生成，不建议手动维护。
-- 解析失败或坏源文件进入 `_quarantine` 或 `_archive`，不要直接删除。
+- 解析失败或坏源文件进入 `_quarantine` 或 `_archive`，不要直接删除。隔离和恢复必须同步 `source_files.source_path` 与 `source_files.status`。
 - 新文献摄入后默认只是 `pending`，不会自动启动 MinerU。
 
 ## 安全约定
@@ -363,14 +342,14 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 - `scripts\dedup_apply.py`：Phase 4 将去重决策应用到数据库
 - `scripts\literature_metadata_extract.py`：基于 MinerU `content.md` 的元数据抽取与可选回填
 - `scripts\literature_metadata_rerun.py`：审核修正队列查询、字段级重抽、supersede 审计链写入
+- `scripts\literature_classification_extract.py`：基于 `content.md` 的分类候选抽取与可选回填
 - `scripts\backfill_risk.py`：为已有元数据抽取记录回填风险等级、分数和原因
 - `scripts\run_api.py`：启动 FastAPI 后端服务
 
-document-parser 工程中的历史/解析脚本：
+历史/归档脚本：
 
-- `D:\06_tools\document-parser\scripts\literature_inventory.py`
-- `D:\06_tools\document-parser\scripts\literature_migrate.py`
-- `D:\06_tools\document-parser\scripts\literature_batch_parse.py`
-- `D:\06_tools\document-parser\scripts\literature_cleanup_bad_sources.py`
+- `_archive/`：旧 parser CLI、历史 ledger 备份和确认无 active 引用的根级脚本。
+- `scripts/_archive/`：一次性 phase helper 或早期批处理脚本。
+- `parser/_legacy_service/`：休眠的旧 parser HTTP 服务边界。
 
-这些历史脚本已经完成 Phase 0、Phase 2、Phase 2b、Phase 2c。日常新增文献优先使用本目录下的 `scripts\literature_ingest.py`。
+日常新增文献优先使用本仓库内的 `scripts\literature_ingest.py`、`scripts\literature_batch_parse.py`、前端 `/inbox`、以及 FastAPI `/api/ingest/*` / `/api/parse/*`。

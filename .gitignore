@@ -54,6 +54,9 @@ Desktop.ini
 # One-time scripts and scan results
 scripts/_*.py
 scripts/_scan_results.json
+!scripts/_archive/
+!scripts/_archive/README.md
+!scripts/_archive/*.py
 
 # Documentation assets
 docs/issues/screenshots/
