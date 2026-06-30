@@ -77,21 +77,26 @@
                   @click="openMapModal">
             映射为 mapped
           </button>
-          <button class="btn-collect" :disabled="busy" @click="doCollect">
-            按主题发起采集
+          <button class="btn-collect" :disabled="busy" @click="doCollect"
+                  title="按主题里已有的显式 ID / 种子 ID 直接下载指定文献，不联网搜索">
+            直接采集
           </button>
           <button class="btn-resolve" :disabled="busy" @click="doResolve">
             触发 resolve
           </button>
         </div>
         <div class="gate-bar">
-          <button class="btn-discovery" :disabled="busy" @click="doDiscoveryPlan">
-            生成检索方案
+          <button class="btn-discovery" :disabled="busy" @click="doDiscoveryPlan"
+                  title="让 AI 根据主题线索（关键词/作者/机构等）联网搜索相关文献，结果进发现命中审核">
+            智能检索
           </button>
           <router-link :to="`/discovery?topic_id=${selected.id}`" class="btn-view-discovery">
             查看发现结果
           </router-link>
         </div>
+        <p class="gate-hint">
+          <strong>智能检索</strong>：AI 联网找相关文献 ｜ <strong>直接采集</strong>：按已知 ID 下载
+        </p>
         <div v-if="discoveryRuns.length" class="discovery-runs-section">
           <div class="section-title" @click="showDiscoveryRuns = !showDiscoveryRuns">
             最近发现检索 {{ showDiscoveryRuns ? '[-]' : '[+]' }}
@@ -577,6 +582,7 @@ table.kv td { padding: 4px 8px; }
 .btn-resolve { background: var(--panel); color: var(--text); }
 .gate-bar button:disabled { opacity: .5; cursor: not-allowed; }
 .hint { margin-top: 8px; }
+.gate-hint { font-size:12px; color:var(--muted); margin:4px 0 8px; }
 .empty-state { display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
 /* Create topic modal */
