@@ -283,6 +283,7 @@ class TopicCreateBody(BaseModel):
     seed_paper_ids: list[str] | None = None
     explicit_ids: list[str] | None = None
     axis_hint: str | None = None
+    mapped_tags: list[dict] | None = None
 
 
 @router.post("/intake/topics/create")
@@ -295,6 +296,7 @@ def intake_topics_create(body: TopicCreateBody):
             seed_paper_ids=body.seed_paper_ids,
             explicit_ids=body.explicit_ids,
             axis_hint=body.axis_hint,
+            mapped_tags=body.mapped_tags,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

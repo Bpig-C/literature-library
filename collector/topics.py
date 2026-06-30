@@ -58,24 +58,41 @@ def _new_id():
 
 
 def create(*, name, description="", seed_paper_ids=None, explicit_ids=None,
-           axis_hint=None, map_status="seedling", lifecycle="active"):
+           axis_hint=None, mapped_tags=None, map_status="seedling", lifecycle="active"):
     """Create a collection_topic. Defaults to seedling/active.
 
     query_def captures the discovery inputs that seed this topic:
       - explicit_ids:   paper IDs the user explicitly handed in
       - seed_paper_ids: paper IDs chosen as seeds (e.g. from a hunch)
+
+    mapped_tags (P1-2): optional list of {group, value} dicts.
+    Values in vocab get status='approved'; out-of-vocab get 'proposed_new'
+    (human review later decides whether to admit into classification_vocab).
     """
     if map_status not in ALLOWED_MAP:
         raise ValueError(f"bad map_status {map_status}")
     if lifecycle not in ALLOWED_LIFE:
         raise ValueError(f"bad lifecycle {lifecycle}")
     qd = {"explicit_ids": explicit_ids or [], "seed_paper_ids": seed_paper_ids or []}
+
+    mapped_tags_json = None
+    if mapped_tags:
+        norm = []
+        for t in mapped_tags:
+            g = (t.get("group") or "").strip()
+            v = (t.get("value") or "").strip()
+            if not g or not v:
+                continue  # skip malformed
+            status = "approved" if validate_tag_value(g, v) else "proposed_new"
+            norm.append({"group": g, "value": v, "status": status})
+        mapped_tags_json = json.dumps(norm, ensure_ascii=False) if norm else None
+
     conn = get_conn()
     try:
         ct = {
             "id": _new_id(), "name": name, "description": description,
             "query_def": qd, "map_status": map_status, "lifecycle": lifecycle,
-            "mapped_tags": None, "proposed_note": None, "axis_hint": axis_hint,
+            "mapped_tags": mapped_tags_json, "proposed_note": None, "axis_hint": axis_hint,
             "created_at": _now(), "updated_at": _now(),
         }
         conn.execute(
@@ -84,9 +101,11 @@ def create(*, name, description="", seed_paper_ids=None, explicit_ids=None,
                 proposed_note,axis_hint,created_at,updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (ct["id"], ct["name"], ct["description"], json.dumps(qd, ensure_ascii=False),
-             ct["map_status"], ct["lifecycle"], None, None, ct["axis_hint"],
+             ct["map_status"], ct["lifecycle"], mapped_tags_json, None, ct["axis_hint"],
              ct["created_at"], ct["updated_at"]))
         conn.commit()
+        # Return parsed list to caller (not raw JSON string)
+        ct["mapped_tags"] = json.loads(mapped_tags_json) if mapped_tags_json else None
         return ct
     finally:
         conn.close()

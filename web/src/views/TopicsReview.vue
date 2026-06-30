@@ -99,6 +99,7 @@
           <div v-if="showDiscoveryRuns" class="discovery-runs-list">
             <div v-for="run in discoveryRuns" :key="run.id" class="discovery-run-item">
               <span class="run-mode">{{ run.mode }}</span>
+              <code class="run-id">{{ run.id }}</code>
               <span class="run-status" :class="run.status">{{ run.status }}</span>
               <span class="muted tiny">{{ run.created_at?.slice(0, 16) }}</span>
             </div>
@@ -135,6 +136,27 @@
           <div class="form-group">
             <label>轴归属</label>
             <input v-model="createForm.axis_hint" placeholder="如: risk_domain" />
+          </div>
+          <div class="form-group">
+            <label>关联标签</label>
+            <div class="tag-picker-row">
+              <select v-model="tagPicker.group" @change="tagPicker.value = ''">
+                <option v-for="g in vocabGroups" :key="g" :value="g">{{ g }}</option>
+              </select>
+              <select v-model="tagPicker.value">
+                <option value="" disabled>选择值…</option>
+                <option v-for="v in createVocabValues" :key="v" :value="v">{{ v }}</option>
+              </select>
+              <input v-model="tagPicker.customValue" placeholder="或自定义值…" />
+              <button type="button" @click="addCreateTag" class="btn-add-tag-sm">+</button>
+            </div>
+            <div v-if="createForm.tags.length" class="map-tags-list" style="margin-top: 6px;">
+              <span v-for="(tag, i) in createForm.tags" :key="i" class="tag-chip">
+                {{ tag.group }}={{ tag.value }}
+                <span v-if="tag._proposed" class="tag-warn" title="proposed_new">?</span>
+                <button class="btn-remove-tag" @click="removeCreateTag(i)">×</button>
+              </span>
+            </div>
           </div>
           <div class="form-actions">
             <button @click="showCreateForm = false" class="btn-cancel">取消</button>
@@ -206,7 +228,9 @@ const createForm = ref({
   explicit_ids_str: '',
   seed_paper_ids_str: '',
   axis_hint: '',
+  tags: [],
 })
+const tagPicker = ref({ group: 'risk_domain', value: '', customValue: '' })
 const showMapModal = ref(false)
 const vocab = ref(null)
 const mapForm = ref({ group: 'risk_domain', value: '' })
@@ -234,6 +258,34 @@ function isVocabValue(group, value) {
   if (Array.isArray(node)) return node.includes(value)
   if (typeof node === 'object') return value in node
   return false
+}
+
+const createVocabValues = computed(() => {
+  if (!vocab.value) return []
+  const g = tagPicker.value.group
+  const node = vocab.value[g] || vocab.value.groups?.[g]
+  if (Array.isArray(node)) return node
+  if (node && typeof node === 'object') return Object.keys(node)
+  return []
+})
+
+function addCreateTag() {
+  const g = tagPicker.value.group
+  // 优先使用自定义值，否则使用下拉选中的值
+  const custom = (tagPicker.value.customValue || '').trim()
+  const v = custom || tagPicker.value.value
+  if (!g || !v) { alert('请选择分组和值（或填写自定义值）'); return }
+  if (createForm.value.tags.some(t => t.group === g && t.value === v)) {
+    alert('该标签已添加，请勿重复'); return
+  }
+  const inVocab = isVocabValue(g, v)
+  createForm.value.tags.push({ group: g, value: v, status: inVocab ? 'approved' : 'proposed_new', _proposed: !inVocab })
+  tagPicker.value.value = ''
+  tagPicker.value.customValue = ''
+}
+
+function removeCreateTag(idx) {
+  createForm.value.tags.splice(idx, 1)
 }
 
 async function ensureVocabLoaded(showAlert = false) {
@@ -363,9 +415,12 @@ async function doCreateTopic() {
     if (createForm.value.seed_paper_ids_str) {
       payload.seed_paper_ids = createForm.value.seed_paper_ids_str.split(',').map(s => s.trim()).filter(Boolean)
     }
+    if (createForm.value.tags.length) {
+      payload.mapped_tags = createForm.value.tags.map(t => ({ group: t.group, value: t.value }))
+    }
     await createTopic(payload)
     showCreateForm.value = false
-    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '' }
+    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: [] }
     await reload()
   } catch (e) {
     alert(e.message)
@@ -479,6 +534,14 @@ table.kv td { padding: 4px 8px; }
   margin-bottom: 12px;
 }
 .btn-add-tag:disabled { opacity: .5; cursor: not-allowed; }
+.tag-picker-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tag-picker-row select, .tag-picker-row input { flex: 1; min-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 13px; }
+.btn-add-tag-sm {
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;
+}
+.btn-add-tag-sm:disabled { opacity: .5; cursor: not-allowed; }
 .map-tags-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .map-tag-item { display: flex; align-items: center; gap: 4px; }
 .btn-remove-tag {
@@ -508,6 +571,7 @@ table.kv td { padding: 4px 8px; }
 .discovery-runs-list { display: flex; flex-direction: column; gap: 4px; }
 .discovery-run-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
 .run-mode { font-weight: 600; color: var(--accent); }
+.run-id { font-family: Consolas, monospace; color: #475467; }
 .run-status { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
 .run-status.planned { background: #fef9c3; color: #92400e; }
 .run-status.running { background: #e0f2fe; color: #0369a1; }

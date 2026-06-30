@@ -331,3 +331,47 @@ def test_non_dict_tag_entry_rejected(tmp_path, monkeypatch):
     bad_tags = ["risk_domain:deception"]
     with pytest.raises(ValueError, match="invalid mapped_tags entry"):
         topics.transition(ct["id"], to_map_status="mapped", mapped_tags=bad_tags)
+
+
+# ---------------------------------------------------------------------------
+# P1-2: create topic with mapped_tags (auto status assignment)
+# ---------------------------------------------------------------------------
+
+def test_create_topic_with_vocab_tags_marks_approved(tmp_path, monkeypatch):
+    """P1-2: 创建时带词表内标签 → status=approved，map_status 仍 seedling。"""
+    from collector import topics
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(
+        name="T1", description="",
+        mapped_tags=[{"group": "risk_domain", "value": "deception"}],
+    )
+    assert ct["map_status"] == "seedling"
+    tags = ct["mapped_tags"]
+    assert tags[0]["status"] == "approved"
+
+
+def test_create_topic_with_custom_tag_marks_proposed_new(tmp_path, monkeypatch):
+    """P1-2: 词表外的自定义值 → status=proposed_new，不报错。"""
+    from collector import topics
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(
+        name="T2", description="",
+        mapped_tags=[{"group": "risk_domain", "value": "goal_misgeneralization"}],
+    )
+    tags = ct["mapped_tags"]
+    assert tags[0]["status"] == "proposed_new"
+    assert tags[0]["value"] == "goal_misgeneralization"
+
+
+def test_create_topic_without_tags_keeps_mapped_tags_none(tmp_path, monkeypatch):
+    """P1-2: 不带标签 → mapped_tags 仍为 None（兼容旧路径）。"""
+    from collector import topics
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(name="T3")
+    assert ct["mapped_tags"] is None
