@@ -158,6 +158,43 @@
               </span>
             </div>
           </div>
+
+          <!-- P1-3: 高级线索折叠区 -->
+          <details class="advanced-clues-section">
+            <summary>高级线索（可选）</summary>
+            <div class="form-group">
+              <label>关键词（逗号分隔）</label>
+              <textarea v-model="createForm.keywords" rows="2" placeholder="如: reward hacking, goal misgeneralization"></textarea>
+            </div>
+            <div class="form-group">
+              <label>作者（逗号分隔）</label>
+              <textarea v-model="createForm.authors" rows="2" placeholder="如: Alice Smith, Bob Jones"></textarea>
+            </div>
+            <div class="form-group">
+              <label>机构（逗号分隔）</label>
+              <textarea v-model="createForm.institutions" rows="2" placeholder="如: OpenAI, DeepMind"></textarea>
+            </div>
+            <div class="form-group">
+              <label>已知名称（逗号分隔）</label>
+              <textarea v-model="createForm.known_names" rows="2" placeholder="如: GPT-4, Claude"></textarea>
+            </div>
+            <div class="form-group">
+              <label>已知标题（逗号分隔）</label>
+              <textarea v-model="createForm.known_titles" rows="2" placeholder="如: Scaling Laws for Neural Language Models"></textarea>
+            </div>
+            <div class="form-group">
+              <label>已知 URL（逗号分隔）</label>
+              <textarea v-model="createForm.known_urls" rows="2" placeholder="如: https://arxiv.org/abs/2001.08361"></textarea>
+            </div>
+            <div class="form-group">
+              <label>偏好域名（逗号分隔）</label>
+              <textarea v-model="createForm.preferred_domains" rows="2" placeholder="如: arxiv.org, openreview.net"></textarea>
+            </div>
+            <div class="form-group">
+              <label>排除词（逗号分隔）</label>
+              <textarea v-model="createForm.exclude_terms" rows="2" placeholder="如: reddit, forum, news"></textarea>
+            </div>
+          </details>
           <div class="form-actions">
             <button @click="showCreateForm = false" class="btn-cancel">取消</button>
             <button @click="doCreateTopic" :disabled="!createForm.name || busy" class="btn-submit">创建</button>
@@ -229,6 +266,15 @@ const createForm = ref({
   seed_paper_ids_str: '',
   axis_hint: '',
   tags: [],
+  // P1-3: rich query_def fields
+  keywords: '',
+  authors: '',
+  institutions: '',
+  known_names: '',
+  known_titles: '',
+  known_urls: '',
+  preferred_domains: '',
+  exclude_terms: '',
 })
 const tagPicker = ref({ group: 'risk_domain', value: '', customValue: '' })
 const showMapModal = ref(false)
@@ -400,6 +446,31 @@ async function doResolve() {
   }
 }
 
+// P1-3: Parse comma-separated fields into arrays for query_def
+function parseList(str) {
+  if (!str) return []
+  return str.split(',').map(s => s.trim()).filter(Boolean)
+}
+
+function buildQueryDef() {
+  const qd = {}
+  const fields = {
+    keywords: createForm.value.keywords,
+    authors: createForm.value.authors,
+    institutions: createForm.value.institutions,
+    known_names: createForm.value.known_names,
+    known_titles: createForm.value.known_titles,
+    known_urls: createForm.value.known_urls,
+    preferred_domains: createForm.value.preferred_domains,
+    exclude_terms: createForm.value.exclude_terms,
+  }
+  for (const [key, val] of Object.entries(fields)) {
+    const list = parseList(val)
+    if (list.length) qd[key] = list
+  }
+  return qd
+}
+
 async function doCreateTopic() {
   if (!createForm.value.name || busy.value) return
   busy.value = true
@@ -415,12 +486,17 @@ async function doCreateTopic() {
     if (createForm.value.seed_paper_ids_str) {
       payload.seed_paper_ids = createForm.value.seed_paper_ids_str.split(',').map(s => s.trim()).filter(Boolean)
     }
+    // P1-3: Build query_def from rich clues
+    const qd = buildQueryDef()
+    if (Object.keys(qd).length) {
+      payload.query_def = qd
+    }
     if (createForm.value.tags.length) {
       payload.mapped_tags = createForm.value.tags.map(t => ({ group: t.group, value: t.value }))
     }
     await createTopic(payload)
     showCreateForm.value = false
-    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: [] }
+    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: '', keywords: '', authors: '', institutions: '', known_names: '', known_titles: '', known_urls: '', preferred_domains: '', exclude_terms: '' }
     await reload()
   } catch (e) {
     alert(e.message)
@@ -522,6 +598,28 @@ table.kv td { padding: 4px 8px; }
   font-size: 13px; font-family: inherit;
 }
 .form-group textarea { resize: vertical; }
+
+/* P1-3: Advanced clues section */
+.advanced-clues-section {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+}
+.advanced-clues-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 4px 0;
+}
+.advanced-clues-section summary:hover {
+  opacity: 0.8;
+}
+.advanced-clues-section[open] summary {
+  margin-bottom: 8px;
+}
+
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .btn-cancel { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--panel); }
 .btn-submit { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; background: var(--accent); color: #fff; }

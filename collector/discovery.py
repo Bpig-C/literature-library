@@ -73,6 +73,15 @@ def _make_dedup_key(*, url: str = "", title: str = "", doi: str = "", arxiv_id: 
     return ""
 
 
+def _merge_list(base, extra):
+    """Merge two list-ish inputs, dedup, preserve order (base first, extra after)."""
+    out = []
+    for x in list(base or []) + list(extra or []):
+        if x and x not in out:
+            out.append(x)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Plan generation
 # ---------------------------------------------------------------------------
@@ -207,6 +216,23 @@ def draft_composite_plan(
     Avoids cartesian explosion; generates ~10 core queries max.
     """
     import re as _re
+
+    # P1-3: when a topic is given, seed defaults from its query_def so a topic
+    # alone is enough to drive a plan. Explicit kwargs still win (merged on top).
+    if topic_id:
+        from collector import topics
+        topic = topics.get(topic_id)
+        if topic is None:
+            raise KeyError(f"topic not found: {topic_id}")
+        qd = topic.get("query_def") or {}
+        names = _merge_list(qd.get("known_names"), names)
+        titles = _merge_list(qd.get("known_titles"), titles)
+        authors = _merge_list(qd.get("authors"), authors)
+        institutions = _merge_list(qd.get("institutions"), institutions)
+        keywords = _merge_list(qd.get("keywords"), keywords)
+        known_urls = _merge_list(qd.get("known_urls"), known_urls)
+        preferred_domains = _merge_list(qd.get("preferred_domains"), preferred_domains)
+        exclude_terms = _merge_list(qd.get("exclude_terms"), exclude_terms)
 
     # Normalize inputs
     names = [n.strip() for n in (names or []) if n.strip()]

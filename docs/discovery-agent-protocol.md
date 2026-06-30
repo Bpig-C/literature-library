@@ -465,3 +465,84 @@ python scripts/literature_discovery.py plan --composite \
 | `doi` | V1.1 不支持 DOI discovery；可先按 title/name 检索，或等待 V1.2 DOI 反查 |
 | `arxiv` | `python scripts/literature_intake.py collect --ids <ID>` |
 | `github_url` | `python scripts/literature_intake.py collect --github <URL>` |
+
+## 主题 → 检索方案（P1-3）
+
+当用户通过 `/topics` 创建主题时，可以附带丰富的检索线索（query_def）。这些线索会自动传递给 discovery 系统，使得从主题出发生成检索方案时，无需重复输入。
+
+### query_def 完整字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `explicit_ids` | string[] | 显式指定的文献 ID（默认空） |
+| `seed_paper_ids` | string[] | 种子文献 ID（默认空） |
+| `keywords` | string[] | 关键词列表 |
+| `authors` | string[] | 作者列表 |
+| `institutions` | string[] | 机构列表 |
+| `known_names` | string[] | 已知名称（模型名、系统名等） |
+| `known_titles` | string[] | 已知标题或标题片段 |
+| `known_urls` | string[] | 已知 URL |
+| `preferred_domains` | string[] | 偏好搜索域名 |
+| `exclude_terms` | string[] | 排除词 |
+
+### 使用流程
+
+1. **创建主题时附带线索**：
+
+```http
+POST /api/intake/topics/create
+Content-Type: application/json
+
+{
+  "name": "Reward Hacking",
+  "description": "奖励黑客攻击相关研究",
+  "query_def": {
+    "keywords": ["reward hacking", "reward tampering"],
+    "authors": ["Jan Leike"],
+    "institutions": ["DeepMind", "OpenAI"],
+    "preferred_domains": ["arxiv.org", "openreview.net"]
+  }
+}
+```
+
+2. **从主题生成 composite plan**：
+
+当 `draft_composite_plan` 接收到 `topic_id` 时，会自动加载该主题的 `query_def` 作为默认底值。显式传入的参数会覆盖主题中的同名字段。
+
+```http
+POST /api/discovery/composite-plan
+Content-Type: application/json
+
+{
+  "topic_id": "CT-xxxxxxxx"
+}
+```
+
+系统会自动将主题的 `query_def` 中的 `keywords`、`authors`、`institutions` 等字段合并到 plan 的输入信号中。
+
+3. **更新主题的 query_def**：
+
+```http
+PATCH /api/intake/topics/{topic_id}/query-def
+Content-Type: application/json
+
+{
+  "patch": {
+    "keywords": ["reward hacking", "reward tampering", "specification gaming"],
+    "exclude_terms": ["tutorial", "blog"]
+  }
+}
+```
+
+此操作采用 merge 语义：传入的键会覆盖或新增，未传入的键保持不变。
+
+### 合并规则
+
+- 主题的 `query_def` 作为 base，显式参数作为 overlay
+- 同名字段取显式参数值（显式参数优先）
+- 使用 `_merge_list` 辅助函数去重并保持顺序（base 在前，extra 在后）
+- 空值（None 或空列表）不会覆盖已有值
+
+### 前端支持
+
+在 TopicsReview 页面的「新建主题」表单中，点击「高级线索（可选）」展开区域，可以填写关键词、作者、机构、已知名称、已知标题、已知 URL、偏好域名、排除词等字段。这些字段会在创建主题时自动合并到 query_def 中。

@@ -58,12 +58,17 @@ def _new_id():
 
 
 def create(*, name, description="", seed_paper_ids=None, explicit_ids=None,
-           axis_hint=None, mapped_tags=None, map_status="seedling", lifecycle="active"):
+           query_def=None, axis_hint=None, mapped_tags=None, map_status="seedling", lifecycle="active"):
     """Create a collection_topic. Defaults to seedling/active.
 
     query_def captures the discovery inputs that seed this topic:
       - explicit_ids:   paper IDs the user explicitly handed in
       - seed_paper_ids: paper IDs chosen as seeds (e.g. from a hunch)
+
+    query_def (P1-3): optional dict with rich discovery clues. Keys from this
+    dict are merged on top of the default explicit_ids/seed_paper_ids.
+    Valid keys: keywords, authors, institutions, known_urls, known_names,
+    known_titles, preferred_domains, exclude_terms.
 
     mapped_tags (P1-2): optional list of {group, value} dicts.
     Values in vocab get status='approved'; out-of-vocab get 'proposed_new'
@@ -74,6 +79,12 @@ def create(*, name, description="", seed_paper_ids=None, explicit_ids=None,
     if lifecycle not in ALLOWED_LIFE:
         raise ValueError(f"bad lifecycle {lifecycle}")
     qd = {"explicit_ids": explicit_ids or [], "seed_paper_ids": seed_paper_ids or []}
+    if query_def:
+        for k, v in query_def.items():
+            if isinstance(v, list):
+                qd[k] = v
+            elif v:
+                qd[k] = [v]
 
     mapped_tags_json = None
     if mapped_tags:
@@ -125,6 +136,32 @@ def get(topic_id):
         if d.get("mapped_tags"):
             d["mapped_tags"] = json.loads(d["mapped_tags"])
         return d
+    finally:
+        conn.close()
+
+
+def update_query_def(topic_id, patch: dict):
+    """Merge patch keys into topic.query_def (lists only). Preserves absent keys.
+    Raises KeyError if topic missing. Returns the new query_def dict."""
+    conn = get_conn()
+    try:
+        cur = conn.execute("SELECT query_def FROM collection_topics WHERE id=?", (topic_id,))
+        row = cur.fetchone()
+        if not row:
+            raise KeyError(f"topic not found: {topic_id}")
+        qd = json.loads(row[0] or "{}")
+        for k, v in (patch or {}).items():
+            if isinstance(v, list):
+                qd[k] = v
+            elif v:
+                qd[k] = [v]
+            else:
+                qd.pop(k, None)
+        conn.execute(
+            "UPDATE collection_topics SET query_def=?, updated_at=? WHERE id=?",
+            (json.dumps(qd, ensure_ascii=False), _now(), topic_id))
+        conn.commit()
+        return qd
     finally:
         conn.close()
 

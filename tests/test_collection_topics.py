@@ -375,3 +375,47 @@ def test_create_topic_without_tags_keeps_mapped_tags_none(tmp_path, monkeypatch)
     monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
     ct = topics.create(name="T3")
     assert ct["mapped_tags"] is None
+
+
+# ---------------------------------------------------------------------------
+# P1-3: rich query_def tests
+# ---------------------------------------------------------------------------
+
+def test_create_topic_stores_rich_query_def(tmp_path, monkeypatch):
+    """P1-3: 创建时带复合 query_def → get() 能取到所有键。"""
+    from collector import topics
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(
+        name="T", query_def={"keywords": ["safety"], "authors": ["Alice"],
+                             "institutions": ["OpenAI"], "known_urls": ["https://x.org"]})
+    qd = topics.get(ct["id"])["query_def"]
+    assert qd["keywords"] == ["safety"]
+    assert qd["authors"] == ["Alice"]
+    assert qd["explicit_ids"] == []  # 默认键仍在
+
+
+def test_update_query_def_merges(tmp_path, monkeypatch):
+    """P1-3: update_query_def 覆盖传入键，保留未传键。"""
+    from collector import topics
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(name="T", query_def={"keywords": ["a"]})
+    topics.update_query_def(ct["id"], {"authors": ["Bob"]})
+    qd = topics.get(ct["id"])["query_def"]
+    assert qd["keywords"] == ["a"]      # 旧键保留
+    assert qd["authors"] == ["Bob"]     # 新键写入
+
+
+def test_composite_plan_reads_topic_query_def(tmp_path, monkeypatch):
+    """P1-3: 仅给 topic_id（无显式线索）→ plan 的 queries 来自 topic.query_def.keywords。"""
+    from collector import topics, discovery
+    db_path = tmp_path / "literature.sqlite"; sqlite3.connect(db_path).close()
+    _run_migration(db_path)
+    monkeypatch.setattr(topics, "get_conn", lambda: sqlite3.connect(db_path))
+    monkeypatch.setattr(discovery, "get_conn", lambda: sqlite3.connect(db_path))
+    ct = topics.create(name="Reward Hacking", query_def={"keywords": ["reward hacking"]})
+    plan = discovery.draft_composite_plan(topic_id=ct["id"])
+    assert any("reward hacking" in q.lower() for q in plan.get("queries", []))

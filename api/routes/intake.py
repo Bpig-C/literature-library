@@ -282,6 +282,7 @@ class TopicCreateBody(BaseModel):
     description: str = ""
     seed_paper_ids: list[str] | None = None
     explicit_ids: list[str] | None = None
+    query_def: dict | None = None  # P1-3: rich discovery clues
     axis_hint: str | None = None
     mapped_tags: list[dict] | None = None
 
@@ -295,9 +296,24 @@ def intake_topics_create(body: TopicCreateBody):
             description=body.description,
             seed_paper_ids=body.seed_paper_ids,
             explicit_ids=body.explicit_ids,
+            query_def=body.query_def,
             axis_hint=body.axis_hint,
             mapped_tags=body.mapped_tags,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "topic": ct}
+
+
+class TopicQueryDefBody(BaseModel):
+    patch: dict
+
+
+@router.patch("/intake/topics/{topic_id}/query-def")
+def intake_topics_patch_query_def(topic_id: str, body: TopicQueryDefBody):
+    """P1-3: Merge patch keys into topic.query_def."""
+    try:
+        qd = topics.update_query_def(topic_id, body.patch)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "topic_id": topic_id, "query_def": qd}
