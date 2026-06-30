@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY_ROOT
 from ..models import MetadataReviewAction, MetadataSupersedeAction, QuarantineAction
@@ -593,3 +594,147 @@ def _apply_single(conn, ext_id: str, work_id: str, extracted: dict, confidence: 
         )
         return 1
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Extraction trigger endpoint
+# ---------------------------------------------------------------------------
+
+class ExtractRequest(BaseModel):
+    work_ids: list[str] | None = None
+    force: bool = False
+    limit: int = 5
+
+
+@router.post("/metadata/extract")
+def trigger_metadata_extraction(body: ExtractRequest):
+    """Thin adapter: trigger metadata extraction for specific works or a small batch.
+
+    Reuses scripts.literature_metadata_extract nucleus logic.
+    """
+    import sys
+    from pathlib import Path as P
+
+    # Ensure scripts package is importable
+    scripts_dir = str(LIBRARY_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    from scripts.literature_metadata_extract import (
+        get_works_to_process,
+        connect_db,
+        llm_judge,
+        validate_extraction,
+        compute_risk,
+        rough_token_count,
+        INPUT_CHAR_BUDGET,
+        SYSTEM_PROMPT,
+        USER_PROMPT_TEMPLATE,
+        parse_llm_json,
+    )
+    import uuid as _uuid
+
+    conn = connect_db()
+    try:
+        # Determine which works to process
+        if body.work_ids:
+            works = []
+            for wid in body.work_ids:
+                w = get_works_to_process(conn, limit=None, work_id=wid, force=body.force)
+                works.extend(w)
+        else:
+            works = get_works_to_process(conn, limit=body.limit, work_id=None, force=body.force)
+
+        if not works:
+            return {
+                "ok": True,
+                "created": 0,
+                "skipped": 0,
+                "failed": [],
+                "message": "没有需要处理的文献（可能已有 recent extraction，尝试 force=true）",
+            }
+
+        created = 0
+        skipped = 0
+        failed = []
+
+        for w in works:
+            work_id = w["id"]
+            content_path = P(w["content_md_path"])
+
+            if not content_path.exists():
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"content.md 不存在: {content_path}"})
+                continue
+
+            try:
+                raw_text = content_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"读取失败: {e}"})
+                continue
+
+            text = raw_text[:INPUT_CHAR_BUDGET]
+            input_tokens = rough_token_count(text)
+
+            user_msg = USER_PROMPT_TEMPLATE.format(text=text)
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ]
+
+            try:
+                resp = llm_judge.chat(messages, timeout=120)
+                raw_response = resp.get("message", {}).get("content", "")
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"LLM 调用失败: {e}"})
+                continue
+
+            extracted = parse_llm_json(raw_response)
+            if not extracted:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": "无法解析 LLM JSON 响应"})
+                continue
+
+            try:
+                extracted, validation_warnings = validate_extraction(extracted)
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"验证失败: {e}"})
+                continue
+
+            confidence = extracted.get("confidence", {})
+            risk = compute_risk(extracted, confidence, validation_warnings, w.get("title"))
+
+            ext_id = f"ME-{_uuid.uuid4().hex[:12]}"
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+            conn.execute("""
+                INSERT INTO metadata_extractions
+                (id, work_id, model_name, content_md_path, input_chars, input_tokens_est,
+                 raw_response, extracted_json, confidence_json, applied,
+                 risk_level, risk_score, risk_reasons, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+            """, (
+                ext_id, work_id, "mimo-v2.5-pro", str(content_path),
+                len(text), input_tokens,
+                raw_response, json.dumps(extracted, ensure_ascii=False),
+                json.dumps(confidence, ensure_ascii=False),
+                risk["risk_level"], risk["risk_score"],
+                json.dumps(risk["risk_reasons"], ensure_ascii=False), now,
+            ))
+            conn.commit()
+            created += 1
+
+        return {
+            "ok": True,
+            "created": created,
+            "skipped": skipped,
+            "failed": failed,
+            "next": {
+                "metadata_review": "/metadata?status=pending",
+            },
+        }
+    finally:
+        conn.close()

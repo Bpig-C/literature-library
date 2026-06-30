@@ -961,3 +961,195 @@ def quarantine_from_classification_review(ext_id: str, body: QuarantineAction):
         return {"ok": True, "work_id": work_id}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Extraction trigger endpoint
+# ---------------------------------------------------------------------------
+
+class ExtractRequest(BaseModel):
+    work_ids: list[str] | None = None
+    force: bool = False
+    limit: int = 5
+
+
+@router.post("/classification/extract")
+def trigger_classification_extraction(body: ExtractRequest):
+    """Thin adapter: trigger classification extraction for specific works or a small batch.
+
+    Reuses scripts.literature_classification_extract nucleus logic.
+    """
+    import sys
+    import uuid as _uuid
+    from pathlib import Path as P
+
+    scripts_dir = str(LIBRARY_ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+
+    from scripts.literature_classification_extract import (
+        get_works_to_process,
+        connect_db,
+        llm_judge,
+        validate_extraction,
+        compute_ambiguity,
+        rough_token_count,
+        INPUT_CHAR_BUDGET,
+        SYSTEM_PROMPT,
+        USER_PROMPT_TEMPLATE,
+        parse_llm_json,
+        VOCAB,
+    )
+
+    conn = connect_db()
+    try:
+        if body.work_ids:
+            works = []
+            for wid in body.work_ids:
+                w = get_works_to_process(conn, limit=None, work_id=wid, force=body.force)
+                works.extend(w)
+        else:
+            works = get_works_to_process(conn, limit=body.limit, work_id=None, force=body.force)
+
+        if not works:
+            return {
+                "ok": True,
+                "created": 0,
+                "skipped": 0,
+                "failed": [],
+                "message": "没有需要处理的文献（可能已有 recent extraction，尝试 force=true）",
+            }
+
+        # Supersede old pending extractions for works about to be re-extracted
+        work_ids_to_extract = [w["id"] for w in works]
+        if work_ids_to_extract:
+            placeholders = ",".join("?" * len(work_ids_to_extract))
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn.execute(
+                f"UPDATE classification_extractions SET "
+                f"review_status = 'rejected', "
+                f"fix_action = 'superseded', "
+                f"review_note = 'superseded by new extraction run', "
+                f"reviewed_at = ? "
+                f"WHERE work_id IN ({placeholders}) AND review_status = 'pending'",
+                [now] + work_ids_to_extract,
+            )
+            conn.commit()
+
+        # Build vocabulary strings for prompt
+        vocab_strs = {
+            "primary_doc_types": ", ".join(VOCAB["primary_doc_type"]),
+            "publication_statuses": ", ".join(VOCAB["publication_status"]),
+            "actor_types": ", ".join(VOCAB["primary_source_actor_type"]),
+            "regions": ", ".join(VOCAB["region"]),
+            "reading_lanes": ", ".join(VOCAB["reading_lane"]),
+            "artifact_focuses": ", ".join(VOCAB["artifact_focus"]),
+            "ingestion_states": ", ".join(VOCAB["ingestion_state"]),
+            "priorities": ", ".join(VOCAB["priority"]),
+            "risk_domains": ", ".join(VOCAB["risk_domain"]),
+            "method_tags_list": ", ".join(VOCAB["method_tags"]),
+        }
+
+        created = 0
+        skipped = 0
+        failed = []
+
+        for w in works:
+            work_id = w["id"]
+            content_path = P(w["content_md_path"])
+
+            if not content_path.exists():
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"content.md 不存在: {content_path}"})
+                continue
+
+            try:
+                raw_text = content_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"读取失败: {e}"})
+                continue
+
+            text = raw_text[:INPUT_CHAR_BUDGET]
+            input_tokens = rough_token_count(text)
+
+            # Build source file names string
+            source_names = ""
+            try:
+                sf_rows = conn.execute(
+                    "SELECT original_name FROM source_files WHERE work_id = ?", (work_id,)
+                ).fetchall()
+                source_names = ", ".join(r["original_name"] for r in sf_rows if r["original_name"])
+            except Exception:
+                pass
+
+            user_msg = USER_PROMPT_TEMPLATE.format(
+                text=text,
+                work_id=work_id,
+                title=w.get("title") or "",
+                doc_type=w.get("doc_type") or "",
+                source_file_names=source_names,
+                arxiv_id=w.get("arxiv_id") or "",
+                doi=w.get("doi") or "",
+                venue=w.get("venue") or "",
+                url=w.get("url") or "",
+                **vocab_strs,
+            )
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ]
+
+            try:
+                resp = llm_judge.chat(messages, timeout=120)
+                raw_response = resp.get("message", {}).get("content", "")
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"LLM 调用失败: {e}"})
+                continue
+
+            extracted = parse_llm_json(raw_response)
+            if not extracted:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": "无法解析 LLM JSON 响应"})
+                continue
+
+            try:
+                extracted, validation_warnings = validate_extraction(extracted)
+            except Exception as e:
+                skipped += 1
+                failed.append({"work_id": work_id, "error": f"验证失败: {e}"})
+                continue
+
+            confidence = extracted.get("confidence", {})
+            amb = compute_ambiguity(extracted, confidence)
+
+            ext_id = f"CE-{_uuid.uuid4().hex[:12]}"
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+            conn.execute("""
+                INSERT INTO classification_extractions
+                (id, work_id, model_name, prompt_version, raw_response,
+                 extracted_json, confidence_json, ambiguity_score, ambiguity_reasons,
+                 review_status, applied, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+            """, (
+                ext_id, work_id, "mimo-v2.5-pro", "v1", raw_response,
+                json.dumps(extracted, ensure_ascii=False),
+                json.dumps(confidence, ensure_ascii=False),
+                amb["score"], json.dumps(amb["reasons"], ensure_ascii=False), now, now,
+            ))
+            conn.commit()
+            created += 1
+
+        return {
+            "ok": True,
+            "created": created,
+            "skipped": skipped,
+            "failed": failed,
+            "next": {
+                "classification_review": "/classification?status=pending",
+            },
+        }
+    finally:
+        conn.close()

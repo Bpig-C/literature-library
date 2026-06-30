@@ -282,6 +282,22 @@ def get_work(work_id: str):
             if tr["evidence"]:
                 tag_evidence[f"{group}:{tr['tag_value']}"] = tr["evidence"]
 
+        # Metadata extraction status (latest)
+        meta_ext = conn.execute(
+            "SELECT id, review_status, applied FROM metadata_extractions "
+            "WHERE work_id = ? ORDER BY created_at DESC LIMIT 1",
+            (work_id,),
+        ).fetchone()
+        metadata_extraction = dict(meta_ext) if meta_ext else None
+
+        # Classification extraction status (latest)
+        cls_ext = conn.execute(
+            "SELECT id, review_status, applied, ambiguity_score FROM classification_extractions "
+            "WHERE work_id = ? ORDER BY created_at DESC LIMIT 1",
+            (work_id,),
+        ).fetchone()
+        classification_extraction = dict(cls_ext) if cls_ext else None
+
         work["source_files"] = sources
         work["archived_source_files"] = archived_sources
         work["relations"] = relations
@@ -291,6 +307,8 @@ def get_work(work_id: str):
         work["classification_tags"] = classification_tags
         work["tag_confidence"] = tag_confidence
         work["tag_evidence"] = tag_evidence
+        work["metadata_extraction"] = metadata_extraction
+        work["classification_extraction"] = classification_extraction
 
         return work
     finally:

@@ -275,3 +275,27 @@ def intake_collect(body: CollectBody):
     except ValueError as e:  # unknown topic 等
         raise HTTPException(400, str(e))
     return result
+
+
+class TopicCreateBody(BaseModel):
+    name: str
+    description: str = ""
+    seed_paper_ids: list[str] | None = None
+    explicit_ids: list[str] | None = None
+    axis_hint: str | None = None
+
+
+@router.post("/intake/topics/create")
+def intake_topics_create(body: TopicCreateBody):
+    """Create a new collection topic. Defaults to seedling/active."""
+    try:
+        ct = topics.create(
+            name=body.name,
+            description=body.description,
+            seed_paper_ids=body.seed_paper_ids,
+            explicit_ids=body.explicit_ids,
+            axis_hint=body.axis_hint,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "topic": ct}
