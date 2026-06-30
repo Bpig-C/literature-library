@@ -311,6 +311,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
 import {
@@ -332,6 +333,8 @@ import {
 } from '../labels'
 
 const message = useMessage()
+const route = useRoute()
+const queryValue = (key, fallback = '') => typeof route.query[key] === 'string' ? route.query[key] : fallback
 
 const STATUSES = [
   { key: 'pending', label: '待审核' },
@@ -377,10 +380,10 @@ const QUARANTINE_REASONS = [
 
 const extractions = ref([])
 const { page, total, totalPages, params: paginationParams, reset } = usePagination({ perPage: 50, mode: 'offset' })
-const statusFilter = ref('pending')
+const statusFilter = ref(queryValue('status', 'pending'))
 const ambFilter = ref(null)
 const priorityFilter = ref('')
-const search = ref('')
+const search = ref(queryValue('search'))
 const includeQuarantined = ref(false)
 const sortKey = ref('created_at')
 const sortDir = ref('desc')

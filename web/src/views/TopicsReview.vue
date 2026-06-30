@@ -13,6 +13,7 @@
             </select>
           </label>
           <button @click="reload">刷新</button>
+          <button @click="showCreateForm = true" class="btn-create">新建主题</button>
         </div>
 
         <div class="topic-list">
@@ -57,8 +58,10 @@
           <tr><th>mapped 标签</th>
             <td>
               <span v-if="selected.mapped_tags" class="tags">
-                <span v-for="(tag, i) in selected.mapped_tags" :key="i" class="tag-chip">
+                <span v-for="(tag, i) in selected.mapped_tags" :key="i"
+                      class="tag-chip" :class="{ 'tag-unknown': !isVocabValue(tag.group, tag.value) }">
                   {{ tag.group }}={{ tag.value }}
+                  <span v-if="!isVocabValue(tag.group, tag.value)" class="tag-warn">?</span>
                 </span>
               </span>
               <span v-else class="muted">—</span>
@@ -71,7 +74,7 @@
             提案为 proposed
           </button>
           <button class="btn-map" :disabled="busy || selected.map_status !== 'proposed'"
-                  @click="doMap">
+                  @click="openMapModal">
             映射为 mapped
           </button>
           <button class="btn-collect" :disabled="busy" @click="doCollect">
@@ -88,6 +91,73 @@
       <div class="detail-panel empty-state" v-else>
         <div class="muted">从左侧选择一个主题查看详情</div>
       </div>
+
+      <!-- 新建主题表单 -->
+      <div v-if="showCreateForm" class="create-modal-overlay" @click.self="showCreateForm = false">
+        <div class="create-modal">
+          <h3>新建采集主题</h3>
+          <div class="form-group">
+            <label>主题名称 *</label>
+            <input v-model="createForm.name" placeholder="如: AI Safety Governance Frameworks" />
+          </div>
+          <div class="form-group">
+            <label>描述</label>
+            <textarea v-model="createForm.description" placeholder="主题描述..." rows="3"></textarea>
+          </div>
+          <div class="form-group">
+            <label>显式 arXiv ID（逗号分隔）</label>
+            <input v-model="createForm.explicit_ids_str" placeholder="2501.00001, 2501.00002" />
+          </div>
+          <div class="form-group">
+            <label>种子文献 ID（逗号分隔）</label>
+            <input v-model="createForm.seed_paper_ids_str" placeholder="W-arxiv-2501.00001" />
+          </div>
+          <div class="form-group">
+            <label>轴归属</label>
+            <input v-model="createForm.axis_hint" placeholder="如: risk_domain" />
+          </div>
+          <div class="form-actions">
+            <button @click="showCreateForm = false" class="btn-cancel">取消</button>
+            <button @click="doCreateTopic" :disabled="!createForm.name || busy" class="btn-submit">创建</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 映射标签 modal -->
+      <div v-if="showMapModal" class="create-modal-overlay" @click.self="showMapModal = false">
+        <div class="create-modal">
+          <h3>映射为 mapped — {{ selected?.name }}</h3>
+          <div class="form-group">
+            <label>标签分组</label>
+            <select v-model="mapForm.group" @change="mapForm.value = ''">
+              <option v-for="g in vocabGroups" :key="g" :value="g">{{ g }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>标签值</label>
+            <select v-model="mapForm.value">
+              <option value="" disabled>请选择…</option>
+              <option v-for="v in vocabValues" :key="v" :value="v">{{ v }}</option>
+            </select>
+          </div>
+          <button class="btn-add-tag" :disabled="!mapForm.value" @click="addMapTag">添加一条映射</button>
+
+          <div v-if="mapTags.length" class="map-tags-list">
+            <div v-for="(tag, i) in mapTags" :key="i" class="map-tag-item">
+              <span class="tag-chip">{{ tag.group }}={{ tag.value }}</span>
+              <button class="btn-remove-tag" @click="removeMapTag(i)">×</button>
+            </div>
+          </div>
+          <div v-else class="muted tiny" style="margin-bottom: 12px;">
+            尚未添加任何映射标签，请从上方选择后点击"添加"
+          </div>
+
+          <div class="form-actions">
+            <button @click="showMapModal = false" class="btn-cancel">取消</button>
+            <button @click="doMap" :disabled="!mapTags.length || busy" class="btn-submit">提交映射</button>
+          </div>
+        </div>
+      </div>
     </div>
 </template>
 
@@ -98,14 +168,86 @@ import {
   transitionTopic,
   collectIntake,
   resolveIntake,
+  createTopic,
+  getVocab,
 } from '../api'
 
 const topics = ref([])
 const selected = ref(null)
 const busy = ref(false)
 const mapFilter = ref('')
+const showCreateForm = ref(false)
+const createForm = ref({
+  name: '',
+  description: '',
+  explicit_ids_str: '',
+  seed_paper_ids_str: '',
+  axis_hint: '',
+})
+const showMapModal = ref(false)
+const vocab = ref(null)
+const mapForm = ref({ group: 'risk_domain', value: '' })
+const mapTags = ref([])
 
 const countByStatus = (s) => topics.value.filter(t => t.map_status === s).length
+
+const vocabGroups = ['risk_domain', 'reading_lane', 'method_tags']
+
+const vocabValues = computed(() => {
+  if (!vocab.value) return []
+  const g = mapForm.value.group
+  const node = vocab.value[g] || vocab.value.groups?.[g]
+  if (Array.isArray(node)) return node
+  if (node && typeof node === 'object') return Object.keys(node)
+  return []
+})
+
+function isVocabValue(group, value) {
+  if (!vocab.value || !Object.keys(vocab.value).length) return true
+  const node = vocab.value[group] || vocab.value.groups?.[group]
+  if (!node) return false
+  if (Array.isArray(node)) return node.includes(value)
+  if (typeof node === 'object') return value in node
+  return false
+}
+
+async function ensureVocabLoaded(showAlert = false) {
+  if (vocab.value && Object.keys(vocab.value).length) return true
+  try {
+    vocab.value = await getVocab()
+    return true
+  } catch (e) {
+    vocab.value = null
+    if (showAlert) {
+      alert('标签词表加载失败，下拉选项将为空：' + e.message)
+    }
+    return false
+  }
+}
+
+async function openMapModal() {
+  if (!selected.value || busy.value) return
+  await ensureVocabLoaded(true)
+  mapTags.value = []
+  mapForm.value = { group: 'risk_domain', value: '' }
+  showMapModal.value = true
+}
+
+function addMapTag() {
+  const g = mapForm.value.group
+  const v = mapForm.value.value
+  if (!g || !v) return
+  if (mapTags.value.some(t => t.group === g && t.value === v)) {
+    alert('该标签已添加，请勿重复')
+    return
+  }
+  mapTags.value.push({ group: g, value: v })
+  mapForm.value.value = ''
+}
+
+function removeMapTag(idx) {
+  mapTags.value.splice(idx, 1)
+}
 
 function resetAndReload() {
   return reload()
@@ -140,19 +282,11 @@ async function doPropose() {
 
 async function doMap() {
   if (!selected.value || busy.value) return
-  const raw = prompt(
-    'mapped_tags：逗号分隔，形如 risk_domain=alignment_fail',
-    'risk_domain=alignment_fail'
-  )
-  if (raw === null) return
-  const tags = raw.split(',').map(s => s.trim()).filter(Boolean).map(kv => {
-    const [group, value] = kv.split('=').map(x => x.trim())
-    return { group: group || 'risk_domain', value: value || kv }
-  })
-  if (!tags.length) { alert('mapped 必须带 mapped_tags'); return }
+  if (!mapTags.value.length) { alert('mapped 必须带 mapped_tags'); return }
   busy.value = true
   try {
-    await transitionTopic(selected.value.id, { to_map_status: 'mapped', mapped_tags: tags })
+    await transitionTopic(selected.value.id, { to_map_status: 'mapped', mapped_tags: mapTags.value })
+    showMapModal.value = false
     await reload()
   } catch (e) {
     alert(e.message)
@@ -189,7 +323,36 @@ async function doResolve() {
   }
 }
 
-onMounted(reload)
+async function doCreateTopic() {
+  if (!createForm.value.name || busy.value) return
+  busy.value = true
+  try {
+    const payload = {
+      name: createForm.value.name,
+      description: createForm.value.description,
+      axis_hint: createForm.value.axis_hint || null,
+    }
+    if (createForm.value.explicit_ids_str) {
+      payload.explicit_ids = createForm.value.explicit_ids_str.split(',').map(s => s.trim()).filter(Boolean)
+    }
+    if (createForm.value.seed_paper_ids_str) {
+      payload.seed_paper_ids = createForm.value.seed_paper_ids_str.split(',').map(s => s.trim()).filter(Boolean)
+    }
+    await createTopic(payload)
+    showCreateForm.value = false
+    createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '' }
+    await reload()
+  } catch (e) {
+    alert(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
+onMounted(() => {
+  reload()
+  ensureVocabLoaded(false)
+})
 </script>
 
 <style scoped>
@@ -228,4 +391,49 @@ table.kv td { padding: 4px 8px; }
 .gate-bar button:disabled { opacity: .5; cursor: not-allowed; }
 .hint { margin-top: 8px; }
 .empty-state { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+
+/* Create topic modal */
+.btn-create { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn-create:hover { opacity: 0.9; }
+.create-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex;
+  align-items: center; justify-content: center; z-index: 1000;
+}
+.create-modal {
+  background: #fff; border-radius: 8px; padding: 24px; width: 460px;
+  max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.create-modal h3 { margin: 0 0 16px; font-size: 16px; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.form-group input, .form-group textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; font-family: inherit;
+}
+.form-group textarea { resize: vertical; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.btn-cancel { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--panel); }
+.btn-submit { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; background: var(--accent); color: #fff; }
+.btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Map tag modal */
+.btn-add-tag {
+  padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent);
+  cursor: pointer; background: var(--accent); color: #fff; font-size: 13px;
+  margin-bottom: 12px;
+}
+.btn-add-tag:disabled { opacity: .5; cursor: not-allowed; }
+.map-tags-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.map-tag-item { display: flex; align-items: center; gap: 4px; }
+.btn-remove-tag {
+  width: 18px; height: 18px; border-radius: 50%; border: none;
+  background: #e74c3c; color: #fff; cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.tag-unknown { background: #fce4ec; color: #c62828; }
+.tag-warn { margin-left: 2px; font-weight: 700; }
+.form-group select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; font-family: inherit; background: var(--panel);
+}
 </style>

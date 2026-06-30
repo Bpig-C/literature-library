@@ -248,6 +248,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
 import { getMetadataExtractions, reviewMetadata, batchApproveLowRisk, quarantineFromReview, contentUrl, pdfUrl } from '../api'
@@ -256,6 +257,8 @@ import ResizeHandle from '../components/ResizeHandle.vue'
 
 const message = useMessage()
 const dialog = useDialog()
+const route = useRoute()
+const queryValue = (key, fallback = '') => typeof route.query[key] === 'string' ? route.query[key] : fallback
 
 const STATUSES = [
   { key: 'pending', label: '待审' },
@@ -300,10 +303,10 @@ const FIELDS = [
   { key: 'abstract', label: '摘要', type: 'textarea' },
 ]
 
-const statusFilter = ref('pending')
+const statusFilter = ref(queryValue('status', 'pending'))
 const riskFilter = ref('all')
 const modelFilter = ref('all')
-const search = ref('')
+const search = ref(queryValue('search'))
 const includeQuarantined = ref(false)
 const sortKey = ref('created_at')
 const sortDir = ref('desc')

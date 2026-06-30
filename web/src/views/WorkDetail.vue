@@ -51,6 +51,38 @@
         </div>
       </div>
 
+      <!-- 工作流程条 -->
+      <div class="workflow-bar">
+        <div class="workflow-step" :class="workflowStepClass('source')">
+          <span class="step-icon">1</span>
+          <span class="step-label">源文件</span>
+          <span class="step-status">{{ sourceStatus }}</span>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step" :class="workflowStepClass('parse')">
+          <span class="step-icon">2</span>
+          <span class="step-label">解析</span>
+          <span class="step-status">{{ parseStatus }}</span>
+          <n-button v-if="canTriggerParse" size="tiny" quaternary :loading="parseLoading" @click="triggerParse">触发</n-button>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step" :class="workflowStepClass('metadata')">
+          <span class="step-icon">3</span>
+          <span class="step-label">元数据</span>
+          <span class="step-status">{{ metadataStatus }}</span>
+          <n-button v-if="canTriggerMetadata" size="tiny" quaternary :loading="metadataLoading" @click="triggerMetadata">抽取</n-button>
+          <router-link v-if="metadataReviewLink" :to="metadataReviewLink" class="step-link">去审核</router-link>
+        </div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step" :class="workflowStepClass('classification')">
+          <span class="step-icon">4</span>
+          <span class="step-label">分类</span>
+          <span class="step-status">{{ classificationStatus }}</span>
+          <n-button v-if="canTriggerClassification" size="tiny" quaternary :loading="classificationLoading" @click="triggerClassification">抽取</n-button>
+          <router-link v-if="classificationReviewLink" :to="classificationReviewLink" class="step-link">去审核</router-link>
+        </div>
+      </div>
+
       <!-- 元数据 -->
       <div class="section">
         <div class="section-header">
@@ -331,7 +363,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag, parseTrigger } from '../api'
+import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag, parseTrigger, triggerMetadataExtraction, triggerClassificationExtraction } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, label } from '../labels'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import PdfPreviewDrawer from '../components/PdfPreviewDrawer.vue'
@@ -375,6 +407,8 @@ const clsForm = ref({})
 const allTags = ref([])
 const showPdf = ref(false)
 const parseLoading = ref(false)
+const metadataLoading = ref(false)
+const classificationLoading = ref(false)
 
 const showQuarantineModal = ref(false)
 const quarantineReason = ref('')
@@ -545,6 +579,92 @@ const hasTagEvidence = computed(() => {
   if (!work.value?.tag_evidence) return false
   return Object.keys(work.value.tag_evidence).length > 0
 })
+
+// Workflow status computed properties
+const sourceStatus = computed(() => {
+  if (!work.value) return '未知'
+  return work.value.source_files?.length ? '已入库' : '无源文件'
+})
+
+const parseStatus = computed(() => {
+  if (!work.value) return '未知'
+  const s = work.value.parse_status
+  if (s === 'succeeded') return '已完成'
+  if (s === 'pending') return '待解析'
+  if (s === 'failed') return '失败'
+  return s || '未知'
+})
+
+const metadataStatus = computed(() => {
+  if (!work.value?.metadata_extraction) return '未抽取'
+  const ext = work.value.metadata_extraction
+  if (ext.review_status === 'approved') return '已审核'
+  if (ext.review_status === 'pending') return '待审核'
+  if (ext.review_status === 'rejected') return '已拒绝'
+  return ext.review_status || '未知'
+})
+
+const classificationStatus = computed(() => {
+  if (!work.value?.classification_extraction) return '未抽取'
+  const ext = work.value.classification_extraction
+  if (ext.review_status === 'approved') return '已审核'
+  if (ext.review_status === 'pending') return '待审核'
+  if (ext.review_status === 'rejected') return '已拒绝'
+  return ext.review_status || '未知'
+})
+
+const canTriggerParse = computed(() => {
+  return work.value && work.value.parse_status !== 'succeeded'
+})
+
+const canTriggerMetadata = computed(() => {
+  if (!work.value) return false
+  if (work.value.parse_status !== 'succeeded') return false
+  const ext = work.value.metadata_extraction
+  return !ext || ext.review_status === 'rejected'
+})
+
+const canTriggerClassification = computed(() => {
+  if (!work.value) return false
+  if (work.value.parse_status !== 'succeeded') return false
+  const ext = work.value.classification_extraction
+  return !ext || ext.review_status === 'rejected'
+})
+
+const metadataReviewLink = computed(() => {
+  if (!work.value?.metadata_extraction) return null
+  const ext = work.value.metadata_extraction
+  if (ext.review_status === 'pending') return `/metadata?search=${encodeURIComponent(work.value.id)}`
+  return null
+})
+
+const classificationReviewLink = computed(() => {
+  if (!work.value?.classification_extraction) return null
+  const ext = work.value.classification_extraction
+  if (ext.review_status === 'pending') return `/classification?search=${encodeURIComponent(work.value.id)}`
+  return null
+})
+
+function workflowStepClass(step) {
+  if (!work.value) return ''
+  switch (step) {
+    case 'source':
+      return work.value.source_files?.length ? 'completed' : 'pending'
+    case 'parse':
+      return work.value.parse_status === 'succeeded' ? 'completed' :
+             work.value.parse_status === 'pending' ? 'in-progress' : 'pending'
+    case 'metadata':
+      if (!work.value.metadata_extraction) return 'pending'
+      return work.value.metadata_extraction.review_status === 'approved' ? 'completed' :
+             work.value.metadata_extraction.review_status === 'pending' ? 'in-progress' : 'pending'
+    case 'classification':
+      if (!work.value.classification_extraction) return 'pending'
+      return work.value.classification_extraction.review_status === 'approved' ? 'completed' :
+             work.value.classification_extraction.review_status === 'pending' ? 'in-progress' : 'pending'
+    default:
+      return ''
+  }
+}
 
 // Date display from publication_date_json
 const dateDisplay = computed(() => {
@@ -788,6 +908,44 @@ async function triggerParse() {
   }
 }
 
+async function triggerMetadata() {
+  metadataLoading.value = true
+  try {
+    const res = await triggerMetadataExtraction({ work_ids: [props.id], force: true })
+    if (res.created > 0) {
+      message.success(`元数据抽取已创建：${res.created} 条`)
+    } else if (res.skipped > 0) {
+      message.warning(`跳过：${res.skipped} 条`)
+    } else {
+      message.info(res.message || '无变化')
+    }
+    await loadWork()
+  } catch (e) {
+    message.error('触发元数据抽取失败：' + e.message)
+  } finally {
+    metadataLoading.value = false
+  }
+}
+
+async function triggerClassification() {
+  classificationLoading.value = true
+  try {
+    const res = await triggerClassificationExtraction({ work_ids: [props.id], force: true })
+    if (res.created > 0) {
+      message.success(`分类抽取已创建：${res.created} 条`)
+    } else if (res.skipped > 0) {
+      message.warning(`跳过：${res.skipped} 条`)
+    } else {
+      message.info(res.message || '无变化')
+    }
+    await loadWork()
+  } catch (e) {
+    message.error('触发分类抽取失败：' + e.message)
+  } finally {
+    classificationLoading.value = false
+  }
+}
+
 async function confirmQuarantine() {
   if (quarantineLoading.value) return
   quarantineLoading.value = true
@@ -947,4 +1105,37 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .reason-option input { margin-top: 2px; }
 .modal-reason label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* Workflow bar */
+.workflow-bar {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  background: #f8fafc; border: 1px solid var(--line); border-radius: 8px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.workflow-step {
+  display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+  border-radius: 6px; font-size: 12px; background: #fff;
+  border: 1px solid var(--line); min-width: 80px;
+}
+.workflow-step.completed {
+  background: #dcfce7; border-color: #86efac; color: #166534;
+}
+.workflow-step.in-progress {
+  background: #dbeafe; border-color: #93c5fd; color: #1e40af;
+}
+.workflow-step.pending {
+  background: #f9fafb; border-color: #e5e7eb; color: #6b7280;
+}
+.step-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; font-size: 10px;
+  font-weight: 600; background: var(--line); color: var(--text);
+}
+.workflow-step.completed .step-icon { background: #22c55e; color: #fff; }
+.workflow-step.in-progress .step-icon { background: #3b82f6; color: #fff; }
+.step-label { font-weight: 600; }
+.step-status { color: var(--muted); font-size: 11px; }
+.step-link { font-size: 11px; color: var(--accent); text-decoration: none; }
+.step-link:hover { text-decoration: underline; }
+.workflow-arrow { color: var(--muted); font-size: 14px; }
 </style>

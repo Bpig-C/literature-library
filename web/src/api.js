@@ -224,6 +224,11 @@ export function collectIntake(body) {
   return request('/intake/collect', { method: 'POST', body: JSON.stringify(body) })
 }
 
+// 创建新主题: POST /intake/topics/create
+export function createTopic(body) {
+  return request('/intake/topics/create', { method: 'POST', body: JSON.stringify(body) })
+}
+
 // ---- Parse (P3.5 document-parser trigger) ----
 export function parseTrigger(payload) {
   return request('/parse/trigger', { method: 'POST', body: JSON.stringify(payload) })
@@ -241,4 +246,13 @@ export function getIngestPlan(params = {}) {
 
 export function executeIngest(body = {}) {
   return request('/ingest/execute', { method: 'POST', body: JSON.stringify(body) })
+}
+
+// ---- Extraction triggers (Phase 1: thin adapters) ----
+export function triggerMetadataExtraction(body = {}) {
+  return request('/metadata/extract', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function triggerClassificationExtraction(body = {}) {
+  return request('/classification/extract', { method: 'POST', body: JSON.stringify(body) })
 }

@@ -122,9 +122,26 @@ async function doExecute() {
   try {
     const res = await executeIngest({ leave_inbox: leaveInbox.value })
     const s = res.summary || {}
-    alert(`摄入完成：${s.ingests ?? 0} 个新文献` +
-      (s.exact_duplicates ? `，跳过 ${s.exact_duplicates} 个精确重复` : '') +
-      (s.skipped ? `，跳过 ${s.skipped} 个错误` : ''))
+    const ingested = s.ingests ?? 0
+    const dups = s.exact_duplicates ?? 0
+    const skipped = s.skipped ?? 0
+
+    let msg = `摄入完成：${ingested} 个新文献`
+    if (dups) msg += `，跳过 ${dups} 个精确重复`
+    if (skipped) msg += `，跳过 ${skipped} 个错误`
+
+    // Show links to newly created works
+    if (res.ingests?.length) {
+      msg += '\n\n新文献：'
+      for (const item of res.ingests.slice(0, 5)) {
+        msg += `\n- ${item.work_id}`
+      }
+      if (res.ingests.length > 5) {
+        msg += `\n... 共 ${res.ingests.length} 篇`
+      }
+    }
+
+    alert(msg)
     await reload()
   } catch (e) {
     alert(e.message)
