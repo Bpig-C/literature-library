@@ -23,6 +23,7 @@ dev = [
 # and prevents parser/tests from being collected — those modules import
 # optional deps (fitz) and error at collection time.
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "live_snapshot: tests that require a real literature.sqlite snapshot (deselect with '-m \"not live_snapshot\"')",
 ]
