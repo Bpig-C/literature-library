@@ -10,6 +10,7 @@ const ClassificationReview = () => import('./views/ClassificationReview.vue')
 const IntakeReview = () => import('./views/IntakeReview.vue')
 const InboxReview = () => import('./views/InboxReview.vue')
 const TopicsReview = () => import('./views/TopicsReview.vue')
+const DiscoveryReview = () => import('./views/DiscoveryReview.vue')
 
 const routes = [
   { path: '/', component: Dashboard },
@@ -22,6 +23,7 @@ const routes = [
   { path: '/intake', component: IntakeReview },
   { path: '/inbox', component: InboxReview },
   { path: '/topics', component: TopicsReview },
+  { path: '/discovery', name: 'discovery', component: DiscoveryReview, meta: { title: '发现检索' } },
 ]
 
 export default createRouter({

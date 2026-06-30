@@ -256,3 +256,50 @@ export function triggerMetadataExtraction(body = {}) {
 export function triggerClassificationExtraction(body = {}) {
   return request('/classification/extract', { method: 'POST', body: JSON.stringify(body) })
 }
+
+// ---- Discovery (V1.1 受约束广泛发现与检索) ----
+export function discoveryPlan(payload) {
+  return request('/discovery/plan', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function discoveryRun(payload) {
+  return request('/discovery/run', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function getDiscoveryRuns(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/discovery/runs${q ? '?' + q : ''}`)
+}
+
+export function getDiscoveryRun(runId) {
+  return request(`/discovery/runs/${encodeURIComponent(runId)}`)
+}
+
+export function getDiscoveryHits(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/discovery/hits${q ? '?' + q : ''}`)
+}
+
+export function postDiscoveryHits(runId, hits) {
+  return request(`/discovery/runs/${encodeURIComponent(runId)}/hits`, {
+    method: 'POST', body: JSON.stringify(hits),
+  })
+}
+
+export function acceptDiscoveryHit(hitId, review_note = '') {
+  return request(`/discovery/hits/${encodeURIComponent(hitId)}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ review_note }),
+  })
+}
+
+export function rejectDiscoveryHit(hitId, review_note = '') {
+  return request(`/discovery/hits/${encodeURIComponent(hitId)}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ review_note }),
+  })
+}
+
+export function batchAcceptDiscoveryHits(hitIds) {
+  return request('/discovery/hits/batch-accept', { method: 'POST', body: JSON.stringify({ hit_ids: hitIds }) })
+}

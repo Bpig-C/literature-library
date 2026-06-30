@@ -19,7 +19,7 @@
         <div class="topic-list">
           <div v-for="t in topics" :key="t.id" class="topic-item"
                :class="{ selected: selected?.id === t.id }"
-               @click="selected = t">
+               @click="selected = t; loadDiscoveryRuns()">
             <div class="topic-title">{{ t.name }}</div>
             <div class="topic-meta">
               <span class="badge" :class="`m-${t.map_status}`">{{ t.map_status }}</span>
@@ -83,6 +83,26 @@
           <button class="btn-resolve" :disabled="busy" @click="doResolve">
             触发 resolve
           </button>
+        </div>
+        <div class="gate-bar">
+          <button class="btn-discovery" :disabled="busy" @click="doDiscoveryPlan">
+            生成检索方案
+          </button>
+          <router-link :to="`/discovery?topic_id=${selected.id}`" class="btn-view-discovery">
+            查看发现结果
+          </router-link>
+        </div>
+        <div v-if="discoveryRuns.length" class="discovery-runs-section">
+          <div class="section-title" @click="showDiscoveryRuns = !showDiscoveryRuns">
+            最近发现检索 {{ showDiscoveryRuns ? '[-]' : '[+]' }}
+          </div>
+          <div v-if="showDiscoveryRuns" class="discovery-runs-list">
+            <div v-for="run in discoveryRuns" :key="run.id" class="discovery-run-item">
+              <span class="run-mode">{{ run.mode }}</span>
+              <span class="run-status" :class="run.status">{{ run.status }}</span>
+              <span class="muted tiny">{{ run.created_at?.slice(0, 16) }}</span>
+            </div>
+          </div>
         </div>
         <div class="muted tiny hint">
           proposed 4 判据：复现性 / 不可折叠 / 轴归属 / 边界可述
@@ -170,6 +190,9 @@ import {
   resolveIntake,
   createTopic,
   getVocab,
+  discoveryPlan,
+  discoveryRun,
+  getDiscoveryRuns,
 } from '../api'
 
 const topics = ref([])
@@ -188,6 +211,8 @@ const showMapModal = ref(false)
 const vocab = ref(null)
 const mapForm = ref({ group: 'risk_domain', value: '' })
 const mapTags = ref([])
+const discoveryRuns = ref([])
+const showDiscoveryRuns = ref(false)
 
 const countByStatus = (s) => topics.value.filter(t => t.map_status === s).length
 
@@ -349,6 +374,37 @@ async function doCreateTopic() {
   }
 }
 
+async function doDiscoveryPlan() {
+  if (!selected.value || busy.value) return
+  busy.value = true
+  try {
+    const plan = await discoveryPlan({ mode: 'topic', topic_id: selected.value.id })
+    const run = await discoveryRun({
+      mode: 'topic',
+      input: { mode: 'topic', topic_id: selected.value.id },
+      plan,
+      executor: 'agent:web-access',
+      topic_id: selected.value.id,
+    })
+    alert(`检索方案已生成并创建 run：${run.run_id}，${(plan.queries || []).length} 条查询`)
+    await loadDiscoveryRuns()
+  } catch (e) {
+    alert(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function loadDiscoveryRuns() {
+  if (!selected.value) return
+  try {
+    const res = await getDiscoveryRuns({ topic_id: selected.value.id, per_page: 5 })
+    discoveryRuns.value = res.runs || []
+  } catch {
+    discoveryRuns.value = []
+  }
+}
+
 onMounted(() => {
   reload()
   ensureVocabLoaded(false)
@@ -436,4 +492,25 @@ table.kv td { padding: 4px 8px; }
   width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
   font-size: 13px; font-family: inherit; background: var(--panel);
 }
+
+/* Discovery buttons */
+.btn-discovery { background: #ede9fe; color: #6d28d9; border-color: #7c3aed; }
+.btn-view-discovery {
+  display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 6px;
+  border: 1px solid var(--accent); color: var(--accent); font-size: 13px;
+  text-decoration: none; cursor: pointer; background: #eef5ff;
+}
+.btn-view-discovery:hover { background: var(--accent); color: #fff; text-decoration: none; }
+
+/* Discovery runs section */
+.discovery-runs-section { margin-top: 12px; }
+.section-title { font-size: 12px; text-transform: uppercase; color: #475467; cursor: pointer; user-select: none; margin-bottom: 6px; }
+.discovery-runs-list { display: flex; flex-direction: column; gap: 4px; }
+.discovery-run-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
+.run-mode { font-weight: 600; color: var(--accent); }
+.run-status { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
+.run-status.planned { background: #fef9c3; color: #92400e; }
+.run-status.running { background: #e0f2fe; color: #0369a1; }
+.run-status.succeeded { background: #dcfce7; color: #15803d; }
+.run-status.failed { background: #fee2e2; color: #991b1b; }
 </style>
