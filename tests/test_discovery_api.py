@@ -864,3 +864,46 @@ def test_backfill_dup_by_doi_marked(_api_client):
     assert r.status_code == 200
     hit = client.get(f"/api/discovery/hits?run_id={run_id}").json()["hits"][0]
     assert hit["verification_status"] == "dup_of_works"
+
+
+# ---------------------------------------------------------------------------
+# P1-1: Topic inheritance from run → hit → intake_candidate
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_topic(_api_client):
+    """Create a collection_topic for testing topic_id inheritance."""
+    client, db_path = _api_client
+    _seed_topic(db_path, topic_id="CT-P1-1", name="P1-1 Test Topic")
+    return {"id": "CT-P1-1", "name": "P1-1 Test Topic"}
+
+
+def test_composite_run_with_topic_inherits_to_candidate(_api_client, sample_topic):
+    """P1-1: run 带 topic_id → hit 继承 → accept 后 intake_candidate 带 collection_topic_id。"""
+    client, db_path = _api_client
+    # 1. 建 run（带 topic_id）
+    run = client.post("/api/discovery/run", json={
+        "mode": "composite",
+        "input": {"mode": "composite"},
+        "plan": {"queries": ["q"]},
+        "executor": "agent:web-access",
+        "topic_id": sample_topic["id"],
+    }).json()
+    assert run["run_id"]
+    # 2. 回填 hit
+    client.post(f"/api/discovery/runs/{run['run_id']}/hits", json=[
+        {"url": "https://arxiv.org/abs/2501.00001", "title": "Inherited Paper", "query": "q"}])
+    hit = client.get(f"/api/discovery/hits?run_id={run['run_id']}").json()["hits"][0]
+    assert hit["collection_topic_id"] == sample_topic["id"]
+    # 3. accept
+    r = client.post(f"/api/discovery/hits/{hit['id']}/accept", json={"review_note": ""})
+    candidate_id = r.json()["candidate_id"]
+    # 4. 直接查 test DB 验证 intake_candidate 带 collection_topic_id
+    conn = _get_test_conn(db_path)
+    cand = conn.execute(
+        "SELECT collection_topic_id FROM intake_candidates WHERE id=?",
+        (candidate_id,),
+    ).fetchone()
+    conn.close()
+    assert cand is not None
+    assert cand["collection_topic_id"] == sample_topic["id"]

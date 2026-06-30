@@ -3,29 +3,100 @@
     <!-- Left: runs list -->
     <div class="runs-panel">
       <h1>发现检索</h1>
-      <div class="mode-selector">
-        <label>检索模式：</label>
-        <select v-model="planMode" :disabled="busy">
-          <option value="topic">topic（按主题）</option>
-          <option value="name">name（按名称）</option>
-          <option value="title">title（按标题）</option>
-          <option value="url">url（按 URL）</option>
-          <option value="doi" disabled>doi — 请走现有 collect</option>
-          <option value="arxiv_id" disabled>arxiv_id — 请走现有 collect</option>
-          <option value="github_url" disabled>github_url — 请走现有 collect</option>
-        </select>
+      <div class="input-mode-toggle">
+        <button class="mode-toggle-btn" :class="{ active: inputMode === 'composite' }" @click="inputMode = 'composite'">复合表单</button>
+        <button class="mode-toggle-btn" :class="{ active: inputMode === 'quick' }" @click="inputMode = 'quick'">快速模式</button>
       </div>
-      <div class="plan-input">
-        <input v-if="planMode === 'topic'" v-model="planInput" placeholder="topic_id" />
-        <input v-else-if="planMode === 'name'" v-model="planInput" placeholder="作者或机构名称" />
-        <input v-else-if="planMode === 'title'" v-model="planInput" placeholder="论文标题关键词" />
-        <input v-else-if="planMode === 'url'" v-model="planInput" placeholder="目标 URL" />
-        <button class="btn-plan" :disabled="busy || !planInput.trim()" @click="doPlan">
+
+      <!-- Composite Form (default) -->
+      <div v-if="inputMode === 'composite'" class="composite-form">
+        <div class="form-row">
+          <label class="form-label">关联主题（可选）</label>
+          <select v-model="composite.topic_id" class="form-select">
+            <option value="">不关联主题</option>
+            <option v-for="t in topics" :key="t.id" :value="t.id">
+              {{ t.name }}（{{ t.map_status }}）
+            </option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Names / Known Names</label>
+          <textarea v-model="composite.names" placeholder="作者或机构名称，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Titles / Known Titles</label>
+          <textarea v-model="composite.titles" placeholder="论文标题关键词或已知标题，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Authors</label>
+          <textarea v-model="composite.authors" placeholder="作者姓名，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Institutions</label>
+          <textarea v-model="composite.institutions" placeholder="机构名称，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Keywords</label>
+          <textarea v-model="composite.keywords" placeholder="检索关键词，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Known URLs</label>
+          <textarea v-model="composite.known_urls" placeholder="已知 URL，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Preferred Domains</label>
+          <textarea v-model="composite.preferred_domains" placeholder="优先域名，每行一个，如 arxiv.org (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Exclude Terms</label>
+          <textarea v-model="composite.exclude_terms" placeholder="排除词，每行一个 (可选)" class="form-textarea"></textarea>
+        </div>
+        <div class="form-row form-row-inline">
+          <label class="form-label">Artifact Type Hint</label>
+          <select v-model="composite.artifact_type_hint" class="form-select">
+            <option value="">unknown</option>
+            <option value="system_card">system_card</option>
+            <option value="model_card">model_card</option>
+            <option value="technical_report">technical_report</option>
+            <option value="research_article">research_article</option>
+          </select>
+        </div>
+        <div class="form-row form-row-inline">
+          <label class="form-label">Max Results</label>
+          <input type="number" v-model.number="composite.max_results" min="1" max="100" class="form-input form-input-xs" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Freeform Note / Research Context</label>
+          <textarea v-model="composite.freeform_note" placeholder="自由备注、研究背景或其他上下文信息 (可选)" class="form-textarea form-textarea-lg"></textarea>
+        </div>
+        <button class="btn-plan btn-plan-composite" :disabled="busy || !hasCompositeInput" @click="doCompositePlan">
           生成方案
         </button>
       </div>
-      <div class="unsupported-hint">
-        <span class="muted tiny">V1.1 暂不支持 DOI / arXiv ID / GitHub URL 发现，请使用现有采集流程。</span>
+
+      <!-- Quick Mode (legacy) -->
+      <div v-else class="quick-form">
+        <div class="mode-selector">
+          <label>检索模式：</label>
+          <select v-model="planMode" :disabled="busy">
+            <option value="topic">topic（按主题）</option>
+            <option value="name">name（按名称）</option>
+            <option value="title">title（按标题）</option>
+            <option value="url">url（按 URL）</option>
+            <option value="doi" disabled>doi — 请走现有 collect</option>
+            <option value="arxiv_id" disabled>arxiv_id — 请走现有 collect</option>
+            <option value="github_url" disabled>github_url — 请走现有 collect</option>
+          </select>
+        </div>
+        <div class="plan-input">
+          <input v-if="planMode === 'topic'" v-model="planInput" placeholder="topic_id" />
+          <input v-else-if="planMode === 'name'" v-model="planInput" placeholder="作者或机构名称" />
+          <input v-else-if="planMode === 'title'" v-model="planInput" placeholder="论文标题关键词" />
+          <input v-else-if="planMode === 'url'" v-model="planInput" placeholder="目标 URL" />
+          <button class="btn-plan" :disabled="busy || !planInput.trim()" @click="doPlan">
+            生成方案
+          </button>
+        </div>
       </div>
 
       <div class="runs-header">
@@ -41,6 +112,7 @@
           :class="{ selected: selectedRun?.id === run.id }"
           @click="selectRun(run)">
           <div class="run-title">{{ run.mode }}: {{ runSummary(run).slice(0, 40) || '—' }}</div>
+          <div class="run-id">{{ run.id }}</div>
           <div class="run-meta">
             <span class="run-status-badge" :class="run.status">{{ run.status }}</span>
             <span class="muted tiny">{{ run.created_at?.slice(0, 16) }}</span>
@@ -55,9 +127,19 @@
       <div class="hits-header">
         <h2 v-if="selectedRun">Hits — {{ selectedRun.mode }}: {{ runSummary(selectedRun).slice(0, 30) }}</h2>
         <h2 v-else>命中列表</h2>
-        <button v-if="selectedRun" class="btn-run-action" :disabled="busy" @click="loadHits">
-          刷新命中
-        </button>
+        <div v-if="selectedRun" class="run-actions">
+          <button class="btn-run-action secondary" :disabled="busy" @click="copyRunPrompt">
+            复制 agent 指令
+          </button>
+          <button class="btn-run-action" :disabled="busy" @click="loadHits">
+            刷新命中
+          </button>
+        </div>
+      </div>
+      <div v-if="selectedRun" class="selected-run-info">
+        <span class="muted tiny">run id</span>
+        <code>{{ selectedRun.id }}</code>
+        <span class="run-status-badge" :class="selectedRun.status">{{ selectedRun.status }}</span>
       </div>
       <div class="hit-status-filter">
         <button v-for="s in HIT_STATUSES" :key="s.key" class="status-btn" :class="{ active: hitStatusFilter === s.key }"
@@ -144,11 +226,13 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   discoveryPlan,
+  discoveryCompositePlan,
   discoveryRun,
   getDiscoveryRuns,
   getDiscoveryHits,
   acceptDiscoveryHit,
   rejectDiscoveryHit,
+  getIntakeTopics,
 } from '../api'
 
 const route = useRoute()
@@ -169,8 +253,23 @@ const HIT_STATUSES = [
 ]
 
 const busy = ref(false)
+const inputMode = ref('composite')  // 'composite' or 'quick'
 const planMode = ref('topic')
 const planInput = ref('')
+const composite = ref({
+  topic_id: '',
+  names: '',
+  titles: '',
+  authors: '',
+  institutions: '',
+  keywords: '',
+  known_urls: '',
+  preferred_domains: '',
+  exclude_terms: '',
+  artifact_type_hint: '',
+  max_results: 20,
+  freeform_note: '',
+})
 const runs = ref([])
 const runStatusFilter = ref('')
 const selectedRun = ref(null)
@@ -179,6 +278,7 @@ const hitStatusFilter = ref('pending')
 const selectedHit = ref(null)
 const reviewNote = ref('')
 const showRawMeta = ref(false)
+const topics = ref([])
 const hitsPage = ref(1)
 const hitsTotal = ref(0)
 const hitsPerPage = 20
@@ -201,10 +301,70 @@ function confidenceLabel(c) {
   return c || '—'
 }
 
+async function loadTopics() {
+  try {
+    const data = await getIntakeTopics({ per_page: 200 })
+    topics.value = data.topics || data || []
+  } catch (e) { topics.value = [] }
+}
+
 function runSummary(run) {
   const input = run?.input_json || {}
   const plan = run?.search_plan_json || {}
   return input.name || input.title || input.known_url || input.url || input.topic_id || (plan.queries || []).join(', ') || run?.id || ''
+}
+
+function hasCompositeInput() {
+  const c = composite.value
+  return !!(c.topic_id?.trim() ||
+    c.names?.trim() ||
+    c.titles?.trim() ||
+    c.authors?.trim() ||
+    c.institutions?.trim() ||
+    c.keywords?.trim() ||
+    c.known_urls?.trim() ||
+    c.preferred_domains?.trim() ||
+    c.exclude_terms?.trim() ||
+    c.freeform_note?.trim())
+}
+
+async function doCompositePlan() {
+  if (!hasCompositeInput() || busy.value) return
+  busy.value = true
+  try {
+    const c = composite.value
+    const payload = {}
+    if (c.topic_id?.trim()) payload.topic_id = c.topic_id.trim()
+    if (c.names?.trim()) payload.names = c.names.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.titles?.trim()) payload.titles = c.titles.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.authors?.trim()) payload.authors = c.authors.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.institutions?.trim()) payload.institutions = c.institutions.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.keywords?.trim()) payload.keywords = c.keywords.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.known_urls?.trim()) payload.known_urls = c.known_urls.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.preferred_domains?.trim()) payload.preferred_domains = c.preferred_domains.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.exclude_terms?.trim()) payload.exclude_terms = c.exclude_terms.trim().split('\n').map(s => s.trim()).filter(Boolean)
+    if (c.artifact_type_hint) payload.artifact_type_hint = c.artifact_type_hint
+    if (c.max_results && c.max_results !== 20) payload.max_results = c.max_results
+    if (c.freeform_note?.trim()) payload.freeform_note = c.freeform_note.trim()
+
+    // Build input signals for the run
+    const inputSignals = { ...payload, mode: 'composite' }
+
+    const plan = await discoveryCompositePlan(payload)
+    const run = await discoveryRun({
+      mode: 'composite',
+      input: inputSignals,
+      plan,
+      executor: 'agent:web-access',
+      topic_id: payload.topic_id || undefined,
+    })
+    alert(`复合方案已生成并创建 run：${run.run_id}，${(plan.queries || []).length} 条查询`)
+    await loadRuns()
+  } catch (e) {
+    alert(e.message)
+  } finally {
+    busy.value = false
+  }
 }
 
 async function doPlan() {
@@ -283,6 +443,56 @@ function selectHit(hit) {
   showRawMeta.value = false
 }
 
+function buildRunPrompt(run) {
+  const plan = run.search_plan_json || {}
+  const inputSignals = plan.input_signals || run.input_json || {}
+  const isComposite = plan.mode === 'composite'
+
+  return `你是 literature_library 的 discovery-search agent。
+工作目录：D:\\02_academic\\doctoral\\literature_library
+必须先读取并遵循：docs/discovery-agent-protocol.md
+
+任务：
+1. 获取 discovery run：run_id=${run.id}
+2. 读取 run.search_plan_json，理解完整的检索策略和输入信号
+${plan.reasoning ? `3. 策略背景：${plan.reasoning}` : ''}
+4. 严格按照 plan 中的 queries、source_hints、preferred_domains、exclude_terms、max_results 执行检索
+5. 每条命中必须包含 url 或 title；优先提供 url
+6. 每条命中输出 title、url、source_type、snippet、reason、confidence、query、primary_source、content_type、verification_status
+7. 【强制】必须加载 web-access skill 并严格遵循其指引执行检索；不得绕过 skill 自行探索
+8. 通过 POST /api/discovery/runs/${run.id}/hits 回填 JSON 数组
+9. 回填后立即停止。禁止 accept、promote、写 works、改 ontology vocab、下载 PDF 或摄入任何文件
+
+质量约束：
+- 优先官方域名、机构发布页、项目主页、PDF/HTML 原文页
+- 不登录，不绕过访问控制，不编造 URL
+- 无法确认的结果 confidence=low，并说明原因
+- 已知 URLs 应直接验证而不是重新搜索
+
+错误处理与噪声控制：
+- 如果部分查询有结果但整体信号弱：只回填有明确来源匹配的 hit（至少 2 个独立信号匹配才标记 medium 以上 confidence）
+- 如果所有查询均无结果或噪声极高：回填空数组并在 reason 中解释失败原因（如"关键词过于宽泛"、"领域内无公开资料"）
+- 如果 web-access skill 不可用：立即停止，在回填中报告错误——不得降级为编造 URL
+- 回填后校验：确认没有 hit 的 title/url 包含任何 exclude_term；如有则移除该 hit
+${isComposite ? `
+Composite 模式特殊要求：
+- 综合利用 names/titles/authors/institutions/keywords 多种信号设计组合查询
+- 利用 preferred_domains 和 exclude_terms 缩小搜索范围
+- 在每条 hit 的 reasoning 中记录匹配了哪些输入信号
+- 对于 known_urls 仅作为 source hint 验证，不自动创建 hit` : ''}`
+}
+
+async function copyRunPrompt() {
+  if (!selectedRun.value) return
+  const text = buildRunPrompt(selectedRun.value)
+  try {
+    await navigator.clipboard.writeText(text)
+    alert(`已复制 agent 指令：${selectedRun.value.id}`)
+  } catch {
+    window.prompt('复制以下 agent 指令', text)
+  }
+}
+
 async function doAccept() {
   if (!selectedHit.value || busy.value) return
   busy.value = true
@@ -315,6 +525,7 @@ onMounted(() => {
   const topicId = route.query.topic_id
   if (topicId) planInput.value = topicId
   loadRuns()
+  loadTopics()
 })
 </script>
 
@@ -327,7 +538,45 @@ onMounted(() => {
 h1 { font-size: 18px; margin-bottom: 12px; }
 h2 { font-size: 15px; margin-bottom: 8px; }
 
-/* Mode selector */
+/* Mode toggle */
+.input-mode-toggle { display: flex; gap: 4px; margin-bottom: 10px; }
+.mode-toggle-btn {
+  flex: 1; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel); cursor: pointer; font-size: 12px; transition: all .15s;
+}
+.mode-toggle-btn:hover { border-color: var(--accent); }
+.mode-toggle-btn.active { font-weight: 600; border-color: var(--accent); background: #eef5ff; color: var(--accent); }
+
+/* Composite form */
+.composite-form { margin-bottom: 10px; }
+.form-row { margin-bottom: 8px; }
+.form-row-inline { display: flex; align-items: center; gap: 8px; }
+.form-label {
+  display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px;
+  font-weight: 500;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%; border: 1px solid var(--line); border-radius: 4px;
+  font-size: 13px; font-family: inherit; background: var(--panel);
+  padding: 6px 8px; box-sizing: border-box;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none; border-color: var(--accent);
+}
+.form-input-sm { height: 32px; }
+.form-input-xs { width: 80px; height: 32px; }
+.form-textarea { min-height: 80px; max-height: 120px; resize: vertical; }
+.form-textarea-lg { min-height: 100px; max-height: 150px; }
+.form-select { height: 32px; }
+.btn-plan-composite {
+  width: 100%; margin-top: 8px; padding: 8px 16px; border: 1px solid #7c3aed;
+  border-radius: 4px; background: #ede9fe; color: #6d28d9; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+}
+.btn-plan-composite:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Quick form (legacy) */
+.quick-form { margin-bottom: 10px; }
 .mode-selector { margin-bottom: 8px; }
 .mode-selector label { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: block; }
 .mode-selector select, .plan-input input {
@@ -365,6 +614,7 @@ h2 { font-size: 15px; margin-bottom: 8px; }
 .run-item:hover { background: var(--bg); }
 .run-item.selected { background: #eef5ff; border-color: var(--accent); }
 .run-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-id { margin-top: 2px; font-size: 11px; font-family: Consolas, monospace; color: #475467; }
 .run-meta { display: flex; gap: 6px; align-items: center; margin-top: 2px; }
 .run-status-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
 .run-status-badge.planned { background: #fef9c3; color: #92400e; }
@@ -374,11 +624,18 @@ h2 { font-size: 15px; margin-bottom: 8px; }
 
 /* Hits panel */
 .hits-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.run-actions { display: flex; gap: 6px; align-items: center; }
 .btn-run-action {
   padding: 4px 10px; border: 1px solid var(--accent); border-radius: 4px;
   background: var(--accent); color: #fff; cursor: pointer; font-size: 12px;
 }
+.btn-run-action.secondary { background: #fff; color: var(--accent); }
 .btn-run-action:disabled { opacity: 0.5; cursor: not-allowed; }
+.selected-run-info {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 8px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 12px;
+}
+.selected-run-info code { font-family: Consolas, monospace; color: #111827; }
 
 /* Hits list */
 .hits-list { display: flex; flex-direction: column; gap: 4px; }
