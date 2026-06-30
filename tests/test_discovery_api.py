@@ -846,8 +846,8 @@ def test_backfill_dup_by_doi_marked(_api_client):
         )
     """)
     conn.execute(
-        "INSERT OR REPLACE INTO works (id, title, arxiv_id, doi) VALUES (?, ?, ?, ?)",
-        ("W-2", "DOI Paper", None, "10.1234/example"),
+        "INSERT OR REPLACE INTO works (id, title, arxiv_id, doi, read_status) VALUES (?, ?, ?, ?, ?)",
+        ("W-2", "DOI Paper", None, "10.1234/example", "active"),
     )
     conn.commit()
     conn.close()

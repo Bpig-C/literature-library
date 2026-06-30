@@ -650,6 +650,8 @@ def batch_insert_hits(
                 primary_source=h.get("primary_source", "unknown"),
                 content_type=h.get("content_type", "unknown"),
                 verification_status=h.get("verification_status", "unverified"),
+                doi=h.get("doi", ""),
+                arxiv_id=h.get("arxiv_id", ""),
             )
             results.append(r)
         except (ValueError, KeyError) as e:

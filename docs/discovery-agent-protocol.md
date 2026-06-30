@@ -355,6 +355,8 @@ Content-Type: application/json
 |------|------|------|------|
 | `url` | string | url/title 至少一个 | 资源 URL；agent 回填时强烈建议提供 |
 | `title` | string | url/title 至少一个 | 资源标题 |
+| `doi` | string | 否 | DOI 标识符（如 `10.1234/example`）；强烈建议在已知时填写，可提升去重准确率 |
+| `arxiv_id` | string | 否 | arXiv ID（如 `2501.12345`）；强烈建议在已知时填写，可提升去重准确率 |
 | `source_type` | string | 否 | 来源类型：`web`, `official_domain`, `manual_url`, `openalex`, `crossref`, `semantic_scholar` |
 | `snippet` | string | 否 | 摘要或上下文片段 |
 | `artifact_type_hint` | string | 否 | 产物类型提示：`system_card`, `model_card`, `technical_report`, `research_article`, `unknown` |
@@ -363,7 +365,7 @@ Content-Type: application/json
 | `query` | string | 否 | 触发此结果的搜索查询 |
 | `primary_source` | string | 否 | 是否 primary source：`true`, `false`, `unknown` |
 | `content_type` | string | 否 | 内容类型：`html`, `pdf`, `metadata`, `repo`, `model_card`, `unknown` |
-| `verification_status` | string | 否 | 验证状态：`unverified`, `url_verified`, `content_checked`, `failed` |
+| `verification_status` | string | 否 | 验证状态：`unverified`, `url_verified`, `content_checked`, `failed`, `dup_of_works` |
 
 ## 必填验证
 
@@ -375,9 +377,19 @@ Content-Type: application/json
 
 - 同一 `run_id` + `dedup_key` 不重复创建。
 - `dedup_key` 生成规则（优先级从高到低）：
+  - `arxiv:{arxiv_id}`，如果提供了 arxiv_id。
+  - `doi:{doi}`，如果提供了 doi。
   - `url:{canonical_url}`，如果有 URL。
   - `title:{lowercase_stripped_title}`，如果只有 title。
 - 重复写入返回已存在的 hit 行，不报错。
+
+### Works 表去重（dup_of_works）
+
+回填命中时，后端会自动通过 `light_gate` 元数据查重检查该 hit 是否已在 `works` 表中存在（通过 arxiv_id / doi 强键匹配，或 title 高度相似 Jaccard>=0.9）。若匹配，`verification_status` 会自动设为 `dup_of_works`，并把 `dup_of_work_id` 写入 `raw_json`。
+
+**这不会阻止 hit 插入**——hit 仍然会成功创建（status=created），agent 需要知道这个事实。用户在前端审核时应跳过或降级标记为 `dup_of_works` 的 hit，不再重点推荐。
+
+建议 agent 在回填时尽量提供 `doi` 和 `arxiv_id`（即使标题已知），以提升去重准确率。任何查重异常都会静默降级为 `unverified`（不抛异常）。
 
 ## Agent 返回格式
 
