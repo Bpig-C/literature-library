@@ -8,35 +8,42 @@
           {{ collapsed ? '»' : '«' }}
         </button>
       </div>
+      <!-- 顶层 -->
       <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
         <span class="nav-icon">📊</span><span class="nav-text">总览</span>
       </router-link>
       <router-link to="/works" class="nav-item" :class="{ active: $route.path.startsWith('/works') }">
         <span class="nav-icon">📚</span><span class="nav-text">文献</span>
       </router-link>
-      <router-link to="/duplicates" class="nav-item" :class="{ active: $route.path === '/duplicates' }">
-        <span class="nav-icon">🔍</span><span class="nav-text">去重</span>
-      </router-link>
-      <router-link to="/relations" class="nav-item" :class="{ active: $route.path === '/relations' }">
-        <span class="nav-icon">🔗</span><span class="nav-text">关系</span>
-      </router-link>
-      <router-link to="/metadata" class="nav-item" :class="{ active: $route.path === '/metadata' }">
-        <span class="nav-icon">🏷️</span><span class="nav-text">元数据</span>
-      </router-link>
-      <router-link to="/classification" class="nav-item" :class="{ active: $route.path === '/classification' }">
-        <span class="nav-icon">📋</span><span class="nav-text">分类审核</span>
-      </router-link>
-      <router-link to="/intake" class="nav-item" :class="{ active: $route.path === '/intake' }">
-        <span class="nav-icon">📥</span><span class="nav-text">采集审核</span>
-      </router-link>
-      <router-link to="/inbox" class="nav-item" :class="{ active: $route.path === '/inbox' }">
-        <span class="nav-icon">📂</span><span class="nav-text">收件箱摄入</span>
-      </router-link>
+
+      <!-- 流程 -->
+      <li class="nav-group">流程</li>
       <router-link to="/topics" class="nav-item" :class="{ active: $route.path === '/topics' }">
         <span class="nav-icon">🗂️</span><span class="nav-text">主题闸门</span>
       </router-link>
       <router-link to="/discovery" class="nav-item" :class="{ active: $route.path === '/discovery' }">
         <span class="nav-icon">🔎</span><span class="nav-text">发现检索</span>
+      </router-link>
+      <router-link to="/inbox" class="nav-item" :class="{ active: $route.path === '/inbox' }">
+        <span class="nav-icon">📂</span><span class="nav-text">收件箱摄入</span>
+      </router-link>
+      <router-link to="/intake" class="nav-item" :class="{ active: $route.path === '/intake' }">
+        <span class="nav-icon">📥</span><span class="nav-text">采集审核</span>
+      </router-link>
+      <router-link to="/classification" class="nav-item" :class="{ active: $route.path === '/classification' }">
+        <span class="nav-icon">📋</span><span class="nav-text">分类审核</span>
+      </router-link>
+      <router-link to="/metadata" class="nav-item" :class="{ active: $route.path === '/metadata' }">
+        <span class="nav-icon">🏷️</span><span class="nav-text">元数据</span>
+      </router-link>
+
+      <!-- 库内 -->
+      <li class="nav-group">库内</li>
+      <router-link to="/duplicates" class="nav-item" :class="{ active: $route.path === '/duplicates' }">
+        <span class="nav-icon">🔍</span><span class="nav-text">去重</span>
+      </router-link>
+      <router-link to="/relations" class="nav-item" :class="{ active: $route.path === '/relations' }">
+        <span class="nav-icon">🔗</span><span class="nav-text">关系</span>
       </router-link>
     </nav>
     <main class="content">
@@ -162,6 +169,20 @@ a:hover { text-decoration: underline; }
 }
 .nav-icon { font-size: 16px; flex-shrink: 0; }
 .collapsed .nav-text { display: none; }
+.nav-group {
+  list-style: none;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 16px 16px 4px;
+  margin: 0;
+}
+.collapsed .nav-group {
+  text-align: center;
+  padding: 16px 0 4px;
+  font-size: 10px;
+}
 .content {
   padding: 20px 24px;
   min-width: 0;
