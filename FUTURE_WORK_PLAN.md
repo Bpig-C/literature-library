@@ -2,7 +2,7 @@
 
 > 状态：当前路线图
 > 更新时间：2026-06-30
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程已完成。最近复核：`pytest tests\ -q` 通过，`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。V1 详见 `docs/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程详见 `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`。
+> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成。最近复核：`pytest tests\ -q` 通过，`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。V1 详见 `docs/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程详见 `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索执行协议见 `docs/discovery-agent-protocol.md`。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；分阶段细节保留在 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 
@@ -38,19 +38,35 @@
 - `docs/superpowers/reviews/*.md`：阶段完成后的审核、整改和验收结果。
 - `docs/PROJECT_HISTORY.md`：已完成阶段的汇总入口。
 
-## 当前近期重点
+## 当前近期重点（最高优先级）
 
-V1.1 前端端到端主流程已经完成并迁移到历史记录。后续路线图不再把“前端发现/投递 -> 入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 审核”作为待办项维护；相关证据见：
+**🔴 V1.3 知识闭环：主题·发现·收件箱关联性改造**
 
-- `docs/superpowers/plans/2026-06-30-v1.1-frontend-end-to-end-flow.md`
-- `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`
-- `docs/PROJECT_HISTORY.md`
+这是当前最紧迫的方向。V1.2 Composite Discovery 已解决"发现检索输入太弱"的问题，但三个核心模块——主题闸门、发现检索、收件箱——仍然各自独立工作，缺乏关联性，无法形成持续迭代的知识闭环。
 
-当前新的高优先级缺口是：用户在主题页填写主题/检索词之后，系统仍缺少受约束的广泛发现与检索方案能力，尤其无法自然覆盖模型卡、系统卡、机构技术报告、官网报告页等没有 arXiv ID 或弱引用关系的材料。
+完整实施计划见：`docs/superpowers/plans/2026-06-30-v1.3-knowledge-loop.md`
 
-## 长期维护型知识资产
+**四阶段概要**：
 
-这些内容可以独立于系统功能长期存在，并会随着阅读、抽取和领域理解持续演化。它们不应被当作一次性开发任务处理。
+| 阶段 | 内容 | 优先级 | 状态 |
+|:----:|------|:------:|:----:|
+| P0 | 运行状态 Bug 修复 + agent 回填即时查重 | 🔴 必须立即做 | ✅ 已完成 |
+| P1 | 发现检索关联主题 + 主题可选分类标签(含自定义) + 主题线索字段扩展 | 🟠 高优先级 | 📋 计划中 |
+| P2 | 前端侧边栏布局重排 + 按钮语义优化 | 🟡 中优先级 | 📋 计划中 |
+| P3 | 定时重新执行 + 元数据反哺主题 + 持续迭代闭环 | ⚪ 远期 | 📋 计划中 |
+
+**为什么这个最优先**：
+1. P0 是确认的 bug（运行状态不更新），不修影响所有后续使用
+2. P1 打通三模块关联后，P1-2 和 P1-3 直接为"B. 分类规范与审核模板"和"C. 采集与检索模板"铺路
+3. 不做这个改造，后续的定时采集、自动执行器等高级功能都缺少数据基础
+
+**其他方向暂缓推进，直到 V1.3 P0-P1 落地并稳定。**
+
+---
+
+## 次优先方向
+
+以下方向在 V1.3 P0-P1 完成后继续有价值，但不应早于上述最高优先级。
 
 ### A. 元数据抽取模板
 
@@ -96,50 +112,43 @@ V1.1 前端端到端主流程已经完成并迁移到历史记录。后续路线
 
 当前状态：
 
-- 采集目前主要复用分类/主题体系进行候选发现和闸门判断。
-- V1 更重视人工闸门、小批量验证和去重安全，而不是大规模自动抓取。
-- 当前按主题采集主要读取 `query_def.explicit_ids` / `seed_paper_ids`，不把主题名直接当作开放搜索词，因此对模型卡、系统卡、机构技术报告、官网报告页、弱引用关系材料覆盖不足。
+- V1.1 已具备受约束发现检索地基：`topic` / `name` / `title` / `url` 可生成 discovery run，agent 按 `docs/discovery-agent-protocol.md` 回填 hits，人工接受后只进入 intake candidate。
+- **[V1.2 已完成] Composite 多信号组合输入**：新增 `composite` 模式，允许同时提供 names、titles、authors、institutions、keywords、known_urls、preferred_domains、exclude_terms、artifact_type_hint、max_results、freeform_note 等多种信号。agent 根据多种线索综合生成更优的搜索策略（含 search_strategy、dedup_guidance、reasoning 字段），解决单一模式输入对 agent 过于弱的问题。详见 `docs/discovery-agent-protocol.md` 的 "Composite Input Schema" 章节。
+- 采集仍坚持人工闸门、小批量验证和去重安全，不做无约束大规模自动抓取。
+- 当前 discovery 主要解决"从主题/名称/标题/URL/组合信号 找到可审核候选"的第一步，后续模板应继续沉淀来源质量反馈、失败模式和可复用检索策略。
 
 后续方向：
 
-- 将用户填写的主题名、描述、轴归属和种子材料转换为可审核的检索词与检索方案；主题既是用户输入入口，也是后端/agent 起草检索计划的上下文。
-- 增加按机构、作者、关键词、主题词、项目/仓库线索、模型/系统卡名称、官方发布页、技术报告标题的检索策略。
-- 检索来源不应只依赖固定 URL allowlist。第一版应同时覆盖：
-  - 通用 Web 搜索，用于发现未知官网、发布页、PDF、模型卡和系统卡；
-  - 官方/机构域名搜索，用于提高可信度和降低噪声；
-  - GitHub / Hugging Face / OpenAlex / Crossref / Semantic Scholar 等结构化来源，用于能结构化查询的场景；
-  - 用户显式给定 URL / DOI / arXiv / GitHub / 官网入口，用于可控补充。
-- 设计上应支持两种执行方式：后端 Python/CLI 读取主题并生成检索任务；或由 agent 调用 web-access 等检索能力，形成候选结果后再写回系统。
-- 在自动执行前，可先引入“检索方案起草”步骤：由 agent 或本地模型根据主题生成 query、目标来源、URL/domain 线索、排除词、候选上限和判断准则，用户确认后再跑。
-- 建立“广泛发现 -> 轻闸门 -> 重闸门 -> intake 审核 -> ingest”的可解释流程。
+- 从 accepted/rejected discovery hits 中沉淀可复用的来源质量规则、领域 query 模板、排除词和可信域名线索。
+- 补强结构化来源适配：OpenAlex / Crossref / Semantic Scholar / GitHub / Hugging Face 等可作为后续 adapter，而不是让 agent 临场自由探索。
+- 建立 discovery run 的失败复盘机制：无结果、噪声高、重复高、低可信来源、title-only 命中等应能回写为模板改进项。
+- 将"广泛发现 -> hit 审核 -> intake 审核 -> ingest"的经验整理为长期采集与检索模板。
 - 将低质量来源、重复来源、坏 PDF、需要好副本等反馈写回采集策略。
 
-优先级：高。它直接决定普通用户能否从“填写主题/检索词”走到真实候选，尤其补足模型卡、系统卡、技术报告等不适合 arXiv ID 或引用图发现的材料。实施方案需要单独打磨，不应草率做成无限制关键词抓取。
+优先级：高。V1.1 已完成第一版受约束发现检索；V1.2 已实现 composite 多信号组合模式；后续价值在于把一次次人工审核经验固化为稳定模板和 adapter，而不是扩大成无边界抓取。
 
 ## V1.1 优先队列
 
-### 1. 受约束广泛发现与检索方案 V1.1
+### 1. Discovery 本地模型自动执行器
 
-这是当前采集链路最需要补齐的能力之一：用户在 TopicsReview 里填写主题/检索词后，系统应能帮助形成可执行、可审核的检索方案，并把发现结果送回候选池，而不是要求用户必须先知道 arXiv ID 或种子文献。
+当前 V1.1 discovery 的实际执行方式是：前端创建 planned run，用户复制 agent 指令，再交给本地模型/Codex/opencode 执行检索并回填 hits。这个流程可用且边界清晰，但还不是“一键生成方案后自动执行”。
 
-具体实施方案见：`docs/superpowers/plans/2026-06-30-v1.1-constrained-discovery.md`。
+后续可单独实现本地执行器，把 `/discovery` 的 planned run 交给 opencode 或其他本地 agent 执行：
 
-目标：
-
-- 扩展主题采集的设计：主题名、描述、axis_hint、人工补充关键词都可作为检索方案输入，但不能直接变成无限制全网抓取。
-- 支持固定字段检索入口：按已知名称、标题、URL、DOI、arXiv ID 等字段查找目标材料；名称/标题检索不应被迫包装成主题检索。
-- 设计“检索方案起草 -> 用户确认/调整 -> 执行检索 -> 结果回填候选 -> intake 审核”的流程。
-- 支持 agent/CLI 两种执行路径：后端 Python 可按主题读取配置并触发检索；agent 可调用 web-access 等能力检索网页，再把结构化结果写回系统。
-- 覆盖非论文或弱引用材料：模型卡、系统卡、机构技术报告、官网报告页、GitHub/Hugging Face 项目材料、没有 arXiv ID 的 PDF/HTML 报告。
-- 检索方案必须包含 query、目标来源/域名线索、通用搜索策略、排除词、候选上限、可信度理由、去重 key 和是否允许进入 intake 的判断准则。
-- 检索结果必须保留来源 URL、命中 query、title/snippet、发现理由、来源类型和原始证据；默认只进候选，不自动 promote。
+- 前端提供“执行检索”按钮，或后端提供 `POST /api/discovery/runs/{run_id}/execute`。
+- 后端创建受控子进程或任务队列，调用 opencode/Codex，本地模型必须先读 `docs/discovery-agent-protocol.md`。
+- 执行器需要记录 stdout/stderr、开始/结束时间、退出码、错误摘要和回填统计。
+- 必须有超时、并发上限、取消/重试、失败状态回写和日志查看入口。
+- 权限边界保持不变：执行器只能回填 hits，不能 accept、promote、写 `works`、改 ontology vocab 或下载/摄入 PDF。
+- 至少两轮审核：一轮查进程调度/权限边界，一轮查搜索结果污染、失败恢复和 UI 状态一致性。
 
 验证：
 
-- 用一个模型卡/系统卡主题和一个机构技术报告主题跑小样本，证明不依赖 arXiv ID 也能产生可审核候选。
-- 候选为空、噪声过高、来源不可信、重复命中时有明确反馈。
-- 搜索结果不会直接污染 `works`；仍经 intake 审核和现有去重闸门。
-- 实施方案需包含至少两轮 review：一轮查搜索漂移/来源污染，一轮查数据落点/回归风险。
+- 用 fixture 或 dry-run 模式证明 planned run 可以被执行器领取、执行、回填并更新状态。
+- opencode 不可用、超时、返回非 JSON、部分 hit 失败、重复 hit 等场景都有明确错误反馈。
+- `/discovery` 页面可以看到执行状态、run id、日志入口和回填数量。
+
+优先级：中高。它能减少手工复制指令的摩擦，但不应早于当前 hit 审核和 intake 闸门的稳定性。
 
 ### 2. 元数据抽取模板 V1.1
 
@@ -280,4 +289,4 @@ V1 中 `needs_better_copy` promote 已被安全拒绝，避免误创建重复 wo
 - 完整前端上传并创建 work 的能力：当前 `_inbox` + `/inbox` 已满足 V1 使用。
 - 移动端完整适配：当前项目主要是本地桌面研究工具。
 - 自动化大规模采集调度：collector 仍应以人工闸门和小批量验证为优先。
-- 无约束大规模自动检索和自动入库：受约束广泛发现可进入 V1.1 方案设计，但不能跳过检索方案确认、候选审核和去重闸门。
+- 无约束大规模自动检索和自动入库：V1.1 已支持受约束 discovery run + hit 审核，但仍不能跳过检索方案确认、候选审核和去重闸门。
