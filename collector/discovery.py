@@ -21,7 +21,7 @@ from api.db import get_conn
 # Constants
 # ---------------------------------------------------------------------------
 
-VALID_MODES = {"name", "title", "url", "topic"}
+VALID_MODES = {"name", "title", "url", "topic", "composite"}
 UNSUPPORTED_MODES = {"doi", "arxiv_id", "github_url", "arxiv", "github"}
 VALID_EXECUTORS = {"python", "agent:web-access", "manual"}
 VALID_RUN_STATUSES = {"planned", "running", "succeeded", "failed"}
@@ -177,6 +177,224 @@ def draft_search_plan(
     return plan
 
 
+def draft_composite_plan(
+    *,
+    topic_id: str | None = None,
+    names: list[str] | None = None,           # known_names / 作者/机构名
+    titles: list[str] | None = None,           # known_titles / 已知标题关键词
+    authors: list[str] | None = None,          # 作者列表
+    institutions: list[str] | None = None,     # 机构列表
+    keywords: list[str] | None = None,         # 关键词
+    known_urls: list[str] | None = None,       # 已知 URL 列表
+    preferred_domains: list[str] | None = None,# 偏好域名
+    exclude_terms: list[str] | None = None,    # 排除词
+    artifact_type_hint: str = "unknown",
+    max_results: int = 20,
+    freeform_note: str = "",                   # 自由形式研究上下文
+) -> dict:
+    """Generate a composite search plan from multiple input signals.
+
+    Combines names, titles, authors, institutions, keywords, and known_urls into
+    a structured search plan with dedup guidance. Pure rule-based, no network.
+
+    Query combination strategy:
+    - names -> exact match "name" + fuzzy name queries
+    - titles -> phrase title keyword queries
+    - authors + institutions -> combined author-institution queries
+    - keywords -> independent queries and modifier terms
+    - known_urls -> source hints (NOT auto-created hits)
+
+    Avoids cartesian explosion; generates ~10 core queries max.
+    """
+    import re as _re
+
+    # Normalize inputs
+    names = [n.strip() for n in (names or []) if n.strip()]
+    titles = [t.strip() for t in (titles or []) if t.strip()]
+    authors = [a.strip() for a in (authors or []) if a.strip()]
+    institutions = [i.strip() for i in (institutions or []) if i.strip()]
+    keywords = [k.strip() for k in (keywords or []) if k.strip()]
+    known_urls = [u.strip() for u in (known_urls or []) if u.strip()]
+    preferred_domains = [d.strip().lower() for d in (preferred_domains or []) if d.strip()]
+    exclude_terms = [e.strip() for e in (exclude_terms or []) if e.strip()]
+    source_hints: list[str] = []  # Initialize early to avoid UnboundLocalError
+
+    # Sanitize freeform_note: limit length, strip control characters
+    if freeform_note:
+        freeform_note = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', freeform_note)
+        if len(freeform_note) > 500:
+            freeform_note = freeform_note[:500] + "... [truncated]"
+
+    # P0-1: Contradiction detection — exclude_terms vs input signals
+    _all_signal_text = " ".join(
+        names + titles + authors + institutions + keywords
+    ).lower()
+    removed_excludes: list[str] = []
+    if exclude_terms:
+        cleaned: list[str] = []
+        for ex in exclude_terms:
+            ex_lower = ex.lower()
+            # Check if exclude term appears as substring in any signal text
+            if ex_lower in _all_signal_text:
+                removed_excludes.append(ex)
+            else:
+                cleaned.append(ex)
+        exclude_terms = cleaned
+
+    # Build raw query pool with priority tiers
+    _raw_queries: list[tuple[int, str]] = []  # (priority, query_string)
+    _priority_counter = 0
+
+    # Tier 1 (highest): name + title combinations (most precise)
+    if names and titles:
+        for name in names[:3]:
+            for title in titles[:3]:
+                _raw_queries.append((_priority_counter, f'"{name}" "{title}"'))
+                _priority_counter += 1
+
+    # Tier 2: name + keyword combinations (high precision)
+    if names and keywords:
+        for name in names[:3]:
+            for kw in keywords[:3]:
+                q = f'"{name}" {kw}'
+                _raw_queries.append((_priority_counter, q))
+                _priority_counter += 1
+
+    # Tier 3: title + keyword combinations
+    if titles and keywords:
+        for title in titles[:3]:
+            for kw in keywords[:3]:
+                q = f'"{title}" {kw}'
+                _raw_queries.append((_priority_counter, q))
+                _priority_counter += 1
+
+    # Tier 4: exact name matches (quoted)
+    for name in names[:5]:
+        _raw_queries.append((_priority_counter, f'"{name}"'))
+        _priority_counter += 1
+        # Fuzzy variant
+        _raw_queries.append((_priority_counter, name))
+        _priority_counter += 1
+
+    # Tier 5: exact title matches (quoted)
+    for title in titles[:5]:
+        _raw_queries.append((_priority_counter, f'"{title}"'))
+        _priority_counter += 1
+
+    # Tier 6: author + institution combos (limited)
+    if authors and institutions:
+        for inst in institutions[:3]:
+            _raw_queries.append((_priority_counter, f'"{authors[0]}" "{inst}"'))
+            _priority_counter += 1
+    elif authors:
+        for author in authors[:3]:
+            _raw_queries.append((_priority_counter, f'"{author}"'))
+            _priority_counter += 1
+    elif institutions:
+        for inst in institutions[:3]:
+            _raw_queries.append((_priority_counter, f'"{inst}"'))
+            _priority_counter += 1
+
+    # Tier 7 (lowest): standalone keywords
+    for kw in keywords[:8]:
+        _raw_queries.append((_priority_counter, kw))
+        _priority_counter += 1
+
+    # Deduplicate while preserving insertion order (which reflects priority)
+    seen: set[str] = set()
+    unique_queries: list[str] = []
+    for _, q in _raw_queries:
+        if q not in seen:
+            seen.add(q)
+            unique_queries.append(q)
+
+    # Cap at 10 core queries (already priority-sorted)
+    unique_queries = unique_queries[:10]
+
+    # Determine source_hints based on signals present
+    if titles:
+        source_hints.extend(["openalex", "crossref", "semantic_scholar"])
+    if names:
+        source_hints.extend(["official_domain", "web"])
+    if known_urls:
+        source_hints.extend(["manual_url"])
+    if artifact_type_hint in ("system_card", "model_card", "technical_report"):
+        source_hints.extend(["github", "huggingface"])
+
+    # Dedupe source hints
+    source_hints = list(dict.fromkeys(source_hints))
+    if not source_hints:
+        source_hints = ["web", "official_domain"]
+
+    # Determine search strategy
+    total_signals = len(names) + len(titles) + len(authors) + len(institutions) + len(keywords)
+    if total_signals >= 6:
+        search_strategy = "focused"
+    elif total_signals <= 2:
+        search_strategy = "broad"
+    else:
+        search_strategy = "hybrid"
+
+    # Build reasoning string
+    reasoning_parts: list[str] = []
+    if names:
+        reasoning_parts.append(f"{len(names)} name(s)")
+    if titles:
+        reasoning_parts.append(f"{len(titles)} title(s)")
+    if authors:
+            reasoning_parts.append(f"{len(authors)} author(s)")
+    if institutions:
+        reasoning_parts.append(f"{len(institutions)} institution(s)")
+    if keywords:
+        reasoning_parts.append(f"{len(keywords)} keyword(s)")
+    if known_urls:
+        reasoning_parts.append(f"{len(known_urls)} known URL(s)")
+    if freeform_note:
+        reasoning_parts.append("freeform context provided")
+    if removed_excludes:
+        reasoning_parts.append(
+            f"WARNING: {len(removed_excludes)} exclude_term(s) removed due to signal conflict "
+            f"(appeared in input signals): {', '.join(removed_excludes[:3])}"
+        )
+
+    reasoning = (
+        f"Composite plan generated from {', '.join(reasoning_parts)}. "
+        f"Strategy: {search_strategy}. "
+        f"Generated {len(unique_queries)} query(ies) from input signals."
+        if reasoning_parts else
+        "Composite plan with no input signals — will need manual enrichment."
+    )
+
+    plan: dict = {
+        "mode": "composite",
+        "queries": unique_queries,
+        "source_hints": source_hints,
+        "preferred_domains": preferred_domains,
+        "exclude_terms": exclude_terms,
+        "max_results": max(1, min(max_results, 100)),
+        "reasoning": reasoning,
+        "search_strategy": search_strategy,
+        "dedup_guidance": {
+            "by_url": True,
+            "by_title": True,
+            "fuzzy_threshold": 0.85,
+        },
+        "input_signals": {
+            "topic_id": topic_id,
+            "names": names,
+            "titles": titles,
+            "authors": authors,
+            "institutions": institutions,
+            "keywords": keywords,
+            "known_urls": known_urls,
+            "artifact_type_hint": artifact_type_hint,
+            "freeform_note": freeform_note,
+        },
+    }
+
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Run management
 # ---------------------------------------------------------------------------
@@ -260,6 +478,54 @@ def update_run_status(run_id: str, *, status: str, error: str | None = None) -> 
         conn.close()
 
 
+def complete_run(run_id: str, *, status: str, error: str | None = None) -> None:
+    """Mark a run terminal. status must be 'succeeded' or 'failed'.
+
+    Distinct from update_run_status: only terminal states are allowed here,
+    so callers can't accidentally rewind a run to 'planned'/'running'.
+    Raises ValueError on bad status, KeyError if run missing.
+    """
+    if status not in ("succeeded", "failed"):
+        raise ValueError(f"complete status must be 'succeeded' or 'failed', got {status!r}")
+    update_run_status(run_id, status=status, error=error)
+
+
+# ---------------------------------------------------------------------------
+# Works-level dedup (P0-2)
+# ---------------------------------------------------------------------------
+
+def _check_works_dup(*, title: str = "", doi: str = "", arxiv_id: str = "",
+                     url: str = "") -> str | None:
+    """Return matched work_id if this hit likely duplicates an existing work, else None.
+
+    Metadata-only via gate.light_gate (no download, ms-level). Tries to derive
+    an arxiv_id from the URL when the agent didn't supply one. Any non-'new'
+    resolution counts as a dup (exact_hit / title_candidate / needs_better_copy).
+    Failures are swallowed → returns None (treated as unverified).
+    """
+    cand_arxiv = (arxiv_id or "").strip()
+    if not cand_arxiv and url:
+        try:
+            from collector.normalize import normalize_arxiv_id
+            cand_arxiv = normalize_arxiv_id(url) or ""
+        except Exception:
+            cand_arxiv = ""
+    if not (title or "").strip() and not cand_arxiv and not (doi or "").strip():
+        return None
+    try:
+        from collector import gate
+        resolution, wid = gate.light_gate({
+            "title": title or "",
+            "doi": doi or "",
+            "arxiv_id": cand_arxiv,
+        })
+    except Exception:
+        return None
+    if resolution == "new" or not wid:
+        return None
+    return wid
+
+
 # ---------------------------------------------------------------------------
 # Hit insertion
 # ---------------------------------------------------------------------------
@@ -314,6 +580,14 @@ def insert_discovery_hit(
             if existing:
                 return {"id": existing[0], "status": "skipped_dup"}
 
+        # Works-level dedup (P0-2): metadata-only, never blocks insert.
+        matched_work_id = _check_works_dup(
+            title=title, doi=doi, arxiv_id=arxiv_id, url=url)
+        if matched_work_id:
+            verification_status = "dup_of_works"
+            raw_json = dict(raw_json) if raw_json else {}
+            raw_json.setdefault("dup_of_work_id", matched_work_id)
+
         hit_id = _new_id("DH")
         now = _now()
 
@@ -331,9 +605,15 @@ def insert_discovery_hit(
              content_type, verification_status, now),
         )
 
-        # Update run's hits_created count
+        # Bump hits_created AND flip planned→running on first hit (P0-1).
+        # running is the "has produced evidence" state; terminal succeeded/failed
+        # is set by backfill auto-flip or POST /runs/{id}/complete.
         conn.execute(
-            "UPDATE discovery_runs SET hits_created = hits_created + 1, updated_at=? WHERE id=?",
+            """UPDATE discovery_runs
+               SET hits_created = hits_created + 1,
+                   status = CASE WHEN status='planned' THEN 'running' ELSE status END,
+                   updated_at=?
+               WHERE id=?""",
             (now, run_id),
         )
         conn.commit()

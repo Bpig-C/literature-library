@@ -149,6 +149,201 @@ class TestDraftSearchPlan:
 
 
 # ---------------------------------------------------------------------------
+# Composite Plan generation
+# ---------------------------------------------------------------------------
+
+class TestDraftCompositePlan:
+    def test_composite_mode_in_valid_modes(self):
+        assert "composite" in disc.VALID_MODES
+
+    def test_composite_plan_basic(self):
+        plan = disc.draft_composite_plan(names=["GPT-5.6 system card"])
+        assert plan["mode"] == "composite"
+        assert len(plan["queries"]) > 0
+        assert any('"GPT-5.6 system card"' in q for q in plan["queries"])
+        assert "reasoning" in plan
+        assert "search_strategy" in plan
+        assert "dedup_guidance" in plan
+        assert "input_signals" in plan
+        assert plan["dedup_guidance"]["by_url"] is True
+        assert plan["dedup_guidance"]["by_title"] is True
+        assert plan["dedup_guidance"]["fuzzy_threshold"] == 0.85
+
+    def test_composite_plan_names_generate_exact_and_fuzzy(self):
+        plan = disc.draft_composite_plan(names=["Claude 4 Opus"])
+        exact = [q for q in plan['queries'] if '"Claude 4 Opus"' in q]
+        fuzzy = [q for q in plan['queries'] if q == 'Claude 4 Opus' and '"' not in q]
+        assert len(exact) >= 1
+        assert len(fuzzy) >= 1
+
+    def test_composite_plan_titles_generate_phrase_queries(self):
+        plan = disc.draft_composite_plan(titles=["Attention Is All You Need"])
+        assert any('"Attention Is All You Need"' in q for q in plan["queries"])
+
+    def test_composite_plan_authors_and_institutions_combined(self):
+        plan = disc.draft_composite_plan(
+            authors=["Yann LeCun"], institutions=["Meta AI"]
+        )
+        # Should have combined author-institution query
+        has_combined = any('Yann LeCun' in q and 'Meta AI' in q for q in plan["queries"])
+        assert has_combined
+
+    def test_composite_plan_keywords_as_queries(self):
+        plan = disc.draft_composite_plan(keywords=["transformer", "attention mechanism"])
+        assert "transformer" in plan["queries"]
+        assert "attention mechanism" in plan["queries"]
+
+    def test_composite_plan_cross_signal_combinations(self):
+        plan = disc.draft_composite_plan(
+            names=["GPT-5"], keywords=["safety report"]
+        )
+        # Should have name+keyword combination
+        has_cross = any("GPT-5" in q and "safety report" in q for q in plan["queries"])
+        assert has_cross
+
+    def test_composite_plan_known_urls_as_hints_not_hits(self):
+        plan = disc.draft_composite_plan(
+            known_urls=["https://openai.com/system-card"],
+            titles=["System Card"],
+        )
+        assert "manual_url" in plan["source_hints"]
+        # known_urls should be in input_signals, not auto-created as hits
+        assert plan["input_signals"]["known_urls"] == ["https://openai.com/system-card"]
+
+    def test_composite_plan_exclude_terms(self):
+        plan = disc.draft_composite_plan(
+            names=["test"],
+            exclude_terms=["reddit", "forum"],
+        )
+        assert plan["exclude_terms"] == ["reddit", "forum"]
+
+    def test_composite_plan_preferred_domains(self):
+        plan = disc.draft_composite_plan(
+            names=["test"],
+            preferred_domains=["openai.com", "arxiv.org"],
+        )
+        assert plan["preferred_domains"] == ["openai.com", "arxiv.org"]
+
+    def test_composite_plan_max_results_clamped(self):
+        plan = disc.draft_composite_plan(names=["test"], max_results=999)
+        assert plan["max_results"] == 100
+        plan2 = disc.draft_composite_plan(names=["test"], max_results=0)
+        assert plan2["max_results"] == 1
+
+    def test_composite_plan_empty_signals_returns_valid_plan(self):
+        plan = disc.draft_composite_plan()
+        assert plan["mode"] == "composite"
+        assert plan["queries"] == []
+        assert isinstance(plan["source_hints"], list)
+
+    def test_composite_plan_query_cap_avoids_explosion(self):
+        plan = disc.draft_composite_plan(
+            names=[f"name-{i}" for i in range(20)],
+            titles=[f"title-{i}" for i in range(20)],
+            keywords=[f"kw-{i}" for i in range(20)],
+        )
+        assert len(plan["queries"]) <= 10
+
+    def test_composite_plan_freeform_note_in_input_signals(self):
+        plan = disc.draft_composite_plan(
+            names=["test"],
+            freeform_note="Looking for recent safety reports on frontier models",
+        )
+        assert plan["input_signals"]["freeform_note"] == "Looking for recent safety reports on frontier models"
+
+    def test_composite_plan_search_strategy_focused_for_many_signals(self):
+        plan = disc.draft_composite_plan(
+            names=["n1", "n2"],
+            titles=["t1", "t2"],
+            authors=["a1", "a2"],
+            institutions=["i1", "i2"],
+            keywords=["k1", "k2"],
+        )
+        assert plan["search_strategy"] == "focused"
+
+    def test_composite_plan_search_strategy_broad_for_few_signals(self):
+        plan = disc.draft_composite_plan(names=["only one signal"])
+        assert plan["search_strategy"] == "broad"
+
+    def test_composite_plan_search_strategy_hybrid_for_medium_signals(self):
+        plan = disc.draft_composite_plan(
+            names=["n1", "n2", "n3"],
+            keywords=["k1"],
+        )
+        assert plan["search_strategy"] == "hybrid"
+
+    def test_composite_plan_artifact_type_affects_sources(self):
+        plan = disc.draft_composite_plan(
+            names=["test model"],
+            artifact_type_hint="system_card",
+        )
+        assert "github" in plan["source_hints"]
+        assert "huggingface" in plan["source_hints"]
+
+    # P0-1: Contradiction detection
+    def test_composite_plan_contradiction_removes_conflicting_exclude(self):
+        plan = disc.draft_composite_plan(
+            keywords=["transformer", "attention mechanism"],
+            exclude_terms=["attention"],  # "attention" appears in keyword "attention mechanism"
+        )
+        # "attention" should be removed from exclude_terms due to conflict with signal text
+        assert "attention" not in plan["exclude_terms"]
+        assert "WARNING" in plan["reasoning"]
+        assert "exclude_term" in plan["reasoning"].lower()
+
+    def test_composite_plan_no_contradiction_when_excludes_dont_overlap(self):
+        plan = disc.draft_composite_plan(
+            keywords=["transformer", "attention mechanism"],
+            exclude_terms=["reddit", "blog post"],
+        )
+        assert plan["exclude_terms"] == ["reddit", "blog post"]
+        assert "WARNING" not in plan["reasoning"]
+
+    def test_composite_plan_contradiction_with_name_signal(self):
+        plan = disc.draft_composite_plan(
+            names=["GPT-5 system card"],
+            exclude_terms=["system card"],
+        )
+        assert "system card" not in plan["exclude_terms"]
+        assert "WARNING" in plan["reasoning"]
+
+    # P1-1: Priority-ordered query generation
+    def test_composite_plan_priority_name_title_first(self):
+        plan = disc.draft_composite_plan(
+            names=["Model A"],
+            titles=["Important Paper"],
+            keywords=["kw1", "kw2", "kw3", "kw4", "kw5", "kw6", "kw7", "kw8"],
+        )
+        # name+title combination should appear before standalone keywords
+        queries = plan["queries"]
+        has_name_title = any('"Model A"' in q and '"Important Paper"' in q for q in queries)
+        assert has_name_title
+
+    def test_composite_plan_queries_capped_at_10_after_priority_sorting(self):
+        plan = disc.draft_composite_plan(
+            names=[f"N{i}" for i in range(5)],
+            titles=[f"T{i}" for i in range(5)],
+            authors=[f"A{i}" for i in range(5)],
+            institutions=[f"I{i}" for i in range(5)],
+            keywords=[f"K{i}" for i in range(8)],
+        )
+        assert len(plan["queries"]) <= 10
+
+    # P1-3: freeform_note sanitization
+    def test_composite_plan_freeform_note_truncated_at_500_chars(self):
+        long_note = "x" * 600
+        plan = disc.draft_composite_plan(names=["test"], freeform_note=long_note)
+        assert len(plan["input_signals"]["freeform_note"]) <= 515  # 500 + "... [truncated]"
+        assert plan["input_signals"]["freeform_note"].endswith("[truncated]")
+
+    def test_composite_plan_freeform_note_strips_control_chars(self):
+        note = "hello\x00world\x1f\x0btest"
+        plan = disc.draft_composite_plan(names=["test"], freeform_note=note)
+        assert "\x00" not in plan["input_signals"]["freeform_note"]
+        assert "\x1f" not in plan["input_signals"]["freeform_note"]
+
+
+# ---------------------------------------------------------------------------
 # Run lifecycle
 # ---------------------------------------------------------------------------
 
@@ -473,3 +668,119 @@ class TestBatchAccept:
         assert result["accepted"] == []
         assert len(result["failed"]) == 1
         assert "title-only" in result["failed"][0]["error"]
+
+
+# ---------------------------------------------------------------------------
+# P0-1: Run status machine (planned→running→succeeded/failed)
+# ---------------------------------------------------------------------------
+
+def test_insert_hit_flips_planned_to_running(tmp_path, monkeypatch):
+    """P0-1: 第一条 hit 回填后，run.status 必须从 planned 变为 running。"""
+    db = _db(tmp_path)
+    monkeypatch.setattr(disc, "get_conn", lambda: _conn(db))
+    run = disc.create_discovery_run(
+        mode="composite",
+        input_json={"mode": "composite"},
+        search_plan_json={"queries": ["q"]},
+        executor="agent:web-access",
+    )
+    assert run["status"] == "planned"
+
+    disc.insert_discovery_hit(
+        run_id=run["id"], url="https://arxiv.org/abs/2501.99999",
+        title="A Test Paper", query="q",
+    )
+    refreshed = disc.get_discovery_run(run["id"])
+    assert refreshed["status"] == "running", refreshed["status"]
+    assert refreshed["hits_created"] == 1
+
+
+def test_complete_run_only_accepts_terminal_status(tmp_path, monkeypatch):
+    """P0-1: complete_run 只接受 succeeded/failed，拒绝 planned/running。"""
+    db = _db(tmp_path)
+    monkeypatch.setattr(disc, "get_conn", lambda: _conn(db))
+    run = disc.create_discovery_run(
+        mode="composite", input_json={}, search_plan_json={},
+        executor="agent:web-access")
+    disc.complete_run(run["id"], status="succeeded")
+    assert disc.get_discovery_run(run["id"])["status"] == "succeeded"
+
+    with pytest.raises(ValueError):
+        disc.complete_run(run["id"], status="running")
+    with pytest.raises(KeyError):
+        disc.complete_run("DR-does-not-exist", status="failed")
+
+
+# ---------------------------------------------------------------------------
+# P0-2: Works-level dedup (dup_of_works)
+# ---------------------------------------------------------------------------
+
+class TestWorksLevelDedup:
+    def _seed_work(self, db_path, work_id="W-1", title="Goal Misgeneralization Survey",
+                   arxiv_id=None, doi=None):
+        """Insert a work into the works table for testing."""
+        conn = _conn(db_path)
+        conn.execute(
+            "INSERT OR REPLACE INTO works (id, title, arxiv_id, doi) VALUES (?,?,?,?)",
+            (work_id, title, arxiv_id, doi),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_hit_dup_of_existing_work_marked(self, tmp_path, monkeypatch):
+        """P0-2: 回填一条 title 与 works 中已有文献高度相似的 hit → 自动带 dup_of_works。"""
+        db = _db(tmp_path)
+        monkeypatch.setattr(disc, "get_conn", lambda: _conn(db))
+        # Also patch gate.get_conn for light_gate
+        from collector import gate
+        monkeypatch.setattr(gate, "get_conn", lambda: _conn(db))
+
+        # Seed a work in the database
+        self._seed_work(db, work_id="W-1", title="Goal Misgeneralization Survey")
+
+        run = disc.create_discovery_run(
+            mode="composite", input_json={}, search_plan_json={},
+            executor="agent:web-access")
+        res = disc.insert_discovery_hit(
+            run_id=run["id"], title="Goal Misgeneralization Survey",
+            url="https://example.org/some-blog", query="q",
+        )
+        assert res["status"] == "created"
+        hit = disc.list_discovery_hits(run_id=run["id"])["hits"][0]
+        assert hit["verification_status"] == "dup_of_works"
+        raw = hit["raw_json"] if isinstance(hit["raw_json"], dict) else {}
+        assert raw.get("dup_of_work_id") == "W-1"
+
+    def test_hit_new_when_no_work_match(self, tmp_path, monkeypatch):
+        """P0-2: 全新标题 → verification_status 保持 unverified。"""
+        db = _db(tmp_path)
+        monkeypatch.setattr(disc, "get_conn", lambda: _conn(db))
+        from collector import gate
+        monkeypatch.setattr(gate, "get_conn", lambda: _conn(db))
+
+        # No works seeded
+        run = disc.create_discovery_run(
+            mode="composite", input_json={}, search_plan_json={},
+            executor="agent:web-access")
+        disc.insert_discovery_hit(
+            run_id=run["id"], title="A Brand New Unrelated Paper XYZ123",
+            url="https://example.org/new", query="q")
+        hit = disc.list_discovery_hits(run_id=run["id"])["hits"][0]
+        assert hit["verification_status"] == "unverified"
+
+    def test_hit_dup_does_not_block_insert(self, tmp_path, monkeypatch):
+        """P0-2: 即使是重复，也必须插入（status=created），不阻止。"""
+        db = _db(tmp_path)
+        monkeypatch.setattr(disc, "get_conn", lambda: _conn(db))
+        from collector import gate
+        monkeypatch.setattr(gate, "get_conn", lambda: _conn(db))
+
+        # Seed a work
+        self._seed_work(db, work_id="W-1", title="Goal Misgeneralization Survey")
+
+        run = disc.create_discovery_run(
+            mode="composite", input_json={}, search_plan_json={},
+            executor="agent:web-access")
+        res = disc.insert_discovery_hit(
+            run_id=run["id"], title="Goal Misgeneralization Survey", url="https://x.org/y")
+        assert res["status"] == "created"

@@ -474,6 +474,7 @@ def _api_client():
     import api.db as db_mod
     import collector.discovery as disc_mod
     import collector.candidate_store as cs_mod
+    import collector.gate as gate_mod
 
     def _test_conn():
         c = sqlite3.connect(str(db_path))
@@ -485,7 +486,8 @@ def _api_client():
 
     with patch.object(db_mod, "get_conn", _test_conn), \
          patch.object(disc_mod, "get_conn", _test_conn), \
-         patch.object(cs_mod, "get_conn", _test_conn):
+         patch.object(cs_mod, "get_conn", _test_conn), \
+         patch.object(gate_mod, "get_conn", _test_conn):
         yield TestClient(app), db_path
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -664,3 +666,201 @@ def test_api_reject_hit_with_note(_api_client):
     r3 = client.post(f"/api/discovery/hits/{hit_id}/reject", json={"review_note": "not relevant"})
     assert r3.status_code == 200
     assert r3.json()["review_status"] == "rejected"
+
+
+# ---------------------------------------------------------------------------
+# Composite Plan API endpoint tests
+# ---------------------------------------------------------------------------
+
+def test_api_composite_plan_basic(_api_client):
+    client, _ = _api_client
+    r = client.post("/api/discovery/composite-plan", json={
+        "names": ["GPT-5.6 system card"],
+        "keywords": ["safety"],
+    })
+    assert r.status_code == 200
+    plan = r.json()
+    assert plan["mode"] == "composite"
+    assert len(plan["queries"]) > 0
+    assert any("GPT-5.6" in q for q in plan["queries"])
+    assert "dedup_guidance" in plan
+    assert "input_signals" in plan
+
+
+def test_api_composite_plan_with_all_fields(_api_client):
+    client, _ = _api_client
+    r = client.post("/api/discovery/composite-plan", json={
+        "names": ["Claude Opus"],
+        "titles": ["Safety Report"],
+        "authors": ["Alice Researcher"],
+        "institutions": ["AI Lab"],
+        "keywords": ["safety", "alignment"],
+        "known_urls": ["https://example.com/report"],
+        "preferred_domains": ["openai.com"],
+        "exclude_terms": ["reddit", "forum"],
+        "artifact_type_hint": "system_card",
+        "max_results": 10,
+        "freeform_note": "Looking for frontier model safety reports",
+    })
+    assert r.status_code == 200
+    plan = r.json()
+    assert plan["mode"] == "composite"
+    assert len(plan["exclude_terms"]) == 2
+    assert len(plan["preferred_domains"]) == 1
+    assert plan["max_results"] == 10
+    assert plan["input_signals"]["freeform_note"] != ""
+
+
+def test_api_composite_plan_empty_signals(_api_client):
+    client, _ = _api_client
+    r = client.post("/api/discovery/composite-plan", json={})
+    assert r.status_code == 200
+    plan = r.json()
+    assert plan["mode"] == "composite"
+    assert plan["queries"] == []
+
+
+def test_api_composite_plan_query_cap(_api_client):
+    client, _ = _api_client
+    r = client.post("/api/discovery/composite-plan", json={
+        "names": [f"name-{i}" for i in range(15)],
+        "titles": [f"title-{i}" for i in range(15)],
+        "keywords": [f"kw-{i}" for i in range(15)],
+    })
+    assert r.status_code == 200
+    plan = r.json()
+    assert len(plan["queries"]) <= 10
+
+
+def test_api_composite_plan_existing_modes_unchanged(_api_client):
+    """Verify that existing name/title/url/topic modes still work."""
+    client, _ = _api_client
+
+    # Name mode should still work
+    r = client.post("/api/discovery/plan", json={"mode": "name", "name": "GPT"})
+    assert r.status_code == 200
+    assert r.json()["mode"] == "name"
+
+    # Title mode should still work
+    r2 = client.post("/api/discovery/plan", json={"mode": "title", "title": "Paper Title"})
+    assert r2.status_code == 200
+    assert r2.json()["mode"] == "title"
+
+
+# ---------------------------------------------------------------------------
+# P0-1: Complete endpoint and backfill status flip
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_run_id(_api_client):
+    """Create a discovery run and return its ID."""
+    client, _ = _api_client
+    r = client.post("/api/discovery/run", json={
+        "mode": "composite",
+        "input": {},
+        "plan": {},
+        "executor": "agent:web-access",
+    })
+    return r.json()["run_id"]
+
+
+def test_complete_run_endpoint(_api_client, sample_run_id):
+    """P0-1: POST /discovery/runs/{id}/complete 标记 succeeded；非法 status 返 422。"""
+    client, _ = _api_client
+    r = client.post(f"/api/discovery/runs/{sample_run_id}/complete",
+                    json={"status": "succeeded"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "succeeded"
+
+    bad = client.post(f"/api/discovery/runs/{sample_run_id}/complete",
+                      json={"status": "running"})
+    assert bad.status_code == 422
+
+    missing = client.post("/api/discovery/runs/DR-nope/complete",
+                          json={"status": "failed"})
+    assert missing.status_code == 404
+
+
+def test_backfill_marks_succeeded_when_created(_api_client, sample_run_id):
+    """P0-1: backfill 有 created hit 后 run 必须 succeeded（无论起点 planned 还是 running）。"""
+    client, _ = _api_client
+    r = client.post(f"/api/discovery/runs/{sample_run_id}/hits",
+                    json=[{"url": "https://arxiv.org/abs/2501.88888",
+                           "title": "Backfill Paper", "query": "q"}])
+    assert r.status_code == 200
+    assert r.json()["created"] == 1
+    run = client.get(f"/api/discovery/runs/{sample_run_id}").json()
+    assert run["status"] == "succeeded"
+
+
+# ---------------------------------------------------------------------------
+# P0-2: Works-level dedup (dup_of_works) via API
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_work_with_arxiv(_api_client):
+    """Create a work with arxiv_id in the database for dedup testing."""
+    client, db_path = _api_client
+    conn = _get_test_conn(db_path)
+    # Create works table if not exists
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS works (
+            id TEXT PRIMARY KEY, title TEXT, arxiv_id TEXT, doi TEXT, read_status TEXT
+        )
+    """)
+    conn.execute(
+        "INSERT OR REPLACE INTO works (id, title, arxiv_id, doi) VALUES (?, ?, ?, ?)",
+        ("W-1", "Test Paper", "2501.12345", None),
+    )
+    conn.commit()
+    conn.close()
+    yield
+
+
+def test_backfill_dup_by_arxiv_id_marked(_api_client, sample_work_with_arxiv):
+    """P0-2: agent 回填带 arxiv_id 且 works 已有该 arxiv_id → hit 标 dup_of_works。"""
+    client, _ = _api_client
+    # Create run
+    r = client.post("/api/discovery/run", json={
+        "mode": "composite", "input": {"mode": "composite"},
+        "plan": {"queries": []}, "executor": "agent:web-access",
+    })
+    run_id = r.json()["run_id"]
+    # Backfill hit with arxiv_id
+    r = client.post(f"/api/discovery/runs/{run_id}/hits", json=[
+        {"url": "https://arxiv.org/abs/2501.12345",
+         "title": "Whatever", "arxiv_id": "2501.12345", "query": "q"}])
+    assert r.status_code == 200
+    hit = client.get(f"/api/discovery/hits?run_id={run_id}").json()["hits"][0]
+    assert hit["verification_status"] == "dup_of_works"
+
+
+def test_backfill_dup_by_doi_marked(_api_client):
+    """P0-2: agent 回填带 doi 且 works 已有该 doi → hit 标 dup_of_works。"""
+    client, db_path = _api_client
+    # Create works table and seed a work with DOI
+    conn = _get_test_conn(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS works (
+            id TEXT PRIMARY KEY, title TEXT, arxiv_id TEXT, doi TEXT, read_status TEXT
+        )
+    """)
+    conn.execute(
+        "INSERT OR REPLACE INTO works (id, title, arxiv_id, doi) VALUES (?, ?, ?, ?)",
+        ("W-2", "DOI Paper", None, "10.1234/example"),
+    )
+    conn.commit()
+    conn.close()
+    # Create run
+    r = client.post("/api/discovery/run", json={
+        "mode": "composite", "input": {"mode": "composite"},
+        "plan": {"queries": []}, "executor": "agent:web-access",
+    })
+    run_id = r.json()["run_id"]
+    # Backfill hit with DOI
+    r = client.post(f"/api/discovery/runs/{run_id}/hits", json=[
+        {"url": "https://doi.org/10.1234/example",
+         "title": "Another Title", "doi": "10.1234/example", "query": "q"}])
+    assert r.status_code == 200
+    hit = client.get(f"/api/discovery/hits?run_id={run_id}").json()["hits"][0]
+    assert hit["verification_status"] == "dup_of_works"

@@ -7,6 +7,8 @@ agent results can only be backfilled via POST /api/discovery/runs/{run_id}/hits.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -50,6 +52,8 @@ class HitBackfillItem(BaseModel):
     primary_source: str = "unknown"
     content_type: str = "unknown"
     verification_status: str = "unverified"
+    doi: str = ""
+    arxiv_id: str = ""
 
 
 class AcceptBody(BaseModel):
@@ -63,6 +67,26 @@ class RejectBody(BaseModel):
 class BatchAcceptBody(BaseModel):
     hit_ids: list[str]
     review_note: str = ""
+
+
+class CompleteBody(BaseModel):
+    status: Literal["succeeded", "failed"]
+    error: str | None = None
+
+
+class CompositePlanBody(BaseModel):
+    topic_id: str | None = None
+    names: list[str] = []
+    titles: list[str] = []
+    authors: list[str] = []
+    institutions: list[str] = []
+    keywords: list[str] = []
+    known_urls: list[str] = []
+    preferred_domains: list[str] = []
+    exclude_terms: list[str] = []
+    artifact_type_hint: str = "unknown"
+    max_results: int = 20
+    freeform_note: str = ""
 
 
 # ---- Endpoints ----
@@ -101,6 +125,33 @@ def plan(body: PlanBody):
             max_results=body.max_results,
             prefer_official=body.prefer_official,
             allow_general_web=body.allow_general_web,
+        )
+        return plan_result
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/discovery/composite-plan")
+def composite_plan(body: CompositePlanBody):
+    """Generate a composite search plan from multiple input signals.
+
+    Combines names, titles, authors, institutions, keywords, and known_urls
+    into a structured search plan with dedup guidance. Pure rule-based.
+    """
+    try:
+        plan_result = discovery.draft_composite_plan(
+            topic_id=body.topic_id,
+            names=body.names if body.names else None,
+            titles=body.titles if body.titles else None,
+            authors=body.authors if body.authors else None,
+            institutions=body.institutions if body.institutions else None,
+            keywords=body.keywords if body.keywords else None,
+            known_urls=body.known_urls if body.known_urls else None,
+            preferred_domains=body.preferred_domains if body.preferred_domains else None,
+            exclude_terms=body.exclude_terms if body.exclude_terms else None,
+            artifact_type_hint=body.artifact_type_hint,
+            max_results=body.max_results,
+            freeform_note=body.freeform_note,
         )
         return plan_result
     except ValueError as e:
@@ -211,8 +262,10 @@ def backfill_hits(run_id: str, hits: list[HitBackfillItem]):
     skipped = sum(1 for r in results if r.get("status") == "skipped_dup")
     errors = [r for r in results if r.get("status") == "error"]
 
-    # Update run status to succeeded if it was planned
-    if run["status"] == "planned" and created > 0:
+    # Any created hit ⇒ run produced results ⇒ mark succeeded (P0-1).
+    # Covers both 'planned' (stale single-call) and 'running' (insert already
+    # flipped it). Zero-hit backfills leave status alone; agent calls /complete.
+    if created > 0:
         discovery.update_run_status(run_id, status="succeeded")
 
     return {
@@ -222,6 +275,22 @@ def backfill_hits(run_id: str, hits: list[HitBackfillItem]):
         "errors": errors,
         "results": results,
     }
+
+
+@router.post("/discovery/runs/{run_id}/complete")
+def complete_run(run_id: str, body: CompleteBody):
+    """Mark a discovery run terminal (succeeded/failed).
+
+    Use after agent backfill to signal done, or to record a run that yielded
+    no hits / was aborted. Hits already inserted are preserved.
+    """
+    try:
+        discovery.complete_run(run_id, status=body.status, error=body.error)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "run_id": run_id, "status": body.status}
 
 
 @router.post("/discovery/hits/{hit_id}/accept")
