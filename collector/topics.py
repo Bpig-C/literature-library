@@ -31,6 +31,12 @@ _MAPPED_TAG_GROUPS = {"risk_domain", "reading_lane", "method_tags"}
 def _validate_mapped_tags(tags: list[dict]) -> None:
     """Validate mapped_tags against the controlled vocabulary.
 
+    NOTE: this is the strict gate for transitioning a topic to `mapped`.
+    It rejects out-of-vocab values, so a topic carrying a `proposed_new` tag
+    (allowed at creation via _normalize_mapped_tags) cannot reach `mapped`
+    until that value is human-admitted into classification_vocab. Intentional —
+    see FUTURE_WORK_PLAN.md §11 (proposed_new 转正路径).
+
     Each tag must be ``{group, value}`` where *group* is in ``_MAPPED_TAG_GROUPS``
     and *value* exists in ``VOCAB[group]``.
     """
@@ -42,6 +48,23 @@ def _validate_mapped_tags(tags: list[dict]) -> None:
             raise ValueError(f"invalid mapped_tags group: {group!r} (allowed: {sorted(_MAPPED_TAG_GROUPS)})")
         if not validate_tag_value(group, value):
             raise ValueError(f"invalid mapped_tags: {group}={value!r} is not in vocab")
+
+
+def _normalize_mapped_tags(tags: list[dict]) -> list[dict]:
+    """Attach ``status`` to each structurally-validated ``{group, value}`` tag.
+
+    ``approved`` if ``(group, value)`` is in vocab, else ``proposed_new``.
+    Caller does structural / group-whitelist validation first (create skips the
+    whitelist so seedling topics may carry proposed_new values; transition
+    enforces it via _validate_mapped_tags). This keeps the persisted shape
+    ``{group, value, status}`` identical across both write paths.
+    """
+    return [
+        {"group": t["group"], "value": t["value"],
+         "status": "approved" if validate_tag_value(t["group"], t["value"]) else "proposed_new"}
+        for t in tags
+    ]
+
 
 ALLOWED_MAP = {"seedling", "proposed", "mapped"}
 ALLOWED_LIFE = {"active", "paused", "retired"}
@@ -88,15 +111,15 @@ def create(*, name, description="", seed_paper_ids=None, explicit_ids=None,
 
     mapped_tags_json = None
     if mapped_tags:
-        norm = []
+        cleaned = []
         for t in mapped_tags:
             g = (t.get("group") or "").strip()
             v = (t.get("value") or "").strip()
             if not g or not v:
                 continue  # skip malformed
-            status = "approved" if validate_tag_value(g, v) else "proposed_new"
-            norm.append({"group": g, "value": v, "status": status})
-        mapped_tags_json = json.dumps(norm, ensure_ascii=False) if norm else None
+            cleaned.append({"group": g, "value": v})
+        if cleaned:
+            mapped_tags_json = json.dumps(_normalize_mapped_tags(cleaned), ensure_ascii=False)
 
     conn = get_conn()
     try:
@@ -197,6 +220,7 @@ def transition(topic_id, *, to_map_status=None, to_lifecycle=None,
         if not mapped_tags:
             raise ValueError("mapped_tags must be a non-empty list (or None to skip)")
         _validate_mapped_tags(mapped_tags)
+        mapped_tags = _normalize_mapped_tags(mapped_tags)
     conn = get_conn()
     try:
         sets, args = [], []

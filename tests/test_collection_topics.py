@@ -181,7 +181,10 @@ def test_valid_mapped_tags_pass(tmp_path, monkeypatch):
     topics.transition(ct["id"], to_map_status="proposed", proposed_note="criteria text")
     result = topics.transition(ct["id"], to_map_status="mapped", mapped_tags=_valid_tags())
     assert result["map_status"] == "mapped"
-    assert result["mapped_tags"] == _valid_tags()
+    tags = result["mapped_tags"]
+    # transition path also persists {group, value, status} (status=approved, vocab values)
+    assert all(t.get("status") == "approved" for t in tags)
+    assert {t["value"] for t in tags} == {"deception", "evaluation_method"}
 
 
 def test_invalid_group_rejected(tmp_path, monkeypatch):
@@ -221,7 +224,8 @@ def test_amend_mapped_tags_also_validates(tmp_path, monkeypatch):
         topics.transition(ct["id"], mapped_tags=bad_tags)
     new_tags = [{"group": "method_tags", "value": "red_teaming"}]
     result = topics.transition(ct["id"], mapped_tags=new_tags)
-    assert result["mapped_tags"] == new_tags
+    assert result["mapped_tags"][0]["value"] == "red_teaming"
+    assert result["mapped_tags"][0]["status"] == "approved"
 
 
 def test_seedling_does_not_require_mapped_tags(tmp_path, monkeypatch):
@@ -272,7 +276,8 @@ def test_duplicate_tags_allowed_by_validation(tmp_path, monkeypatch):
         {"group": "risk_domain", "value": "deception"},
     ]
     result = topics.transition(ct["id"], to_map_status="mapped", mapped_tags=dup_tags)
-    assert result["mapped_tags"] == dup_tags
+    assert len(result["mapped_tags"]) == 2
+    assert all(t.get("status") == "approved" for t in result["mapped_tags"])
 
 
 def test_group_case_sensitive(tmp_path, monkeypatch):

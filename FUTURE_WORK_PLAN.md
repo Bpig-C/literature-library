@@ -284,6 +284,25 @@ V1 中 `needs_better_copy` promote 已被安全拒绝，避免误创建重复 wo
 - 使用 fixture 数据生成稳定导出。
 - 覆盖缺失 DOI、arXiv、中文标题、多作者等边界。
 
+### 11. proposed_new 标签的转正路径（V1.3 遗留体验项）
+
+V1.3 已支持建主题时填词表外的自定义标签（存为 `{group, value, status:"proposed_new"}`，map_status 仍 seedling）。但 `collector/topics.py` 的 `_validate_mapped_tags` 在主题推进到 `mapped` 时**仍严格拒绝词表外值**——所以一个带 proposed_new 标签的主题，从 proposed 推进 mapped 会被拒，除非先去掉自定义标签或人工把值纳入 `classification_vocab`。
+
+这是有意的设计边界（符合"自定义标签必须人工审核后才能进正式词表"的硬约束），**不是 bug**。但当前缺少清晰的用户路径与提示。
+
+目标：
+
+- 明确转正流程：人工审核 proposed_new 值 → 决定纳入 `api/classification_vocab.py` 还是丢弃 → 主题才能推进 mapped。
+- 前端 TopicsReview 在 transition 到 mapped 失败时，给出可读提示（"含 N 个待审核自定义标签，先转正或移除"），而不是裸 ValueError。
+- 可选：词表侧增加 proposed_new 候选队列与审核端点（与第 4 项"分类标签事务式保存"协同）。
+
+验证：
+
+- 带 proposed_new 标签的主题，未转正时 transition→mapped 被拒且有清晰提示。
+- 自定义值纳入词表后，同一主题可正常推进 mapped。
+
+来源：2026-07-01 V1.3 完成后第三方审核（`docs/superpowers/plans/2026-06-30-v1.3-handoff.md` 反偷懒自检）。
+
 ## 暂不进入 V1.1 的候选项
 
 - 完整前端上传并创建 work 的能力：当前 `_inbox` + `/inbox` 已满足 V1 使用。
