@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1>关系管理</h1>
     <div class="section">
@@ -46,7 +46,7 @@
         </tr>
       </tbody>
     </table>
-    <div class="empty" v-else>暂无关系</div>
+    <EmptyState v-if="!relations.length" icon="data" title="暂无关系" />
   </div>
 </template>
 
@@ -54,6 +54,7 @@
 import { ref, onMounted } from 'vue'
 import { getRelations, createRelation, deleteRelation } from '../api'
 import { RELATION_TYPE_LABELS, label } from '../labels'
+import EmptyState from '../components/EmptyState.vue'
 
 const relations = ref([])
 const form = ref({ work_id_a: '', work_id_b: '', relation_type: 'translation_of' })
@@ -84,19 +85,19 @@ onMounted(loadData)
 <style scoped>
 h1 { margin-bottom: 16px; font-size: 22px; }
 .section { margin-bottom: 20px; }
-.section h3 { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+.section h3 { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
 .form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .form-row input, .form-row select {
-  height: 34px; border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; font: inherit;
+  height: 34px; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0 10px; font: inherit;
 }
-.form-row button { height: 34px; padding: 0 14px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font: inherit; }
+.form-row button { height: 34px; padding: 0 14px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-lg); cursor: pointer; font: inherit; }
 .form-row button:disabled { opacity: 0.4; }
-.count { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; }
-th { background: #f1f4f8; font-size: 12px; color: #3a4250; }
-.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--chip); font-size: 12px; }
-.note { font-size: 12px; color: var(--muted); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.count { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+th, td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+th { background: var(--bg-muted); font-size: 12px; color: var(--text-secondary); }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg-muted); font-size: 12px; }
+.note { font-size: 12px; color: var(--text-secondary); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .del { font-size: 12px; color: var(--bad); border: none; background: none; cursor: pointer; padding: 0 4px; }
-.empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.empty { padding: 28px; text-align: center; color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; }
 </style>

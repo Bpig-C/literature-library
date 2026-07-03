@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1>文献</h1>
     <div class="toolbar">
@@ -100,7 +100,7 @@
         </tbody>
       </table>
     </div>
-    <div class="empty" v-else>没有匹配的文献</div>
+    <EmptyState v-else icon="search" title="没有匹配的文献" description="尝试调整筛选条件" />
     <n-pagination v-if="totalMatching > perPage" v-model:page="page" :page-count="matchingTotalPages" @update:page="loadData()" />
 
     <!-- Quarantine Modal -->
@@ -122,6 +122,7 @@ import { useMessage, useDialog } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
 import { getWorks, quarantineWork, restoreWork } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, LANGUAGE_LABELS, PARSE_STATUS_LABELS, READ_STATUS_LABELS, INGESTION_STATE_LABELS, label } from '../labels'
+import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
 const message = useMessage()
@@ -457,60 +458,142 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-h1 { margin-bottom: 12px; font-size: 22px; }
-.toolbar {
-  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  margin-bottom: 10px;
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
 }
-.count { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+
+.toolbar {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
 
 .advanced-filters {
-  background: #f8fafc; border: 1px solid var(--line); border-radius: 6px;
-  padding: 12px 16px; margin-bottom: 10px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
 }
+
 .classified-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
 }
-.classified-label { font-size: 13px; color: #374151; }
-.filter-hint { font-size: 11px; color: #9ca3af; }
+
+.classified-label {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.filter-hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
 
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px 16px;
+  gap: var(--space-3) var(--space-4);
 }
-.filter-item { display: flex; flex-direction: column; gap: 4px; }
-.filter-item.wide { grid-column: span 2; }
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.filter-item.wide {
+  grid-column: span 2;
+}
+
 @media (max-width: 900px) {
-  .filter-item.wide { grid-column: span 1; }
+  .filter-item.wide {
+    grid-column: span 1;
+  }
 }
-.filter-item label { font-size: 11px; color: #6b7280; font-weight: 500; }
+
+.filter-item label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
 
 .status-verified { color: var(--ok); }
-.status-needs_review { color: #d97706; }
-.status-provisional { color: #6b7280; }
+.status-needs_review { color: var(--warn); }
+.status-provisional { color: var(--neutral); }
 .status-excluded { color: var(--bad); }
-.status-deprecated { color: #9ca3af; }
+.status-deprecated { color: var(--text-tertiary); }
+
 .table-wrap {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
-table { width: 100%; border-collapse: collapse; }
-th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
-th { background: #f1f4f8; font-size: 12px; color: #3a4250; position: sticky; top: 0; }
-tr { cursor: pointer; }
-tr:hover td { background: #eef5ff; }
-.title { font-weight: 600; max-width: 500px; }
-.muted { color: var(--muted); }
-.tiny { font-size: 12px; }
-.status-unread { color: var(--muted); }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: var(--bg-muted);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+}
+
+tr {
+  cursor: pointer;
+}
+
+tr:hover td {
+  background: var(--accent-subtle);
+}
+
+.title {
+  font-weight: 600;
+  max-width: 500px;
+  color: var(--text-primary);
+}
+
+.muted { color: var(--text-secondary); }
+.tiny { font-size: var(--text-sm); }
+
+.status-unread { color: var(--text-secondary); }
 .status-quarantined { color: var(--bad); font-weight: 600; }
 .status-succeeded { color: var(--ok); }
 .status-failed { color: var(--bad); }
+
 .actions { white-space: nowrap; }
-.empty { padding: 28px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
-.modal-desc { margin: 0 0 16px; font-size: 13px; color: #6b7280; }
+
+.modal-desc {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+}
 </style>

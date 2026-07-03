@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <div class="inbox-layout">
       <div class="list-panel">
         <h2 class="page-title">收件箱摄入 <span class="muted tiny">inbox manual ingest</span></h2>
@@ -17,7 +17,7 @@
             摄入后保留 _inbox 原文件（默认移至 _archive/ingested_inbox/）
           </label>
           <button @click="reload" :disabled="busy">重新扫描</button>
-          <button class="btn-execute" @click="doExecute"
+          <button class="btn-execute" @click="showExecuteConfirm"
                   :disabled="busy || !plan || plan.summary.ingests === 0">
             确认摄入{{ plan ? ` (${plan.summary.ingests})` : '' }}
           </button>
@@ -37,9 +37,7 @@
               </span>
             </div>
           </div>
-          <div v-if="!ingests.length" class="empty muted">
-            _inbox/ 无可摄入 PDF。把 PDF 放入 &lt;library_root&gt;/_inbox/ 后点「重新扫描」。
-          </div>
+          <EmptyState v-if="!ingests.length" icon="inbox" title="无可摄入 PDF" description="把 PDF 放入 <library_root>/_inbox/ 后点「重新扫描」。" />
         </div>
       </div>
 
@@ -50,7 +48,6 @@
             <div class="muted tiny">{{ selected.work_id }} · {{ selected.source_file_id }}</div>
           </div>
         </div>
-
         <table class="kv">
           <tr><th>work_id</th><td>
             <router-link v-if="selected.existing_work" :to="`/works/${selected.work_id}`">{{ selected.work_id }}</router-link>
@@ -76,20 +73,37 @@
           </span>
         </div>
       </div>
-      <div class="detail-panel empty-state" v-else>
-        <div class="muted">从左侧选择一项查看摄入详情</div>
-      </div>
+      <EmptyState v-else icon="search" title="选择一项查看摄入详情" />
     </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog
+      v-model:show="showConfirmDialog"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      type="warn"
+      @confirm="confirmAction?.()"
+    />
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { getIngestPlan, executeIngest } from '../api'
+import { showError } from '../error-handler'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import StatusBadge from '../components/StatusBadge.vue'
+import EmptyState from '../components/EmptyState.vue'
 
 const plan = ref(null)
 const selectedIdx = ref(0)
 const busy = ref(false)
 const leaveInbox = ref(false)
+
+// ConfirmDialog state
+const showConfirmDialog = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmAction = ref(null)
 
 const ingests = computed(() => plan.value?.ingests || [])
 const selected = computed(() => ingests.value[selectedIdx.value] || null)
@@ -108,16 +122,23 @@ async function reload() {
     plan.value = await getIngestPlan()
     if (selectedIdx.value >= ingests.value.length) selectedIdx.value = 0
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
 }
 
-async function doExecute() {
+function showExecuteConfirm() {
   if (!plan.value || plan.value.summary.ingests === 0 || busy.value) return
   const n = plan.value.summary.ingests
-  if (!confirm(`摄入 _inbox/ 中 ${n} 个 PDF？将直写 works 并创建待解析任务。`)) return
+  confirmTitle.value = '确认摄入'
+  confirmMessage.value = `摄入 _inbox/ 中 ${n} 个 PDF？将直写 works 并创建待解析任务。`
+  confirmAction.value = () => doExecute()
+  showConfirmDialog.value = true
+}
+
+async function doExecute() {
+  showConfirmDialog.value = false
   busy.value = true
   try {
     const res = await executeIngest({ leave_inbox: leaveInbox.value })
@@ -141,10 +162,10 @@ async function doExecute() {
       }
     }
 
-    alert(msg)
+    window.__naive_message?.success(msg)
     await reload()
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
@@ -155,33 +176,33 @@ onMounted(reload)
 
 <style scoped>
 .inbox-layout { display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
-.list-panel, .detail-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.list-panel, .detail-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--space-4); }
 .page-title { font-size: 18px; margin-bottom: 12px; }
 .summary-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.filter-bar label { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
-.filter-bar button { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--panel); }
+.filter-bar label { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); font-size: 12px; }
+.filter-bar button { padding: 4px 12px; border-radius: var(--radius-lg); border: 1px solid var(--border); cursor: pointer; background: var(--bg-surface); }
 .filter-bar button:disabled { opacity: .5; cursor: not-allowed; }
 .btn-execute { background: var(--accent); color: #fff; border-color: var(--accent); }
 .ext-list { display: flex; flex-direction: column; gap: 6px; }
-.ext-item { padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
-.ext-item:hover { background: var(--bg); }
-.ext-item.selected { border-color: var(--accent); background: #eef5ff; }
+.ext-item { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; }
+.ext-item:hover { background: var(--bg-muted); }
+.ext-item.selected { border-color: var(--accent); background: var(--selected-bg); }
 .ext-title { font-weight: 600; word-break: break-all; }
 .ext-meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
-.badge { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
-.badge.ok { background: #e6f4ea; color: var(--ok); }
-.badge.dup { background: var(--chip); color: var(--muted); }
-.badge.skip { background: #fdecea; color: var(--bad); }
-.badge.warn { background: #fff8e1; color: var(--warn); }
-.badge.cand { background: #fff8e1; color: var(--warn); }
-.muted { color: var(--muted); } .tiny { font-size: 12px; }
+.badge { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--bg-muted); }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.dup { background: var(--bg-muted); color: var(--text-secondary); }
+.badge.skip { background: var(--bad-bg); color: var(--bad); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.cand { background: var(--warn-bg); color: var(--warn); }
+.muted { color: var(--text-secondary); } .tiny { font-size: 12px; }
 .mono { font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
 .empty { padding: 20px; text-align: center; }
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-.better-banner { background: #fff8e1; border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; margin-top: 12px; color: var(--warn); }
+.better-banner { background: var(--warn-bg); border: 1px solid var(--warn); border-radius: var(--radius-lg); padding: 8px 10px; margin-top: 12px; color: var(--warn); }
 table.kv { width: 100%; border-collapse: collapse; }
-table.kv th { text-align: left; width: 110px; color: var(--muted); padding: 4px 8px; vertical-align: top; }
+table.kv th { text-align: left; width: 110px; color: var(--text-secondary); padding: 4px 8px; vertical-align: top; }
 table.kv td { padding: 4px 8px; word-break: break-all; }
-.empty-state { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.empty-state { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
 </style>

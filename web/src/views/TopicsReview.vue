@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <div class="topics-layout">
       <div class="list-panel">
         <h2 class="page-title">主题闸门 <span class="muted tiny">collector 成熟度</span></h2>
@@ -22,14 +22,19 @@
                @click="selected = t; loadDiscoveryRuns()">
             <div class="topic-title">{{ t.name }}</div>
             <div class="topic-meta">
-              <span class="badge" :class="`m-${t.map_status}`">{{ t.map_status }}</span>
-              <span class="badge life">{{ t.lifecycle }}</span>
-              <span v-if="t.axis_hint" class="muted tiny">{{ t.axis_hint }}</span>
+              <StatusBadge :status="t.map_status" size="small"
+                :title="mapStatusTip(t.map_status)" />
+              <StatusBadge status="unknown" size="small" :label="t.lifecycle"
+                :title="lifecycleTip(t.lifecycle)" />
+              <span v-if="t.axis_hint" class="muted tiny" :title="'轴归属: ' + t.axis_hint">{{ t.axis_hint }}</span>
             </div>
           </div>
-          <div v-if="!topics.length" class="empty muted">
-            无主题。先用 CLI 建主题：python scripts/literature_intake.py topic add --name ...
-          </div>
+          <EmptyState
+            v-if="!topics.length"
+            icon="data"
+            title="暂无主题"
+            description="先用 CLI 建主题：python scripts/literature_intake.py topic add --name ..."
+          />
         </div>
       </div>
 
@@ -37,25 +42,25 @@
         <div class="detail-header">
           <div>
             <div class="topic-title">{{ selected.name }}</div>
-            <div class="muted tiny">{{ selected.id }} · {{ selected.map_status }} / {{ selected.lifecycle }}</div>
+            <div class="muted tiny" :title="'主题唯一标识: ' + selected.id">{{ selected.id }} · <span :title="mapStatusTip(selected.map_status)">{{ selected.map_status }}</span> / <span :title="lifecycleTip(selected.lifecycle)">{{ selected.lifecycle }}</span></div>
           </div>
           <div class="header-badges">
-            <span class="badge" :class="`m-${selected.map_status}`">{{ selected.map_status }}</span>
-            <span class="badge life">{{ selected.lifecycle }}</span>
+            <StatusBadge :status="selected.map_status" :title="mapStatusTip(selected.map_status)" />
+            <StatusBadge status="unknown" :label="selected.lifecycle" :title="lifecycleTip(selected.lifecycle)" />
           </div>
         </div>
 
         <table class="kv">
-          <tr><th>描述</th><td>{{ selected.description || '—' }}</td></tr>
-          <tr><th>轴归属</th><td>{{ selected.axis_hint || '—' }}</td></tr>
-          <tr><th>显式 ID</th>
+          <tr><th title="主题的文字描述，说明这个主题研究什么">描述</th><td>{{ selected.description || '—' }}</td></tr>
+          <tr><th title="该主题在风险分类轴上的归属（如 risk_domain）">轴归属</th><td>{{ selected.axis_hint || '—' }}</td></tr>
+          <tr><th title="已知的 arXiv 论文 ID，系统会直接按这些 ID 采集全文">显式 ID</th>
             <td>{{ (selected.query_def?.explicit_ids || []).join(', ') || '—' }}</td></tr>
-          <tr><th>种子</th>
+          <tr><th title="种子文献的 work_id，用于扩展检索范围">种子</th>
             <td>{{ (selected.query_def?.seed_paper_ids || []).join(', ') || '—' }}</td></tr>
-          <tr><th>proposed 判据</th>
+          <tr><th title="从 seedling 提升为 proposed 时填写的 4 条判据：复现性、不可折叠性、轴归属、边界可述性">proposed 判据</th>
             <td><pre v-if="selected.proposed_note" class="note">{{ selected.proposed_note }}</pre>
               <span v-else class="muted">—</span></td></tr>
-          <tr><th>mapped 标签</th>
+          <tr><th title="映射为 mapped 时关联的标准标签（如 risk_domain=reward_hacking）">mapped 标签</th>
             <td>
               <span v-if="selected.mapped_tags" class="tags">
                 <span v-for="(tag, i) in selected.mapped_tags" :key="i"
@@ -70,18 +75,21 @@
 
         <div class="gate-bar">
           <button class="btn-propose" :disabled="busy || selected.map_status !== 'seedling'"
-                  @click="doPropose">
+                  @click="doPropose"
+                  title="将主题从 seedling（种子）提升为 proposed（已提案），需填写 4 条判据">
             提案为 proposed
           </button>
           <button class="btn-map" :disabled="busy || selected.map_status !== 'proposed'"
-                  @click="openMapModal">
+                  @click="openMapModal"
+                  title="将主题从 proposed（已提案）提升为 mapped（已映射），需关联标准标签">
             映射为 mapped
           </button>
-          <button class="btn-collect" :disabled="busy" @click="doCollect"
-                  title="按主题里已有的显式 ID / 种子 ID 直接下载指定文献，不联网搜索">
+          <button class="btn-collect" :disabled="busy" @click="showCollectConfirm"
+                  title="按主题里已有的显式 ID / 种子 ID 直接下载指定文献全文，不联网搜索">
             直接采集
           </button>
-          <button class="btn-resolve" :disabled="busy" @click="doResolve">
+          <button class="btn-resolve" :disabled="busy" @click="showResolveConfirm"
+                  title="触发重量级闸门 resolve：下载 pending 候选的 PDF → 计算 SHA256 → 判别是否重复/精确命中/标题疑似">
             触发 resolve
           </button>
         </div>
@@ -242,6 +250,15 @@
           </div>
         </div>
       </div>
+
+      <!-- 确认对话框 -->
+      <ConfirmDialog
+        v-model:show="showConfirmDialog"
+        :title="confirmTitle"
+        :message="confirmMessage"
+        type="warn"
+        @confirm="confirmAction?.()"
+      />
     </div>
 </template>
 
@@ -258,6 +275,10 @@ import {
   discoveryRun,
   getDiscoveryRuns,
 } from '../api'
+import { showError } from '../error-handler'
+import StatusBadge from '../components/StatusBadge.vue'
+import EmptyState from '../components/EmptyState.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const topics = ref([])
 const selected = ref(null)
@@ -289,7 +310,27 @@ const mapTags = ref([])
 const discoveryRuns = ref([])
 const showDiscoveryRuns = ref(false)
 
+// ConfirmDialog state
+const showConfirmDialog = ref(false)
+const confirmTitle = ref('')
+const confirmMessage = ref('')
+const confirmAction = ref(null)
+
 const countByStatus = (s) => topics.value.filter(t => t.map_status === s).length
+
+// 状态提示文字
+const mapStatusTips = {
+  seedling: '种子阶段：刚创建的主题，尚未经过人工审核和判据验证',
+  proposed: '已提案：已填写 4 条判据（复现性/不可折叠/轴归属/边界可述），等待映射',
+  mapped: '已映射：已关联标准标签（如 risk_domain=xxx），成熟主题，可用于正式采集',
+}
+const lifecycleTips = {
+  active: '活跃：该主题正在使用中',
+  deprecated: '已废弃：该主题不再维护',
+  archived: '已归档：历史主题，保留参考',
+}
+function mapStatusTip(s) { return mapStatusTips[s] || s }
+function lifecycleTip(s) { return lifecycleTips[s] || (s ? `生命周期: ${s}` : '') }
 
 const vocabGroups = ['risk_domain', 'reading_lane', 'method_tags']
 
@@ -325,9 +366,9 @@ function addCreateTag() {
   // 优先使用自定义值，否则使用下拉选中的值
   const custom = (tagPicker.value.customValue || '').trim()
   const v = custom || tagPicker.value.value
-  if (!g || !v) { alert('请选择分组和值（或填写自定义值）'); return }
+  if (!g || !v) { showError(new Error('请选择分组和值（或填写自定义值）')); return }
   if (createForm.value.tags.some(t => t.group === g && t.value === v)) {
-    alert('该标签已添加，请勿重复'); return
+    showError(new Error('该标签已添加，请勿重复')); return
   }
   const inVocab = isVocabValue(g, v)
   createForm.value.tags.push({ group: g, value: v, status: inVocab ? 'approved' : 'proposed_new', _proposed: !inVocab })
@@ -347,7 +388,7 @@ async function ensureVocabLoaded(showAlert = false) {
   } catch (e) {
     vocab.value = null
     if (showAlert) {
-      alert('标签词表加载失败，下拉选项将为空：' + e.message)
+      showError(new Error('标签词表加载失败，下拉选项将为空：' + e.message))
     }
     return false
   }
@@ -366,7 +407,7 @@ function addMapTag() {
   const v = mapForm.value.value
   if (!g || !v) return
   if (mapTags.value.some(t => t.group === g && t.value === v)) {
-    alert('该标签已添加，请勿重复')
+    showError(new Error('该标签已添加，请勿重复'))
     return
   }
   mapTags.value.push({ group: g, value: v })
@@ -396,13 +437,13 @@ async function doPropose() {
     '复现N篇 / 不可折叠 / 轴 risk_domain / 边界可述'
   )
   if (note === null) return
-  if (!note.trim()) { alert('proposed 必须带非空判据（4 criteria）'); return }
+  if (!note.trim()) { showError(new Error('proposed 必须带非空判据（4 criteria）')); return }
   busy.value = true
   try {
     await transitionTopic(selected.value.id, { to_map_status: 'proposed', proposed_note: note })
     await reload()
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
@@ -410,42 +451,56 @@ async function doPropose() {
 
 async function doMap() {
   if (!selected.value || busy.value) return
-  if (!mapTags.value.length) { alert('mapped 必须带 mapped_tags'); return }
+  if (!mapTags.value.length) { showError(new Error('mapped 必须带 mapped_tags')); return }
   busy.value = true
   try {
     await transitionTopic(selected.value.id, { to_map_status: 'mapped', mapped_tags: mapTags.value })
     showMapModal.value = false
     await reload()
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
+}
+
+function showCollectConfirm() {
+  if (!selected.value || busy.value) return
+  confirmTitle.value = '发起采集'
+  confirmMessage.value = `按主题 ${selected.value.name} 发起一次采集？(触达网络)`
+  confirmAction.value = () => doCollect()
+  showConfirmDialog.value = true
 }
 
 async function doCollect() {
-  if (!selected.value || busy.value) return
-  if (!confirm(`按主题 ${selected.value.name} 发起一次采集？(触达网络)`)) return
+  showConfirmDialog.value = false
   busy.value = true
   try {
     const res = await collectIntake({ topic_id: selected.value.id })
-    alert(`采集完成：新增 ${res.created} 个候选`)
+    window.__naive_message?.success(`采集完成：新增 ${res.created} 个候选`)
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
 }
 
-async function doResolve() {
+function showResolveConfirm() {
   if (busy.value) return
-  if (!confirm('对 pending/new/needs_better_copy 候选触发重量闸门 resolve？(下载 + SHA256)')) return
+  confirmTitle.value = '触发 resolve'
+  confirmMessage.value = '对 pending/new/needs_better_copy 候选触发重量闸门 resolve？(下载 + SHA256)'
+  confirmAction.value = () => doResolve()
+  showConfirmDialog.value = true
+}
+
+async function doResolve() {
+  showConfirmDialog.value = false
   busy.value = true
   try {
     const res = await resolveIntake({})
-    alert(`resolve 完成：处理 ${res.resolved} 个候选`)
+    window.__naive_message?.success(`resolve 完成：处理 ${res.resolved} 个候选`)
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
@@ -504,7 +559,7 @@ async function doCreateTopic() {
     createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: [], keywords: '', authors: '', institutions: '', known_names: '', known_titles: '', known_urls: '', preferred_domains: '', exclude_terms: '' }
     await reload()
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
@@ -522,10 +577,10 @@ async function doDiscoveryPlan() {
       executor: 'agent:web-access',
       topic_id: selected.value.id,
     })
-    alert(`检索方案已生成并创建 run：${run.run_id}，${(plan.queries || []).length} 条查询`)
+    window.__naive_message?.success(`检索方案已生成并创建 run：${run.run_id}，${(plan.queries || []).length} 条查询`)
     await loadDiscoveryRuns()
   } catch (e) {
-    alert(e.message)
+    showError(e)
   } finally {
     busy.value = false
   }
@@ -549,41 +604,41 @@ onMounted(() => {
 
 <style scoped>
 .topics-layout { display: grid; grid-template-columns: 380px 1fr; gap: 16px; }
-.list-panel, .detail-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.list-panel, .detail-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .page-title { font-size: 18px; margin-bottom: 12px; }
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.filter-bar select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; }
+.filter-bar select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .topic-list { display: flex; flex-direction: column; gap: 6px; }
-.topic-item { padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
-.topic-item:hover { background: var(--bg); }
-.topic-item.selected { border-color: var(--accent); background: #eef5ff; }
+.topic-item { padding: 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.topic-item:hover { background: var(--bg-muted); }
+.topic-item.selected { border-color: var(--accent); background: var(--selected-bg); }
 .topic-title { font-weight: 600; }
 .topic-meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
-.badge { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
-.badge.m-seedling { background: #fff8e1; color: var(--warn); }
-.badge.m-proposed { background: #e6f4ea; color: var(--ok); }
+.badge { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--bg-muted); }
+.badge.m-seedling { background: var(--warn-bg); color: var(--warn); }
+.badge.m-proposed { background: var(--ok-bg); color: var(--ok); }
 .badge.m-mapped { background: var(--accent); color: #fff; }
-.badge.life { background: var(--chip); color: var(--muted); }
-.muted { color: var(--muted); } .tiny { font-size: 12px; }
+.badge.life { background: var(--bg-muted); color: var(--text-secondary); }
+.muted { color: var(--text-secondary); } .tiny { font-size: 12px; }
 .empty { padding: 20px; text-align: center; }
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
 .header-badges { display: flex; gap: 6px; }
 table.kv { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-table.kv th { text-align: left; width: 120px; color: var(--muted); padding: 4px 8px; vertical-align: top; }
+table.kv th { text-align: left; width: 120px; color: var(--text-secondary); padding: 4px 8px; vertical-align: top; }
 table.kv td { padding: 4px 8px; }
-.note { background: var(--bg); padding: 6px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; margin: 0; }
+.note { background: var(--bg-muted); padding: 6px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; margin: 0; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.tag-chip { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
+.tag-chip { font-size: 12px; padding: 1px 6px; border-radius: 10px; background: var(--bg-muted); }
 .gate-bar { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-.gate-bar button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--panel); }
-.btn-propose { background: #fff8e1; color: var(--warn); border-color: var(--warn); }
+.gate-bar button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; background: var(--bg-surface); }
+.btn-propose { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
 .btn-map { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn-collect { background: #e6f4ea; color: var(--ok); border-color: var(--ok); }
-.btn-resolve { background: var(--panel); color: var(--text); }
+.btn-collect { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+.btn-resolve { background: var(--bg-surface); color: var(--text-primary); }
 .gate-bar button:disabled { opacity: .5; cursor: not-allowed; }
 .hint { margin-top: 8px; }
-.gate-hint { font-size:12px; color:var(--muted); margin:4px 0 8px; }
-.empty-state { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.gate-hint { font-size:12px; color:var(--text-secondary); margin:4px 0 8px; }
+.empty-state { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); }
 
 /* Create topic modal */
 .btn-create { background: var(--accent); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
@@ -593,14 +648,14 @@ table.kv td { padding: 4px 8px; }
   align-items: center; justify-content: center; z-index: 1000;
 }
 .create-modal {
-  background: #fff; border-radius: 8px; padding: 24px; width: 460px;
+  background: var(--bg-surface); border-radius: var(--radius-lg); padding: 24px; width: 460px;
   max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
 }
 .create-modal h3 { margin: 0 0 16px; font-size: 16px; }
 .form-group { margin-bottom: 12px; }
-.form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.form-group label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .form-group input, .form-group textarea {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-lg);
   font-size: 13px; font-family: inherit;
 }
 .form-group textarea { resize: vertical; }
@@ -608,8 +663,8 @@ table.kv td { padding: 4px 8px; }
 /* P1-3: Advanced clues section */
 .advanced-clues-section {
   margin-bottom: 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 8px;
 }
 .advanced-clues-section summary {
@@ -627,19 +682,19 @@ table.kv td { padding: 4px 8px; }
 }
 
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.btn-cancel { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--panel); }
-.btn-submit { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; background: var(--accent); color: #fff; }
+.btn-cancel { padding: 6px 14px; border-radius: var(--radius-lg); border: 1px solid var(--border); cursor: pointer; background: var(--bg-surface); }
+.btn-submit { padding: 6px 14px; border-radius: var(--radius-lg); border: none; cursor: pointer; background: var(--accent); color: #fff; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Map tag modal */
 .btn-add-tag {
-  padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent);
+  padding: 6px 14px; border-radius: var(--radius-lg); border: 1px solid var(--accent);
   cursor: pointer; background: var(--accent); color: #fff; font-size: 13px;
   margin-bottom: 12px;
 }
 .btn-add-tag:disabled { opacity: .5; cursor: not-allowed; }
 .tag-picker-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.tag-picker-row select, .tag-picker-row input { flex: 1; min-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 13px; }
+.tag-picker-row select, .tag-picker-row input { flex: 1; min-width: 100px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
 .btn-add-tag-sm {
   width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--accent);
   background: var(--accent); color: #fff; cursor: pointer; font-size: 16px;
@@ -656,29 +711,29 @@ table.kv td { padding: 4px 8px; }
 .tag-unknown { background: #fce4ec; color: #c62828; }
 .tag-warn { margin-left: 2px; font-weight: 700; }
 .form-group select {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
-  font-size: 13px; font-family: inherit; background: var(--panel);
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font-size: 13px; font-family: inherit; background: var(--bg-surface);
 }
 
 /* Discovery buttons */
-.btn-discovery { background: #ede9fe; color: #6d28d9; border-color: #7c3aed; }
+.btn-discovery { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent); }
 .btn-view-discovery {
-  display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 6px;
+  display: inline-flex; align-items: center; padding: 6px 14px; border-radius: var(--radius-lg);
   border: 1px solid var(--accent); color: var(--accent); font-size: 13px;
-  text-decoration: none; cursor: pointer; background: #eef5ff;
+  text-decoration: none; cursor: pointer; background: var(--selected-bg);
 }
 .btn-view-discovery:hover { background: var(--accent); color: #fff; text-decoration: none; }
 
 /* Discovery runs section */
 .discovery-runs-section { margin-top: 12px; }
-.section-title { font-size: 12px; text-transform: uppercase; color: #475467; cursor: pointer; user-select: none; margin-bottom: 6px; }
+.section-title { font-size: 12px; text-transform: uppercase; color: var(--text-secondary); cursor: pointer; user-select: none; margin-bottom: 6px; }
 .discovery-runs-list { display: flex; flex-direction: column; gap: 4px; }
-.discovery-run-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
+.discovery-run-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
 .run-mode { font-weight: 600; color: var(--accent); }
-.run-id { font-family: Consolas, monospace; color: #475467; }
-.run-status { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--chip); }
-.run-status.planned { background: #fef9c3; color: #92400e; }
-.run-status.running { background: #e0f2fe; color: #0369a1; }
-.run-status.succeeded { background: #dcfce7; color: #15803d; }
-.run-status.failed { background: #fee2e2; color: #991b1b; }
+.run-id { font-family: Consolas, monospace; color: var(--text-secondary); }
+.run-status { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: var(--bg-muted); }
+.run-status.planned { background: var(--warn-bg); color: var(--warn-fg); }
+.run-status.running { background: var(--info-bg); color: var(--info-fg); }
+.run-status.succeeded { background: var(--ok-bg); color: var(--ok-fg); }
+.run-status.failed { background: var(--bad-bg); color: var(--bad-fg); }
 </style>

@@ -1,48 +1,107 @@
-<template>
-  <div>
-    <h1>总览</h1>
-    <div class="stats" v-if="data">
+﻿<template>
+  <div class="dashboard">
+    <h1 class="page-title">总览</h1>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
       <div class="stat-card">
-        <b>{{ data.total }}</b><span>文献总数</span>
+        <div class="stat-number">{{ stats.total }}</div>
+        <div class="stat-label">文献总数</div>
       </div>
       <div class="stat-card">
-        <b>{{ data.statuses?.unread || 0 }}</b><span>未读</span>
+        <div class="stat-number">{{ stats.unread }}</div>
+        <div class="stat-label">未读</div>
       </div>
       <div class="stat-card">
-        <b>{{ data.statuses?.quarantined || 0 }}</b><span>已隔离</span>
+        <div class="stat-number">{{ stats.quarantined }}</div>
+        <div class="stat-label">已隔离</div>
       </div>
       <div class="stat-card">
-        <b>{{ data.relations || 0 }}</b><span>关系</span>
+        <div class="stat-number">{{ stats.relations }}</div>
+        <div class="stat-label">关系</div>
       </div>
     </div>
-    <div class="section" v-if="data">
-      <h3>类型分布</h3>
+
+    <!-- 待办队列 -->
+    <div class="section">
+      <h2 class="section-title">待办队列</h2>
+      <div class="queue-grid">
+        <router-link to="/inbox" class="queue-card">
+          <div class="queue-icon">📥</div>
+          <div class="queue-info">
+            <div class="queue-count">{{ queue.ingest }}</div>
+            <div class="queue-label">待摄入</div>
+          </div>
+        </router-link>
+
+        <router-link to="/pipeline" class="queue-card">
+          <div class="queue-icon">📄</div>
+          <div class="queue-info">
+            <div class="queue-count">{{ queue.parse }}</div>
+            <div class="queue-label">待解析</div>
+          </div>
+        </router-link>
+
+        <router-link to="/metadata" class="queue-card">
+          <div class="queue-icon">🏷️</div>
+          <div class="queue-info">
+            <div class="queue-count">{{ queue.metadata }}</div>
+            <div class="queue-label">元数据待审</div>
+          </div>
+        </router-link>
+
+        <router-link to="/classification" class="queue-card">
+          <div class="queue-icon">📋</div>
+          <div class="queue-info">
+            <div class="queue-count">{{ queue.classify }}</div>
+            <div class="queue-label">分类待审</div>
+          </div>
+        </router-link>
+
+        <router-link to="/duplicates" class="queue-card">
+          <div class="queue-icon">🔍</div>
+          <div class="queue-info">
+            <div class="queue-count">{{ queue.duplicates }}</div>
+            <div class="queue-label">待去重</div>
+          </div>
+        </router-link>
+      </div>
+    </div>
+
+    <!-- 快捷入口 -->
+    <div class="section">
+      <h2 class="section-title">快捷入口</h2>
+      <div class="links-grid">
+        <router-link to="/works" class="link-card">
+          <div class="link-icon">📚</div>
+          <div class="link-title">文献库</div>
+          <div class="link-desc">搜索、筛选、编辑元数据</div>
+        </router-link>
+        <router-link to="/pipeline" class="link-card">
+          <div class="link-icon">⚡</div>
+          <div class="link-title">流程管理</div>
+          <div class="link-desc">批量触发解析和抽取</div>
+        </router-link>
+        <router-link to="/topics" class="link-card">
+          <div class="link-icon">🗂️</div>
+          <div class="link-title">主题闸门</div>
+          <div class="link-desc">管理研究主题和成熟度</div>
+        </router-link>
+        <router-link to="/discovery" class="link-card">
+          <div class="link-icon">🔎</div>
+          <div class="link-title">发现检索</div>
+          <div class="link-desc">AI 辅助文献发现</div>
+        </router-link>
+      </div>
+    </div>
+
+    <!-- 类型分布 -->
+    <div class="section" v-if="stats.docTypes">
+      <h2 class="section-title">类型分布</h2>
       <div class="chips">
-        <span class="chip" v-for="(count, type) in data.doc_types" :key="type">
+        <span class="chip" v-for="(count, type) in stats.docTypes" :key="type">
           {{ label(DOC_TYPE_LABELS, type) }}: {{ count }}
         </span>
-      </div>
-    </div>
-    <div class="section" v-if="data">
-      <h3>语言分布</h3>
-      <div class="chips">
-        <span class="chip" v-for="(count, lang) in data.languages" :key="lang">
-          {{ label(LANGUAGE_LABELS, lang) }}: {{ count }}
-        </span>
-      </div>
-    </div>
-    <div class="section">
-      <h3>快捷入口</h3>
-      <div class="quick-links">
-        <router-link to="/works" class="link-card">
-          <b>文献管理</b><span>搜索、筛选、编辑元数据</span>
-        </router-link>
-        <router-link to="/duplicates" class="link-card">
-          <b>去重确认</b><span>审查重复候选组</span>
-        </router-link>
-        <router-link to="/relations" class="link-card">
-          <b>关系管理</b><span>查看、新增、删除关联</span>
-        </router-link>
       </div>
     </div>
   </div>
@@ -50,48 +109,217 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getWorks } from '../api'
-import { DOC_TYPE_LABELS, LANGUAGE_LABELS, label } from '../labels'
+import { getWorks, getMetadataExtractions, getClassificationExtractions, getIngestPlan, parseStatus, getDuplicates } from '../api'
+import { DOC_TYPE_LABELS, label } from '../labels'
 
-const data = ref(null)
+const stats = ref({
+  total: 0,
+  unread: 0,
+  quarantined: 0,
+  relations: 0,
+  docTypes: {},
+})
 
-onMounted(async () => {
-  const res = await getWorks({ per_page: 1 })
-  data.value = res.summary
+const queue = ref({
+  ingest: 0,
+  parse: 0,
+  metadata: 0,
+  classify: 0,
+  duplicates: 0,
+})
+
+async function loadStats() {
+  try {
+    const worksRes = await getWorks({ per_page: 1 })
+    const summary = worksRes.summary || {}
+    stats.value.total = summary.total || 0
+    stats.value.unread = summary.statuses?.unread || 0
+    stats.value.quarantined = summary.statuses?.quarantined || 0
+    stats.value.relations = summary.relations || 0
+    stats.value.docTypes = summary.doc_types || {}
+  } catch (e) {
+    console.error('Failed to load stats:', e)
+  }
+}
+
+async function loadQueue() {
+  try {
+    const [ingestRes, parseRes, metaRes, classRes, dupRes] = await Promise.allSettled([
+      getIngestPlan(),
+      parseStatus(),
+      getMetadataExtractions({ status: 'pending', per_page: 1 }),
+      getClassificationExtractions({ status: 'pending', per_page: 1 }),
+      getDuplicates({ per_page: 1 }),
+    ])
+
+    if (ingestRes.status === 'fulfilled') {
+      queue.value.ingest = ingestRes.value.summary?.ingests || 0
+    }
+    if (parseRes.status === 'fulfilled') {
+      queue.value.parse = parseRes.value.pending || 0
+    }
+    if (metaRes.status === 'fulfilled') {
+      queue.value.metadata = metaRes.value.total || 0
+    }
+    if (classRes.status === 'fulfilled') {
+      queue.value.classify = classRes.value.total || 0
+    }
+    if (dupRes.status === 'fulfilled') {
+      queue.value.duplicates = dupRes.value.total || 0
+    }
+  } catch (e) {
+    console.error('Failed to load queue:', e)
+  }
+}
+
+onMounted(() => {
+  loadStats()
+  loadQueue()
 })
 </script>
 
 <style scoped>
-h1 { margin-bottom: 16px; font-size: 22px; }
-.stats {
+.dashboard {
+  max-width: 1200px;
+}
+
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-6);
+}
+
+.stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
 }
+
 .stat-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
 }
-.stat-card b { display: block; font-size: 24px; }
-.stat-card span { color: var(--muted); font-size: 12px; }
-.section { margin-bottom: 20px; }
-.section h3 { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: var(--chip);
-  font-size: 13px;
+
+.stat-number {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: var(--space-1);
 }
-.quick-links { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.stat-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.section-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+}
+
+.queue-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-fast);
+}
+
+.queue-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.queue-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.queue-count {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.queue-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+}
+
+.links-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
 .link-card {
-  display: block; padding: 14px 18px; background: var(--panel); border: 1px solid var(--line);
-  border-radius: 8px; text-decoration: none; color: inherit; min-width: 180px; transition: border-color .15s;
+  display: block;
+  padding: var(--space-5);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-fast);
 }
-.link-card:hover { border-color: var(--accent); }
-.link-card b { display: block; font-size: 14px; margin-bottom: 4px; }
-.link-card span { font-size: 12px; color: var(--muted); }
+
+.link-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.link-icon {
+  font-size: 24px;
+  margin-bottom: var(--space-3);
+}
+
+.link-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.link-desc {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  background: var(--bg-muted);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
 </style>

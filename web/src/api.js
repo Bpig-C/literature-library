@@ -1,15 +1,116 @@
 const BASE = '/api'
 
-async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`${res.status} ${res.statusText}: ${body}`)
+/**
+ * API 错误类，用于统一错误处理
+ * @typedef {'NETWORK_ERROR'|'TIMEOUT'|'SERVER_ERROR'|'CLIENT_ERROR'|'PARSE_ERROR'} ApiErrorCode
+ */
+export class ApiError extends Error {
+  /**
+   * @param {object} params
+   * @param {ApiErrorCode} params.code - 错误分类
+   * @param {string} params.message - 用户友好消息
+   * @param {number} [params.status] - HTTP 状态码
+   * @param {string} [params.detail] - 原始错误详情
+   */
+  constructor({ code, message, status = 0, detail = '' }) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+    this.status = status
+    this.detail = detail
   }
-  return res.json()
+}
+
+export class TimeoutError extends ApiError {
+  constructor(timeout = 30000) {
+    super({
+      code: 'TIMEOUT',
+      message: `请求超时（${timeout / 1000}秒）`,
+      detail: `Request timed out after ${timeout}ms`,
+    })
+    this.name = 'TimeoutError'
+    this.timeout = timeout
+  }
+}
+
+function classifyError(error, status) {
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+    if (error instanceof TimeoutError) return error
+    return new ApiError({ code: 'TIMEOUT', message: '请求已取消', detail: error.message })
+  }
+  if (error instanceof ApiError) return error
+  if (error instanceof TypeError && error.message.includes('fetch')) {
+    return new ApiError({ code: 'NETWORK_ERROR', message: '网络连接失败，请检查网络', detail: error.message })
+  }
+  if (status >= 500) {
+    return new ApiError({ code: 'SERVER_ERROR', message: `服务器错误 (${status})`, status, detail: error.message })
+  }
+  if (status >= 400) {
+    return new ApiError({ code: 'CLIENT_ERROR', message: `请求错误 (${status})`, status, detail: error.message })
+  }
+  return new ApiError({ code: 'NETWORK_ERROR', message: '网络连接失败', detail: error.message })
+}
+
+/**
+ * 核心请求函数
+ * @param {string} path - API 路径
+ * @param {object} [options] - fetch 选项
+ * @param {AbortSignal} [options.signal] - 外部 AbortSignal
+ * @param {number} [options.timeout=30000] - 超时时间(ms)
+ * @returns {{ data: Promise, cancel: () => void }}
+ */
+export async function request(path, options = {}) {
+  const { timeout = 30000, signal: externalSignal, ...fetchOptions } = options
+
+  let timeoutId
+  let controller
+  let signal = externalSignal
+
+  if (!signal) {
+    controller = new AbortController()
+    signal = controller.signal
+    timeoutId = setTimeout(() => controller.abort(), timeout)
+  } else {
+    timeoutId = setTimeout(() => {
+      if (controller) controller.abort()
+    }, timeout)
+  }
+
+  try {
+    const isFormData = fetchOptions.body instanceof FormData
+    const defaultHeaders = isFormData ? {} : { 'Content-Type': 'application/json' }
+    const res = await fetch(`${BASE}${path}`, {
+      headers: { ...defaultHeaders, ...fetchOptions.headers },
+      signal,
+      ...fetchOptions,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!res.ok) {
+      const body = await res.text()
+      throw new ApiError({
+        code: res.status >= 500 ? 'SERVER_ERROR' : 'CLIENT_ERROR',
+        message: `${res.status} ${res.statusText}`,
+        status: res.status,
+        detail: body,
+      })
+    }
+
+    try {
+      return await res.json()
+    } catch (e) {
+      throw new ApiError({
+        code: 'PARSE_ERROR',
+        message: '响应解析失败',
+        detail: e.message,
+      })
+    }
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error instanceof ApiError) throw error
+    throw classifyError(error, 0)
+  }
 }
 
 export function getWorks(params = {}) {
@@ -195,6 +296,17 @@ export function resolveIntake(data = {}) {
   return request('/intake/resolve', { method: 'POST', body: JSON.stringify(data) })
 }
 
+/** 为候选记录上传 PDF（非 arXiv 来源 / agent 手动绑定） */
+export function uploadCandidatePdf(candidateId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request(`/intake/candidates/${encodeURIComponent(candidateId)}/upload-pdf`, {
+    method: 'POST',
+    body: formData,
+    // 不设 Content-Type，让浏览器自动带 multipart/form-data + boundary
+  })
+}
+
 export function reviewCandidate(id, review_status, note = '') {
   return request(`/intake/candidates/${encodeURIComponent(id)}/review`, {
     method: 'PATCH', body: JSON.stringify({ review_status, note }),
@@ -248,6 +360,52 @@ export function executeIngest(body = {}) {
   return request('/ingest/execute', { method: 'POST', body: JSON.stringify(body) })
 }
 
+/**
+ * 上传 PDF 文件到收件箱（multipart/form-data）
+ * @param {File[]} files - 浏览器 File 对象数组
+ * @returns {Promise<object>} { ok, uploaded, ingested, summary }
+ */
+export async function uploadFiles(files) {
+  const formData = new FormData()
+  files.forEach(f => formData.append('files', f))
+
+  // multipart 不设置 Content-Type，让浏览器自动加 boundary
+  const res = await fetch(`${BASE}/ingest/upload`, {
+    method: 'POST',
+    body: formData,
+    timeout: 120000,
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new ApiError({
+      code: res.status >= 500 ? 'SERVER_ERROR' : 'CLIENT_ERROR',
+      message: `上传失败 (${res.status}): ${text.slice(0, 200)}`,
+      status: res.status,
+      detail: text,
+    })
+  }
+
+  return res.json()
+}
+
+/** Pipeline 流程管理页专用统计 */
+export function getPipelineStats() {
+  return request('/pipeline/stats')
+}
+
+/** 待元数据抽取的 works 列表（解析成功但无 metadata_extraction 记录） */
+export function getPendingMetadataWorks(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/pipeline/pending-metadata${q ? '?' + q : ''}`)
+}
+
+/** 待分类抽取的 works 列表（元数据已批准但无 classification_extraction 记录） */
+export function getPendingClassifyWorks(params = {}) {
+  const q = new URLSearchParams(params).toString()
+  return request(`/pipeline/pending-classification${q ? '?' + q : ''}`)
+}
+
 // ---- Extraction triggers (Phase 1: thin adapters) ----
 export function triggerMetadataExtraction(body = {}) {
   return request('/metadata/extract', { method: 'POST', body: JSON.stringify(body) })
@@ -260,6 +418,10 @@ export function triggerClassificationExtraction(body = {}) {
 // ---- Discovery (V1.1 受约束广泛发现与检索) ----
 export function discoveryPlan(payload) {
   return request('/discovery/plan', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function discoveryCompositePlan(payload) {
+  return request('/discovery/composite-plan', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export function discoveryRun(payload) {
