@@ -3,11 +3,26 @@
 本目录是本地文献管理系统的数据根目录，用来保存已经迁移、去重、解析后的文献库。它和阶段规划文档分工不同：
 
 - 本文档：说明当前项目架构、目录含义、日常使用流程和常用命令。
-- `D:\02_academic\doctoral\LITERATURE_SYSTEM_PLAN.md`：记录分阶段建设计划、设计背景和后续路线。
 - `FUTURE_WORK_PLAN.md`：只记录后续尚未完成的维护计划。
 - `docs/PROJECT_HISTORY.md`：记录已完成阶段、历史路线和旧判断。
 
-当前状态：V1.1 前端端到端主流程已打通。FastAPI + Vue SPA 可从前端完成“采集/投递候选 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。V1 发布审查见 `docs/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`。
+## 长期维护文档
+
+后续维护时优先读取这些文档；其余带日期的计划、审核和实验材料默认视作历史证据，已集中归档到 `docs/_archive/`。
+
+| 文档 | 用途 | 维护要求 |
+|---|---|---|
+| `README.md` | 操作者入口、日常命令、当前主流程。 | 功能入口、启动方式、主流程变化时同步更新。 |
+| `TECHNICAL_OVERVIEW.md` | 系统架构、不变量、数据边界。 | 架构或事实源变化时同步更新。 |
+| `FUTURE_WORK_PLAN.md` | 未完成路线图和待办队列。 | 完成任务后移动到历史记录或标记完成。 |
+| `USER_ISSUES.md` | 用户提出的问题、状态与验收记录。 | 每次修复或确认后更新状态。 |
+| `docs/HANDOVER_GUIDE.md` | 当前交接、页面清单、已知遗留。 | 大轮次交接或功能批量完成后更新。 |
+| `docs/PROJECT_HISTORY.md` | 已完成阶段、历史路线和旧判断。 | 只追加重大完成记录，不作为当前待办。 |
+| `docs/DOCUMENT_GOVERNANCE.md` | 文档状态、归档和发布前门禁规则。 | 文档体系变化时同步更新。 |
+| `docs/superpowers/README.md` | 当前审核证据和 dated docs 索引。 | 新增/归档 review、plan、spec 时同步更新。 |
+| `docs/_archive/README.md` | 已归档文档索引。 | 归档文件时同步更新分类说明。 |
+
+当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
 
 ## 目录架构
 
@@ -79,7 +94,7 @@ python scripts\literature_ingest.py --execute --leave-inbox
 
 ### 2. 解析新增 PDF
 
-> 现行解析架构（Phase B/E）：**二元路由** `parser/core/mineru/router.py::route_and_parse`——文本层 PDF(born-digital) → PyMuPDF 本地直抽（免费/快）；扫描型/质检不过 → MinerU 官网 cloud vlm API（token 从根 `.env` 的 `MinerU_API_KEY` 读）。旧的自部署 MinerU:18200 + document-parser:18201 两层架构已降级为回滚参考（CLI 归档于 `_archive/`）。完整审核/测试步骤见 `docs/superpowers/specs/2026-06-29-three-chain-runbook.md`。
+> 现行解析架构（Phase B/E）：**二元路由** `parser/core/mineru/router.py::route_and_parse`——文本层 PDF(born-digital) → PyMuPDF 本地直抽（免费/快）；扫描型/质检不过 → MinerU 官网 cloud vlm API（token 从根 `.env` 的 `MinerU_API_KEY` 读）。旧的自部署 MinerU:18200 + document-parser:18201 两层架构已降级为回滚参考（CLI 归档于 `_archive/`）。完整审核/测试步骤见 `docs/_archive/superpowers/specs/2026-06-29-three-chain-runbook.md`。
 
 最常用（解析所有 pending，DB-only 状态源）：
 
@@ -191,6 +206,7 @@ npm run dev
 - `/intake` — 采集候选审核（resolution、review_status、promote）
 - `/inbox` — Inbox 摄入 dry-run 预览与确认
 - `/topics` — 采集主题管理（新建主题、成熟度转换、mapped_tags、按主题采集）
+- `/discovery` — 受约束发现检索（plan/run/hit 审核，agent 回填入口）
 
 ### 7. 前端端到端主流程（V1.1 推荐）
 
@@ -210,7 +226,46 @@ V1.1 后，日常使用优先走 Vue SPA，而不是把 CLI 命令串起来手�
 - 元数据和分类抽取仍是同步触发，依赖本地 LLM / MiMo 服务可用性；大批量抽取应继续走脚本或后续任务队列。
 - 前端主流程已覆盖日常单篇/小批量使用，但不包含大规模自动检索调度、完整后台任务队列、引用导出和综述矩阵。
 
-### 8. 元数据审核与重抽
+### 8. 受约束发现检索（V1.2）
+
+发现检索用于处理"我知道一个主题/名称/标题/URL，但还不知道具体 arXiv ID 或 PDF 在哪里"的场景，例如模型卡、系统卡、机构技术报告、官网报告页、项目页等弱引用材料。
+
+V1.2 新增 **composite 多信号组合模式**：允许用户同时提供名称、作者、机构、关键词、已知 URL 等多种线索，agent 综合这些信号生成更精准的检索方案，解决单一模式输入信息量不足的问题。
+
+推荐流程：
+
+1. 在 `/topics` 新建或选择主题，或直接进入 `/discovery` 按 `topic` / `name` / `title` / `url` / `composite` 创建 discovery run。
+2. `topic` / `name` / `title` / `composite` 会生成 `planned` run 和 `search_plan_json`；`url` 模式会创建 manual run/hit。
+3. 把 run id 交给本地模型/agent，并要求它先读取 `docs/discovery-agent-protocol.md`。agent 只执行检索并回填 hits，不 accept、不 promote、不写 `works`。
+4. agent 通过 `POST /api/discovery/runs/{run_id}/hits` 回填 JSON 数组。
+5. 回到 `/discovery` 审核 hits。接受有效命中后，系统只创建 `intake_candidates(resolution='pending')`。
+6. 到 `/intake` 继续 resolve、review、promote；后续再走 `/works/:id` 的解析、元数据抽取和分类抽取。
+
+给本地模型的最小固定指令：
+
+```text
+你是 literature_library 的 discovery-search agent。
+工作目录：D:\02_academic\doctoral\literature_library
+必须先读取：docs/discovery-agent-protocol.md
+输入：run_id={DR-xxxx}
+
+严格按照 run.search_plan_json 检索并回填 hits：
+- 如果 mode 是 composite：综合 names/titles/authors/keywords/institutions 等多种信号设计检索策略。
+- 每条 hit 输出 title、url、source_type、snippet、reason、confidence、query、primary_source、content_type、verification_status。
+- 必须加载 web-access skill 并严格遵循其指引（域名白名单、频率限制、访问控制等约束）。
+通过 POST /api/discovery/runs/{DR-xxxx}/hits 回填 JSON 数组。
+回填后停止；不要 accept、promote、写 works、改 ontology vocab、下载 PDF 或摄入文件。
+```
+
+当前边界：
+
+- V1.2 支持 `topic` / `name` / `title` / `url` / `composite` 五种 discovery 模式。
+- **composite 模式 [V1.2 新增]**：可同时提供 names、titles、authors、institutions、keywords、known_urls、preferred_domains、exclude_terms、artifact_type_hint、max_results、freeform_note 等多种信号，详见 `docs/discovery-agent-protocol.md` 的 "Composite Input Schema" 章节。
+- DOI、arXiv、GitHub URL 不作为 discovery mode；arXiv/GitHub 仍走现有 intake collect 链路，DOI 可先按 title/name 检索。
+- 检索结果默认只是候选 hit，不会直接污染 `works`。
+- composite 是增量功能，完全向后兼容旧模式。
+
+### 9. 元数据审核与重抽
 
 当前元数据抽取结果保存在 `metadata_extractions`，不会直接覆盖 `works` 稳定层。推荐流程是先在 SPA 的 `/metadata` 页面审核，再按需要回填。
 
@@ -301,6 +356,15 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | POST | `/api/intake/topics` | 主题成熟度转换 |
 | POST | `/api/intake/topics/create` | 新建采集主题 |
 | POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
+| POST | `/api/discovery/plan` | 生成 discovery search plan，不创建 run |
+| POST | `/api/discovery/run` | 创建 discovery run |
+| GET | `/api/discovery/runs` | 发现检索 run 列表 |
+| GET | `/api/discovery/runs/{run_id}` | 查看单个 run 和 search plan |
+| POST | `/api/discovery/runs/{run_id}/hits` | agent 回填 discovery hits |
+| GET | `/api/discovery/hits` | 发现检索命中列表 |
+| POST | `/api/discovery/hits/{hit_id}/accept` | 接受单个 hit 并创建 intake candidate |
+| POST | `/api/discovery/hits/batch-accept` | 批量接受 hits 并创建 intake candidates |
+| POST | `/api/discovery/hits/{hit_id}/reject` | 拒绝 hit 并记录审核备注 |
 | GET | `/api/parse/status` | 解析状态汇总或单篇查询 |
 | POST | `/api/parse/trigger` | 触发解析（指定 work_ids 或 all_pending） |
 | GET | `/api/ingest/plan` | 摄入 dry-run 预览 |
@@ -343,6 +407,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 - `scripts\literature_metadata_extract.py`：基于 MinerU `content.md` 的元数据抽取与可选回填
 - `scripts\literature_metadata_rerun.py`：审核修正队列查询、字段级重抽、supersede 审计链写入
 - `scripts\literature_classification_extract.py`：基于 `content.md` 的分类候选抽取与可选回填
+- `scripts\literature_discovery.py`：受约束发现检索 plan/run/hit/accept/reject CLI，配合 `/discovery` 和 `docs/discovery-agent-protocol.md` 使用
 - `scripts\backfill_risk.py`：为已有元数据抽取记录回填风险等级、分数和原因
 - `scripts\run_api.py`：启动 FastAPI 后端服务
 

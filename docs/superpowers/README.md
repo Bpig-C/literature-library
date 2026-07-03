@@ -1,37 +1,35 @@
 # Superpowers 规格、计划与审核索引
 
 > 状态：当前索引
-> 更新时间：2026-06-29
+> 更新时间：2026-07-03
 
-本目录保存文献库的执行治理轨迹，包括带日期的设计规格、实施计划和第三方审核报告。这些文件都是有价值的证据，但多数文档在对应阶段结束后会转为历史记录。
+本目录只保留仍需当前维护或最近一轮复核的 superpowers 文档。已完成阶段的规格、计划和审核证据集中归档到 `docs/_archive/superpowers/`，避免后续维护者把旧任务清单或旧 finding 当成当前事实。
 
-判断当前行为时，应优先核对代码、测试、`scripts/healthcheck_library.py` 和 `docs/DOCUMENT_GOVERNANCE.md` 中列出的当前有效文档。
+判断当前行为时，应优先核对代码、测试、`scripts/healthcheck_library.py`、`docs/DOCUMENT_GOVERNANCE.md` 和 README 中列出的长期维护文档。
 
 ## 目录角色
 
-| 目录 | 角色 | 当前性规则 |
+| 目录 | 当前用途 | 规则 |
 |---|---|---|
-| `specs/` | 设计规格和审核指导。 | 只有被当前索引或当前路线图指向的带日期规格，才可视作当前依据。 |
-| `plans/` | 任务拆解和阶段实施计划。 | 已完成计划是历史记录；不要把未勾选任务框当作当前事实。 |
-| `reviews/` | 审核报告、整改方案/结果、交接文档和发布评审。 | 较新的 review 在包含验证证据时，可取代旧 finding。 |
+| `specs/` | 新增且仍有效的设计规格和审核指导。 | 当前为空；历史规格在 `docs/_archive/superpowers/specs/`。 |
+| `plans/` | 新增且尚未完成的任务拆解和阶段实施计划。 | 当前为空；完成后归档到 `docs/_archive/superpowers/plans/`。 |
+| `reviews/` | 最近一轮仍需参考的审核、整改或交接复核。 | 只保留当前最新审核；旧审核在 `docs/_archive/superpowers/reviews/`。 |
 
-## 当前发布证据
+## 当前有效审查
 
-- `reviews/2026-06-29-v1-final-publication-review.md`：独立 V1 发布审查；最初为“有条件通过”，等待 P1 阻断项清除。
-- `reviews/2026-06-29-v1-final-publication-p1-remediation.md`：P1 整改结果，将 V1 阻断状态升级为“通过”。
-- `specs/2026-06-29-three-chain-runbook.md`：CLI/API/UI 三链路验证手册。
-- `specs/2026-06-28-three-chain-completeness-plan.md`：三链路完整性设计和验收矩阵。使用时应结合后续整改 review，因为旧段落可能描述整改前状态。
+- `reviews/2026-07-03-handover-audit.md`：对 2026-07-02/03 交接内容、代码变更和文档一致性的复核记录。
 
-## 历史但仍有价值
+## 历史归档入口
 
-- 早期 parser、collector、Phase B/C/D 和全项目审核计划属于历史实施记录。
-- 带日期 specs/plans 中对 `parse_ledger.json`、自部署 MinerU 端口或 `document-parser` 的旧引用，通常是在描述 V1 前迁移路径。不要把它们复制到当前操作文档中。
+- `docs/_archive/superpowers/specs/`：已完成或已取代的设计规格、验证手册和审查清单。
+- `docs/_archive/superpowers/plans/`：已完成或已取代的实施计划、handoff 和任务拆解。
+- `docs/_archive/superpowers/reviews/`：历史发布审查、阶段审核、整改结果和实验审计材料。
 
 ## 维护规则
 
-新增 review 或 plan 时：
+新增 review、plan 或 spec 时：
 
 - 文件名包含日期。
-- 标明状态：`当前有效`、`历史记录`、`已取代` 或 `草案`。
-- 尽量链接实现 commit 或验证命令。
-- 如果新文档改变了当前发布证据，必须同步更新本 README。
+- 在文件开头标明状态：`当前有效`、`历史记录`、`已取代` 或 `草案`。
+- 尽量链接实现 commit、验证命令或代码入口。
+- 阶段完成后，把对应 dated 文档移入 `docs/_archive/superpowers/`，并同步更新本 README 与 `docs/_archive/README.md`。

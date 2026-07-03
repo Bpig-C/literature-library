@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="430" viewBox="0 0 1380 430" role="img" aria-labelledby="title">
+  <title id="title">主题驱动发现检索流程</title>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-dash" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L10,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+    <style>
+      .box{fill:#f8fafc;stroke:#334155;stroke-width:1.4;rx:8}
+      .store{fill:#ecfeff;stroke:#0e7490;stroke-width:1.4;rx:8}
+      .stage{fill:#f0fdf4;stroke:#166534;stroke-width:1.4;rx:8}
+      .review{fill:#fef3c7;stroke:#b45309;stroke-width:1.4;rx:8}
+      .action{fill:#ede9fe;stroke:#6d28d9;stroke-width:1.4;rx:6}
+      .text{font:14px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .title{font:700 21px "Microsoft YaHei",Arial,sans-serif;fill:#0f172a}
+      .small{font:12px "Microsoft YaHei",Arial,sans-serif;fill:#475569}
+      .note{font:12px "Microsoft YaHei",Arial,sans-serif;fill:#64748b}
+      .label{font:11px "Microsoft YaHei",Arial,sans-serif;fill:#64748b;font-style:italic}
+      .line{stroke:#334155;stroke-width:1.5;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#94a3b8;stroke-width:1.3;fill:none;stroke-dasharray:6,4;marker-end:url(#arrow-dash)}
+      .warn{fill:#fff7ed;stroke:#c2410c;stroke-width:1;rx:4}
+    </style>
+  </defs>
+
+  <!-- 背景 -->
+  <rect width="1380" height="430" fill="#fff"/>
+
+  <!-- 标题 -->
+  <text x="36" y="42" class="title">流程六：主题驱动发现检索（Discovery）</text>
+
+  <!-- ========== 主流程节点（第一行）========== -->
+
+  <!-- 1. Topic Gate -->
+  <rect x="34" y="95" width="148" height="72" class="stage"/>
+  <text x="108" y="121" text-anchor="middle" class="text">Topic Gate</text>
+  <text x="108" y="141" text-anchor="middle" class="small">collection_topics</text>
+  <text x="108" y="158" text-anchor="middle" class="label">topic_id</text>
+
+  <!-- 2. Discovery Plan -->
+  <rect x="212" y="85" width="176" height="92" class="box"/>
+  <text x="300" y="113" text-anchor="middle" class="text">Discovery Plan</text>
+  <text x="300" y="133" text-anchor="middle" class="small">POST /discovery/plan</text>
+  <text x="300" y="151" text-anchor="middle" class="small">或 /composite-plan</text>
+  <text x="300" y="168" text-anchor="middle" class="label">search_plan_json</text>
+
+  <!-- 3. Discovery Run -->
+  <rect x="418" y="88" width="164" height="86" class="store"/>
+  <text x="500" y="115" text-anchor="middle" class="text">Discovery Run</text>
+  <text x="500" y="135" text-anchor="middle" class="small">discovery_runs 表</text>
+  <text x="500" y="154" text-anchor="middle" class="small">DR-{hex}</text>
+  <text x="500" y="168" text-anchor="middle" class="label">Agent 执行检索</text>
+
+  <!-- 4. Discovery Hits -->
+  <rect x="612" y="88" width="160" height="86" class="store"/>
+  <text x="692" y="115" text-anchor="middle" class="text">Discovery Hits</text>
+  <text x="692" y="135" text-anchor="middle" class="small">discovery_hits 表</text>
+  <text x="692" y="154" text-anchor="middle" class="label">用户审核</text>
+
+  <!-- 5. Accept 桥接 -->
+  <rect x="802" y="98" width="156" height="66" class="action"/>
+  <text x="880" y="122" text-anchor="middle" class="text">Accept</text>
+  <text x="880" y="142" text-anchor="middle" class="small">accept_hit_to_intake()</text>
+  <text x="880" y="157" text-anchor="middle" class="label">唯一桥梁</text>
+
+  <!-- 6. Intake Candidates -->
+  <rect x="988" y="85" width="172" height="92" class="store"/>
+  <text x="1074" y="113" text-anchor="middle" class="text">Intake Candidates</text>
+  <text x="1074" y="133" text-anchor="middle" class="small">intake_candidates 表</text>
+  <text x="1074" y="151" text-anchor="middle" class="small">IC-{hex}, resolution=pending</text>
+
+  <!-- 7. Gate Chain → Works -->
+  <rect x="1184" y="100" width="150" height="62" class="review"/>
+  <text x="1259" y="125" text-anchor="middle" class="text">Gate Chain</text>
+  <text x="1259" y="146" text-anchor="middle" class="small">light → heavy → A2</text>
+
+  <!-- 8. Works 最终库 -->
+  <rect x="1268" y="200" width="84" height="54" class="store"/>
+  <text x="1310" y="223" text-anchor="middle" class="text">Works</text>
+  <text x="1310" y="242" text-anchor="middle" class="small">正式文献库</text>
+
+  <!-- ========== 主流程连线 ========== -->
+  <line x1="182" y1="131" x2="212" y2="131" class="line"/>
+  <line x1="388" y1="131" x2="418" y2="131" class="line"/>
+  <line x1="582" y1="131" x2="612" y2="131" class="line"/>
+  <line x1="772" y1="131" x2="802" y2="131" class="line"/>
+  <line x1="958" y1="131" x2="988" y2="131" class="line"/>
+  <line x1="1160" y1="131" x2="1184" y2="131" class="line"/>
+  <line x1="1259" y1="162" x2="1295" y2="200" class="line"/>
+
+  <!-- 连线标签 -->
+  <text x="197" y="123" class="label">topic_id + query_def</text>
+  <text x="403" y="123" class="label">queries, source_hints...</text>
+  <text x="597" y="123" class="label">hits 回填</text>
+  <text x="787" y="123" class="label">用户确认</text>
+  <text x="973" y="123" class="label">创建 pending</text>
+  <text x="1172" y="123" class="label">promote</text>
+
+  <!-- ========== Direct Collect 虚线路径（下方） ========== -->
+
+  <!-- Topic Gate → Collect（虚线绕行） -->
+  <rect x="200" y="220" width="130" height="52" class="box" opacity="0.75"/>
+  <text x="265" y="244" text-anchor="middle" class="small">Direct Collect</text>
+  <text x="265" y="262" text-anchor="middle" class="label">绕过 Discovery</text>
+
+  <!-- 虚线连接 -->
+  <path d="M108,167 L108,195 Q108,210 123,210 L265,210 L265,220" class="dash" fill="none"/>
+  <line x1="330" y1="246" x2="1074" y2="246" class="dash"/>
+
+  <text x="700" y="238" class="note" text-anchor="middle">Direct Collect 路径：Topic → collect → intake（跳过 Discovery 阶段，适用于已知 URL 的直接采集）</text>
+
+  <!-- ========== 注解区域 ========== -->
+
+  <!-- 模式支持标注框 -->
+  <rect x="34" y="295" width="420" height="64" rx="6" fill="#f0f9ff" stroke="#0284c7" stroke-width="1"/>
+  <text x="44" y="315" class="text" font-weight="600">模式支持 (V1.2)</text>
+  <text x="44" y="334" class="small">topic / name / title / url / composite (多信号输入)</text>
+  <text x="44" y="352" class="note">composite 模式支持 keywords + names + titles 混合查询</text>
+
+  <!-- 边界约束标注框 -->
+  <rect x="474" y="295" width="480" height="82" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+  <text x="484" y="315" class="text" font-weight="600">边界约束（Agent 安全边界）</text>
+  <text x="484" y="334" class="small">Agent 只能回填 discovery_hits，不自动 accept/promote/写 works</text>
+  <text x="484" y="352" class="small">accept 后仅创建 intake_candidates(resolution='pending')</text>
+  <text x="484" y="370" class="small">title-only hit 不能批量接受</text>
+
+  <!-- URL & DOI 标注框 -->
+  <rect x="974" y="295" width="372" height="64" rx="6" fill="#faf5ff" stroke:#7c3aed" stroke-width="1"/>
+  <text x="984" y="315" class="text" font-weight="600">已知标识符处理</text>
+  <text x="984" y="334" class="small">已知 URLs 仅作 source_hint（不自动抓取）</text>
+  <text x="984" y="352" class="small">DOI / arXiv / GitHub 不作为自动 discovery mode</text>
+
+  <!-- 底部说明线 -->
+  <line x1="34" y1="398" x2="1346" y2="398" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="690" y="418" text-anchor="middle" class="note">Discovery 是只读发现层 — 所有写入操作（accept、promote、works 创建、ontology 变更、PDF 下载）均需人工或受控流程触发</text>
+
+</svg>

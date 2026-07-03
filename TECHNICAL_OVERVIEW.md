@@ -1,7 +1,7 @@
 # 文献库技术说明
 
-> 更新时间：2026-06-29
-> 适用版本：V1 初始发布。collector / parser / inbox / review 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
+> 更新时间：2026-06-30
+> 适用版本：V1.1。collector / parser / inbox / review / discovery 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
 
 ## 1. 系统目标
@@ -23,6 +23,7 @@
 | 前端 | Vue 3 + Vite | 19528 |
 | PDF 解析 | 二元路由：PyMuPDF 本地（文本层，默认/免费）↔ MinerU 官网 cloud vlm（扫描型/降级） | 经 parser/ 子项目 |
 | 文献采集 | collector 子项目（topics 成熟度闸门 / collect·resolve / intake 审核 / ingest_bridge） | CLI·API·UI 三链 |
+| 发现检索 | discovery 子项目（topic/name/title/url/composite 五种模式 + agent 回填协议 + web-access 约束） | CLI·API·UI·Agent |
 | 元数据抽取 | Ollama (qwen3:4b) / opencode→MiMo-v2.5-pro（质量裁判） | 11435 |
 
 ### 目录结构
@@ -60,11 +61,11 @@ literature_library/
 
 ### FastAPI 后端
 
-`api/main.py` 启动 FastAPI 应用，挂载 9 组路由：works、relations、duplicates、files、metadata、classification、intake、parse、ingest。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
+`api/main.py` 启动 FastAPI 应用，挂载 10 组路由：works、relations、duplicates、files、metadata、classification、intake、discovery、parse、ingest。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
 
 ### Vue 前端
 
-单页应用，10 个页面：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview、IntakeReview、InboxReview、TopicsReview。通过 `/api` 前缀与后端通信。
+单页应用，11 个页面：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview、IntakeReview、InboxReview、TopicsReview、DiscoveryReview。通过 `/api` 前缀与后端通信。
 
 ### MinerU / content.md 解析链路
 
@@ -345,7 +346,7 @@ MetadataReview 页面（`/metadata`）提供人工审核门禁：
 
 ### 前端管理
 
-Vue SPA 提供 10 个页面：
+Vue SPA 提供 11 个页面：
 
 | 页面 | 路径 | 职责 |
 |---|---|---|
@@ -359,6 +360,38 @@ Vue SPA 提供 10 个页面：
 | IntakeReview | `/intake` | 采集候选审核（resolution、review_status、promote） |
 | InboxReview | `/inbox` | Inbox 摄入 dry-run 预览与确认 |
 | TopicsReview | `/topics` | 采集主题管理（成熟度转换、mapped_tags） |
+| DiscoveryReview | `/discovery` | 受约束发现检索 run/hit 审核和 agent 回填入口（支持 topic/name/title/url/composite 模式） |
+
+### 5.1 发现检索端到端流程
+
+文献库的发现→摄入流水线由三个核心模块组成，按线性顺序协作：
+
+**Stage 1 — Topic Gate（前置输入源）**
+- 管理采集主题 (`collection_topics`) 及其生命周期（seedling → proposed → mapped）
+- 每个主题携带结构化检索线索 (`query_def`: keywords, known_names, known_titles)
+- 在 `/topics` 页面可触发 discovery plan 生成
+- **角色**：不是后置分类器，而是 Discovery 的**结构化输入来源**
+
+**Stage 2 — Discovery（受约束发现检索）**
+- 基于 topic 或手动输入创建检索方案 (`search_plan_json`)
+- 支持 5 种输入模式：topic / name / title / url / **composite** (V1.2)
+- Agent 按 plan 执行检索，回填 `discovery_hits`
+- 用户在 `/discovery` 审核 hits，执行 accept/reject
+- **唯一桥梁**：`accept_hit_to_intake()` 将接受的 hit 转为 `intake_candidates`
+
+**Stage 3 — Intake Candidates（候选审核闸门）**
+- 接收来自 Discovery accept 和 Direct collect 两个来源的候选
+- 统一经 light_gate（元数据查重）→ heavy_gate（SHA256 查重）→ A2 review → promote
+- Promoted 候选通过 `ingest_bridge` 进入 works 正式库
+
+**硬约束**：
+- Discovery agent 只能回填 `discovery_hits`，不得写 works/intake/ontology
+- Accept 后只创建 `intake_candidates(resolution='pending')`，不自动 promote
+- DOI / arXiv / GitHub URL 不作为自动 discovery mode（仍走 collect 入口）
+- Title-only hit 不能批量接受
+- 已知 URLs 仅作 source_hint，不自动创建 hit
+
+详见 [业务流程六：主题驱动发现检索](docs/workflows/business-flows.md#流程六主题驱动发现检索)。
 
 ## 6. API 概览
 
@@ -399,6 +432,16 @@ Vue SPA 提供 10 个页面：
 | GET | `/api/intake/topics` | 采集主题列表 |
 | POST | `/api/intake/topics` | 主题成熟度转换 |
 | POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
+| POST | `/api/discovery/plan` | 生成 discovery search plan，不创建 run |
+| POST | `/api/discovery/composite-plan` | 生成 composite 多信号 discovery search plan |
+| POST | `/api/discovery/run` | 创建 discovery run |
+| GET | `/api/discovery/runs` | 发现检索 run 列表 |
+| GET | `/api/discovery/runs/{run_id}` | 查看单个 run 和 search plan |
+| POST | `/api/discovery/runs/{run_id}/hits` | agent 回填 discovery hits |
+| GET | `/api/discovery/hits` | 发现检索命中列表 |
+| POST | `/api/discovery/hits/{hit_id}/accept` | 接受单个 hit 并创建 intake candidate |
+| POST | `/api/discovery/hits/batch-accept` | 批量接受 hits 并创建 intake candidates |
+| POST | `/api/discovery/hits/{hit_id}/reject` | 拒绝 hit 并记录审核备注 |
 | GET | `/api/parse/status` | 解析状态汇总或单篇查询 |
 | POST | `/api/parse/trigger` | 触发解析 |
 | GET | `/api/ingest/plan` | 摄入 dry-run 预览 |

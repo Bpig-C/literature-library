@@ -1,7 +1,7 @@
 # 文档治理说明
 
 > 状态：当前权威文档
-> 更新时间：2026-06-29
+> 更新时间：2026-07-03
 
 本仓库同时保存“当前操作文档”和“历史设计/审核证据”。不要把所有带日期的文档都当成当前事实；当前行为必须以代码、测试、当前数据库健康检查和当前有效文档共同验证。
 
@@ -24,10 +24,13 @@
 - `README.md`：操作者入口与日常命令。
 - `TECHNICAL_OVERVIEW.md`：系统架构、不变量和当前限制。
 - `FUTURE_WORK_PLAN.md`：当前路线图与 V1.1+ 待办队列。
+- `USER_ISSUES.md`：用户问题、修复状态与验收记录。
+- `docs/HANDOVER_GUIDE.md`：当前交接、页面清单、关键遗留和最新审计线索。
 - `docs/PROJECT_HISTORY.md`：已完成阶段、历史路线和旧判断的汇总入口。
 - `docs/architecture/README.md`：架构文档索引与维护规则。
 - `docs/workflows/README.md`：业务流程文档索引与维护规则。
 - `docs/superpowers/README.md`：dated specs/plans/reviews 的索引和状态规则。
+- `docs/_archive/README.md`：已归档文档索引；只作历史查证入口。
 - `scripts/README.md`：脚本生命周期与操作命令。
 - `web/README.md`：前端开发与产品界面说明。
 
@@ -41,7 +44,7 @@ rg -n "parse_ledger|literature_healthcheck|D:\\\\06_tools\\\\document-parser|182
 
 允许出现的命中：
 
-- 明确描述历史工作的 specs、plans、reviews。
+- 明确描述历史工作的 specs、plans、reviews，尤其是 `docs/_archive/` 下的归档材料。
 - 已标注 `fallback` 且说明不是默认路径的文档。
 - legacy/fallback 分支中的源码注释。
 

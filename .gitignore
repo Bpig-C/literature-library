@@ -24,6 +24,10 @@ _archive/
 literature_report.md
 migration_report.md
 
+# Keep archived documentation tracked even when filenames match old root reports.
+!docs/_archive/
+!docs/_archive/**
+
 # Log files
 *.log
 

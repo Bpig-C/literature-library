@@ -1,10 +1,10 @@
 # 文献库未来工作计划
 
 > 状态：当前路线图
-> 更新时间：2026-06-30
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成。最近复核：`pytest tests\ -q` 通过，`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。V1 详见 `docs/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程详见 `docs/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索执行协议见 `docs/discovery-agent-protocol.md`。
+> 更新时间：2026-07-03
+> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
-本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；分阶段细节保留在 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
+本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 
 ## 维护原则
 
@@ -40,27 +40,9 @@
 
 ## 当前近期重点（最高优先级）
 
-**🔴 V1.3 知识闭环：主题·发现·收件箱关联性改造**
-
-这是当前最紧迫的方向。V1.2 Composite Discovery 已解决"发现检索输入太弱"的问题，但三个核心模块——主题闸门、发现检索、收件箱——仍然各自独立工作，缺乏关联性，无法形成持续迭代的知识闭环。
-
-完整实施计划见：`docs/superpowers/plans/2026-06-30-v1.3-knowledge-loop.md`
-
-**四阶段概要**：
-
-| 阶段 | 内容 | 优先级 | 状态 |
-|:----:|------|:------:|:----:|
-| P0 | 运行状态 Bug 修复 + agent 回填即时查重 | 🔴 必须立即做 | ✅ 已完成 |
-| P1 | 发现检索关联主题 + 主题可选分类标签(含自定义) + 主题线索字段扩展 | 🟠 高优先级 | ✅ 已完成 |
-| P2 | 前端侧边栏布局重排 + 按钮语义优化 | 🟡 中优先级 | ✅ 已完成 |
-| P3 | 定时重新执行 + 元数据反哺主题 + 持续迭代闭环 | ⚪ 远期 | 📋 计划中 |
-
-**为什么这个最优先**：
-1. P0 是确认的 bug（运行状态不更新），不修影响所有后续使用
-2. P1 打通三模块关联后，P1-2 和 P1-3 直接为"B. 分类规范与审核模板"和"C. 采集与检索模板"铺路
-3. 不做这个改造，后续的定时采集、自动执行器等高级功能都缺少数据基础
-
-**其他方向暂缓推进，直到 V1.3 P0-P1 落地并稳定。**
+> ✅ 近期发布/启动阻断项已清零。详见 `docs/PROJECT_HISTORY.md`。
+>
+> 当前仍有高优先级体验与治理待办（如 UX-001、UX-004、QA-001），但不阻塞项目启动和基础回归。
 
 ---
 
@@ -77,15 +59,46 @@
 - 文献类型越多，元数据字段和边界情况越多。
 - 不同来源 PDF 的结构差异会暴露新的抽取失败模式。
 - 审核中积累的人工修正应反哺模板，而不是只停留在单条记录。
+- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`。详见 `docs/PROJECT_HISTORY.md`「2026-07-02 前端体验与流程完善」§六。
 
 后续方向：
 
-- 建立元数据抽取模板版本号。
-- 将字段定义、证据要求、风险规则、回填语义写成可审查文档。
-- 从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。
-- 将模板变更与抽取脚本、测试 fixture 和审核界面同步。
+1. **~~【第一步】字段模板可视化展示~~（UX-003）— ✅ 已完成**
+   - 已从 MetadataReview 详情弹窗升级为**独立模板管理页面** `/templates`
+   - 三大 Tab：元数据字段（可编辑）/ 分类词汇表（预留）/ Discovery协议（预留）
+   - 后端 API 6 个端点就绪（`api/routes/templates.py`），含自动备份和版本回滚
+   - 归档位置：`docs/PROJECT_HISTORY.md` §六
+
+2. **【第二步】字段级重抽前端化**（UX-004）⬅️ **当前下一步**
+   - 智能模式：每个字段旁加「🔄 重抽」按钮 → 后端 rerun endpoint → 复用 opencode/llm_judge 链路 → 只覆盖指定字段
+   - 笨模式（降级）：「📋 复制 prompt」按钮 → 用户手动跑 CLI
+   - 两种模式保留，确保可靠性
+   - 前置依赖 ✅ 已满足：字段模板页面已完成
+
+3. **建立元数据抽取模板版本号**。
+4. **将字段定义、证据要求、风险规则、回填语义写成可审查文档。**
+5. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
+6. **将模板变更与抽取脚本、测试 fixture 和审核界面同步。**
 
 优先级：高。它直接影响后续所有文献的结构化质量。
+
+#### 当前已实现的底层能力
+
+以下能力已在 CLI 层或代码层就绪：
+
+| 能力 | 状态 | 入口 |
+|------|------|------|
+| 全量重抽 | ✅ CLI | `literature_metadata_rerun.py --ext-id ME-xxx --rerun` |
+| 字段级重抽 | ✅ CLI | `--fields title,url --rerun`（merge_selected_fields 保留旧值） |
+| 预览不写库 | ✅ CLI | `--no-write --json` |
+| field_focus prompt 注入 | ✅ 代码 | `field_focus_instruction()` |
+| supersede 审计链 | ✅ 代码 | 新记录 + 旧记录标记 superseded_by |
+| LLM 调用链 | ✅ 代码 | llm_judge.chat() → opencode subprocess（无需额外 token） |
+| 模板管理后端 API | ✅ HTTP | `GET/POST /api/templates/*`（6 端点） |
+| 模板管理前端页面 | ✅ 页面 | `/templates` → TemplateManage.vue |
+| 元数据字段在线编辑 | ✅ UI | 内联编辑 + 增删 + 导出 JSON/Prompt |
+
+缺口：**后端 rerun HTTP endpoint** + **前端每个字段旁的重抽按钮**（UX-004）
 
 ### B. 文献分类规范与审核模板
 
@@ -127,6 +140,10 @@
 
 优先级：高。V1.1 已完成第一版受约束发现检索；V1.2 已实现 composite 多信号组合模式；后续价值在于把一次次人工审核经验固化为稳定模板和 adapter，而不是扩大成无边界抓取。
 
+### D. 流程管理面板（批量触发）— ✅ 已完成
+
+> 已归档至 `docs/PROJECT_HISTORY.md`「流程管理页面创建与增强（Pipeline）」章节。
+
 ## V1.1 优先队列
 
 ### 1. Discovery 本地模型自动执行器
@@ -152,14 +169,20 @@
 
 ### 2. 元数据抽取模板 V1.1
 
-先把元数据抽取模板作为独立维护资产固化下来，避免抽取经验只散落在脚本、prompt 和审核结果里。
+元数据抽取模板已作为独立维护资产落地：
 
-目标：
+- **✅ 已完成**：独立模板管理页面 `/templates`（TemplateManage.vue），三大 Tab（元数据/分类/Discovery）
+- **✅ 已完成**：后端 6 个 API 端点（`api/routes/templates.py`），含自动备份和版本回滚
+- **✅ 已完成**：元数据字段在线查看 + 内联编辑 + 增删 + 导出 JSON/Prompt
+- **🔒 预留**：分类词汇表和 Discovery 协议编辑（后端已实现，前端按钮 disabled）
 
-- 梳理当前 metadata 字段、证据要求、风险分级、回填语义。
-- 定义模板版本号和变更记录方式。
+剩余目标：
+
+- 梳理当前 metadata 字段、证据要求、风险分级、回填语义。（部分完成——字段定义已统一到 templates.json）
+- 定义模板版本号和变更记录方式。（备份机制已有，版本号待加）
 - 建立从 MetadataReview 人工修正反哺模板的流程。
 - 增加最小 fixture，覆盖常见文献类型和已知失败模式。
+- **【进行中】字段级重抽前端化（UX-004）**：智能模式 + 笨模式双保险。
 
 验证：
 
@@ -301,7 +324,7 @@ V1.3 已支持建主题时填词表外的自定义标签（存为 `{group, value
 - 带 proposed_new 标签的主题，未转正时 transition→mapped 被拒且有清晰提示。
 - 自定义值纳入词表后，同一主题可正常推进 mapped。
 
-来源：2026-07-01 V1.3 完成后第三方审核（`docs/superpowers/plans/2026-06-30-v1.3-handoff.md` 反偷懒自检）。
+来源：2026-07-01 V1.3 完成后第三方审核（`docs/_archive/superpowers/plans/2026-06-30-v1.3-handoff.md` 反偷懒自检）。
 
 ## 暂不进入 V1.1 的候选项
 

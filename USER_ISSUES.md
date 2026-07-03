@@ -1,0 +1,119 @@
+# 用户问题记录
+
+> **用途**：记录日常使用中发现的不合理之处、体验问题、功能缺陷。
+>
+> **使用方式**：发现问题时直接在下方添加，定期整理后转移到 `FUTURE_WORK_PLAN.md` 作为开发规划。
+>
+> **更新时间**：2026-07-03
+
+---
+
+## 问题格式
+
+```markdown
+### UX-XXX: 简短标题
+- **发现日期**：YYYY-MM-DD
+- **页面/模块**：哪个页面或功能
+- **问题描述**：具体是什么问题
+- **期望行为**：应该是什么样的
+- **优先级**：🔴 高 / 🟡 中 / 🟢 低
+- **状态**：📋 待处理 / 🔧 已规划 / ✅ 已解决
+```
+
+---
+
+## 待处理问题
+
+### UX-004: 字段级重抽缺少前端入口
+- **发现日期**：2026-07-02
+- **页面/模块**：元数据审核（MetadataReview.vue）+ 模板管理（TemplateManage.vue）+ 后端 API
+- **问题描述**：
+  - 已有 CLI 工具支持字段级重抽：`python scripts/literature_metadata_rerun.py --ext-id ME-xxx --fields title,url --rerun`
+  - CLI 工具功能完整（字段选择、旧值保留预览、supersede 链、审计记录），但**只有命令行入口**
+  - 元数据审核页面每个字段旁边没有「🔄 重抽此字段」按钮
+  - 用户只能离开页面去终端操作，或对整条记录全量重新抽取（浪费且可能破坏已有正确字段）
+  - 全量抽取走的是同一链路（`POST /api/metadata/extract` → `llm_judge.chat()` → opencode subprocess），不需要额外配置 token
+- **期望行为**：
+  - **智能模式（主路径）**：每个字段旁加「🔄 重抽」按钮 → 调后端 rerun endpoint（复用 `literature_metadata_rerun.py` 核心逻辑 + `llm_judge.chat()` 同一 opencode 链路）→ 只覆盖指定字段
+  - **笨模式（降级方案）**：如果智能模式不可用（opencode 挂了/超时），提供「📋 复制 prompt」按钮 → 将带 field_focus 的完整 LLM prompt 复制到剪贴板 → 用户手动跑 CLI
+  - 两种模式保留，确保可靠性
+- **优先级**：🟡 中
+- **状态**：📋 待处理
+- **前置依赖**：✅ UX-003 已完成（模板管理页面就绪）
+- **技术备注**：
+  - 可重抽字段列表：title, title_zh, date, authors, author_count, institutions, doi, arxiv_id, venue, url, abstract（见 `VALID_RERUN_FIELDS`）
+  - 核心合并函数：`merge_selected_fields(old_data, new_data, fields)` 已实现于 `literature_metadata_rerun.py:165`
+  - field_focus 指令生成：`field_focus_instruction(fields, review_note)` 已实现于同文件第150行
+
+### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表
+- **发现日期**：2026-07-02
+- **页面/模块**：解析流程（parser/core/mineru/router.py 路由策略）
+- **问题描述**：
+  - 当前解析路由策略（D13 二元路由）：有文本层的 born-digital PDF 会优先走 PyMuPDF 本地抽取
+  - PyMuPDF 只提取嵌入文字层，**完全丢弃图片、图表、架构图等视觉元素**
+  - 实际案例：W-sha-05e46bff6988 (Claude Sonnet 5 System Card) 解析后 content.md 只有纯文字（234K），无任何图片引用
+  - 系统卡片/技术文档类 PDF 通常包含大量架构图/流程图，丢失后严重影响阅读体验
+- **期望行为**：
+  - 方案A：允许用户在审核页面选择重新解析并指定后端（强制走 Cloud VLM）
+  - 方案B：修改路由规则，对特定类型文献（系统卡片/技术报告）默认走 VLM
+  - 方案C：PyMuPDF 抽取时同时提取图片（pymupdf 支持 `page.get_images()` 和 `pix.save()`）
+- **优先级**：🟡 中
+- **状态**：📋 待处理
+- **技术备注**：
+  - 路由代码：`parser/core/mineru/router.py` 的 `_route_by_d13()` 函数
+  - PyMuPDF 后端代码：`parser/core/mineru/pymupdf_client.py`（注释已写明代价：丢版面结构）
+  - VLM 后端保留图片：markdown 中 `![](images/xxx.png)` 引用 + 独立图片文件
+  - 用户提到子项目（MinerU）是保留了图片的，问题出在走了 pymupdf 分支
+
+### UX-001: 缺少批量触发流程的管理页面
+- **发现日期**：2026-07-01
+- **页面/模块**：全局（收件箱 → 解析 → 元数据抽取 → 分类抽取）
+- **问题描述**：摄入收件箱后，只能一篇一篇地触发解析、元数据抽取、分类抽取。每个阶段都需要手动操作，效率极低。
+- **期望行为**：
+  1. 有一个总体管理页面，可以一键运行整个流程（解析 → 元数据 → 分类）
+  2. 或者每个阶段支持批量触发，然后分别到各审核页面审核
+  3. 显示各阶段的待处理数量和状态
+- **优先级**：🔴 高
+- **状态**：📋 待处理
+- **技术备注**：后端 API 已支持批量（`work_ids` 数组或 `all_pending: true`），缺的是前端入口
+
+### QA-001: 模板管理当前只完成 CRUD，尚未接入真实抽取链路
+- **发现日期**：2026-07-03
+- **页面/模块**：模板管理（`api/routes/templates.py`、`TemplateManage.vue`）+ 元数据/分类抽取脚本
+- **问题描述**：模板页面可编辑并保存 `templates/templates.json`，但 `scripts/literature_metadata_extract.py` 仍使用硬编码 prompt 和字段清单；分类模板保存端点也只是预留，不会自动同步 `classification_vocab.py` / 前端 labels。
+- **期望行为**：抽取脚本、rerun 脚本、测试 fixture 和审核 UI 统一读取模板 loader；分类模板变更应有明确同步/审核流程。
+- **优先级**：🟡 中
+- **状态**：📋 待处理
+
+### QA-002: 手动上传候选 PDF 缺少生命周期保护
+- **发现日期**：2026-07-03
+- **页面/模块**：`POST /api/intake/candidates/{id}/upload-pdf`
+- **问题描述**：当前上传端点只校验候选存在，未拒绝已入库、已拒绝或已有 `local_pdf_path` 的候选；重复调用可能覆盖 `_collector_cache/{candidate_id}.pdf` 并改写 resolution。
+- **期望行为**：只允许未入库且未拒绝候选上传；已有 PDF 时返回 409 或要求显式 force；上传采用临时文件 + 原子替换，并记录替换原因。
+- **优先级**：🟡 中
+- **状态**：📋 待处理
+
+### QA-003: 收件箱上传声明大小限制但未执行，且同名文件会覆盖
+- **发现日期**：2026-07-03
+- **页面/模块**：`POST /api/ingest/upload`
+- **问题描述**：`api/routes/ingest.py` 定义了 `MAX_FILE_SIZE = 200MB`，但上传流程未累计检查大小；写入 `_inbox` 时同名 PDF 会直接覆盖。
+- **期望行为**：超过限制返回 413 并清理临时文件；同名冲突返回 409 或生成唯一文件名。
+- **优先级**：🟢 低
+- **状态**：📋 待处理
+
+---
+
+## 已规划问题
+
+<!-- 从待处理转移到这里，标注对应的开发计划 -->
+
+---
+
+## 已解决问题
+
+<!-- 解决后移到这里，保留记录供参考 -->
+
+### UX-003: 元数据字段模板可视化展示 → ✅ 升级为独立模板管理页面
+- **解决方式**：从 MetadataReview 详情弹窗（只读展示）升级为 `/templates` 独立页面（可编辑+三大Tab）
+- **解决日期**：2026-07-03
+- **详情**：见 `docs/PROJECT_HISTORY.md` §六「模板管理独立页面」
