@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from api.db import get_conn
+from collector.normalize import normalize_arxiv_id
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -865,16 +866,23 @@ def accept_hit_to_intake(
             "snippet": hit.get("snippet", ""),
         }
 
-        # Determine source_type for intake
+        # Determine source_type for intake + extract arxiv_id from URL if possible
+        hit_url = hit.get("canonical_url") or hit.get("url", "")
         intake_source_type = hit.get("source_type", "web")
         if intake_source_type in ("official_domain", "manual_url"):
             intake_source_type = "web"
 
+        # V1.2: 反向提取 arxiv_id（URL 里可能带着 arxiv.org/abs/xxx 或 arXiv ID）
+        cand_arxiv_id = hit.get("arxiv_id") or normalize_arxiv_id(hit_url) or None
+        if cand_arxiv_id and intake_source_type == "web":
+            # 有 arxiv_id 说明来源是 arXiv，修正 source_type 让后续 heavy_gate 能正确派生 PDF URL
+            intake_source_type = "arxiv"
+
         cid, status = insert_candidate(
             source_type=intake_source_type,
-            url_canonical=hit.get("canonical_url") or hit.get("url", ""),
-            arxiv_id=None,  # V1.1 discovery hits don't carry arxiv_id
-            doi=None,       # V1.1 discovery hits don't carry doi
+            url_canonical=hit_url,
+            arxiv_id=cand_arxiv_id,   # V1.2: 不再硬编码 None
+            doi=None,
             title=hit.get("title"),
             raw_meta=raw_meta,
             collection_topic_id=hit.get("collection_topic_id"),

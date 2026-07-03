@@ -7,8 +7,12 @@ collector.candidate_store / collector.gate / collector.ingest_bridge / collector
 from __future__ import annotations
 
 import json
+import os
+import secrets
+import shutil
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 
 from ..db import get_conn, LIBRARY_ROOT
@@ -317,3 +321,83 @@ def intake_topics_patch_query_def(topic_id: str, body: TopicQueryDefBody):
     except KeyError as e:
         raise HTTPException(404, str(e))
     return {"ok": True, "topic_id": topic_id, "query_def": qd}
+
+
+@router.post("/intake/candidates/{candidate_id}/upload-pdf")
+async def upload_candidate_pdf(candidate_id: str, file: UploadFile = File(...)):
+    """为候选记录手动绑定 PDF（用于非 arXiv 来源或 agent 上传的场景）。
+
+    流程：
+      1. 保存 PDF 到 _collector_cache/
+      2. 更新 candidate.local_pdf_path
+      3. 计算 SHA256 并查重（与 heavy_gate 同逻辑）
+      4. 返回 resolution（new / sha256_duplicate）
+    """
+    from scripts.literature_ingest import sha256_file, utc_now
+
+    # 验证候选存在
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM intake_candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, f"candidate not found: {candidate_id}")
+        candidate = dict(row)
+    finally:
+        conn.close()
+
+    # 验证文件类型
+    filename = file.filename or "upload.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "仅支持 PDF 文件")
+
+    # 保存到 _collector_cache
+    cache_dir = os.path.join(LIBRARY_ROOT, "_collector_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    dest = Path(cache_dir) / f"{candidate_id}.pdf"
+
+    try:
+        with open(dest, "wb") as f:
+            while chunk := await file.read(1024 * 64):
+                f.write(chunk)
+    except Exception as e:
+        raise HTTPException(500, f"文件保存失败: {e}")
+
+    # 计算 SHA256 并查重
+    try:
+        digest = sha256_file(dest) if hasattr(sha256_file, '__call__') else _sha256_fallback(dest)
+    except Exception as e:
+        raise HTTPException(500, f"SHA256 计算失败: {e}")
+
+    conn = get_conn()
+    try:
+        hit = conn.execute("SELECT 1 FROM source_files WHERE content_sha256=?", (digest,)).fetchone()
+        resolution = "sha256_duplicate" if hit else "new"
+
+        rel_path = os.path.relpath(dest, LIBRARY_ROOT).replace("\\", "/")
+        now = utc_now() if callable(utc_now) else ""
+        conn.execute(
+            """UPDATE intake_candidates SET local_pdf_path=?, fetched_sha256=?,
+               resolution=?, resolved_at=? WHERE id=?""",
+            (rel_path, digest, resolution, now, candidate_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "id": candidate_id,
+        "local_pdf_path": rel_path,
+        "fetched_sha256": digest,
+        "resolution": resolution,
+    }
+
+
+def _sha256_fallback(path: str) -> str:
+    """SHA256 计算的纯 Python fallback（不依赖 ingest 模块）。"""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()

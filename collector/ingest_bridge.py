@@ -98,7 +98,8 @@ def promote(candidate_id: str, *, library_root: Path) -> str:
     work_id = _do_ingest(candidate_id, library_root)
     conn = get_conn()
     try:
-        # 主效果先落：候选翻 ingested
+        # 主效果先落：候选翻 ingested。review_status 表示人工审核结论，
+        # 晋升生命周期由 status/ingested_work_id 表示，避免混用语义。
         conn.execute(
             "UPDATE intake_candidates SET status='ingested', ingested_work_id=? WHERE id=?",
             (work_id, candidate_id))

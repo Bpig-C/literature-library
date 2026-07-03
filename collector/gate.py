@@ -120,9 +120,23 @@ def heavy_gate(candidate_id: str):
 
 
 def _pdf_url_for(row):
-    """按候选来源派生 PDF 直链。arxiv 用 arxiv.pdf_url；github v1 不支持（留 follow-up）。"""
-    if row["source_type"] == "arxiv" and row["arxiv_id"]:
+    """按候选来源派生 PDF 直链。
+
+    优先级：
+      1) 已有 arxiv_id → 直接用（arxiv.pdf_url 派生 /abs/xxx → /pdf/xxx）
+      2) 无 arxiv_id 但 url_canonical 含 arxiv.org → 反向提取后派生
+      3) 其他 source_type（web/github）→ v1 不支持（留 follow-up）
+    """
+    # 路径1: 已有 arxiv_id
+    if row["arxiv_id"]:
         return arxiv_adapter.pdf_url(row["arxiv_id"])
+
+    # 路径2: 从 url_canonical 反向尝试提取 arxiv_id
+    url = row["url_canonical"] if "url_canonical" in row.keys() else ""
+    aid = normalize_arxiv_id(url)
+    if aid:
+        return arxiv_adapter.pdf_url(aid)
+
     return None
 
 

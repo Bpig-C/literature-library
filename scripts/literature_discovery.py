@@ -67,6 +67,30 @@ def plan_cmd(args):
     print(json.dumps(p, indent=2, ensure_ascii=False))
 
 
+def composite_plan_cmd(args):
+    """Generate a composite search plan from multiple signals and print as JSON."""
+    try:
+        p = discovery.draft_composite_plan(
+            topic_id=args.topic_id,
+            names=args.names if args.names else None,
+            titles=args.titles if args.titles else None,
+            authors=args.authors if args.authors else None,
+            institutions=args.institutions if args.institutions else None,
+            keywords=args.keywords if args.keywords else None,
+            known_urls=args.known_urls if args.known_urls else None,
+            preferred_domains=args.preferred_domains if args.preferred_domains else None,
+            exclude_terms=args.exclude_terms if args.exclude_terms else None,
+            artifact_type_hint=args.artifact_type_hint,
+            max_results=args.max_results,
+            freeform_note=args.freeform_note,
+        )
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(p, indent=2, ensure_ascii=False))
+
+
 def run_cmd(args):
     """Create a discovery run."""
     try:
@@ -153,6 +177,21 @@ def main(argv=None):
     p.add_argument("--arxiv", action="store_true", help="(unsupported in V1.1)")
     p.add_argument("--github-url", dest="github_url", action="store_true", help="(unsupported in V1.1)")
 
+    # composite-plan
+    cp = sub.add_parser("composite-plan", help="Generate a composite search plan from multiple signals")
+    cp.add_argument("--topic-id", help="Topic ID (optional)")
+    cp.add_argument("--names", nargs="*", default=[], help="Known names / author or institution names")
+    cp.add_argument("--titles", nargs="*", default=[], help="Known title keywords")
+    cp.add_argument("--authors", nargs="*", default=[], help="Author list")
+    cp.add_argument("--institutions", nargs="*", default=[], help="Institution list")
+    cp.add_argument("--keywords", nargs="*", default=[], help="Keywords")
+    cp.add_argument("--known-urls", nargs="*", default=[], help="Known URLs")
+    cp.add_argument("--preferred-domains", nargs="*", default=[], help="Preferred domains")
+    cp.add_argument("--exclude-terms", nargs="*", default=[], help="Exclude terms")
+    cp.add_argument("--type", dest="artifact_type_hint", default="unknown", help="Artifact type hint")
+    cp.add_argument("--max-results", type=int, default=20)
+    cp.add_argument("--freeform-note", default="", help="Freeform research context")
+
     # run
     r = sub.add_parser("run", help="Create a discovery run")
     r.add_argument("--mode", choices=["name", "title", "url", "topic"])
@@ -184,6 +223,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.cmd == "plan":
         plan_cmd(args)
+    elif args.cmd == "composite-plan":
+        composite_plan_cmd(args)
     elif args.cmd == "run":
         run_cmd(args)
     elif args.cmd == "runs":

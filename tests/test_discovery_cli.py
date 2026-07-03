@@ -286,6 +286,97 @@ class TestRejectCmd:
 
 
 # ---------------------------------------------------------------------------
+# composite-plan command
+# ---------------------------------------------------------------------------
+
+class TestCompositePlanCmd:
+    def test_composite_plan_basic_outputs_json(self, tmp_path, monkeypatch, capsys):
+        args = SimpleNamespace(
+            topic_id=None,
+            names=["GPT-5.6 system card"],
+            titles=[],
+            authors=[],
+            institutions=[],
+            keywords=["safety"],
+            known_urls=[],
+            preferred_domains=[],
+            exclude_terms=[],
+            artifact_type_hint="unknown",
+            max_results=20,
+            freeform_note="",
+        )
+        cli.composite_plan_cmd(args)
+        out = json.loads(capsys.readouterr().out)
+        assert out["mode"] == "composite"
+        assert len(out["queries"]) > 0
+        assert any("GPT-5.6" in q for q in out["queries"])
+        assert out["dedup_guidance"]["by_url"] is True
+
+    def test_composite_plan_with_all_fields(self, tmp_path, monkeypatch, capsys):
+        args = SimpleNamespace(
+            topic_id=None,
+            names=["Claude Opus 4"],
+            titles=["Safety Report 2026"],
+            authors=["Alice Smith"],
+            institutions=["AI Research Lab"],
+            keywords=["alignment", "safety evaluation"],
+            known_urls=["https://anthropic.com/safety"],
+            preferred_domains=["anthropic.com", "arxiv.org"],
+            exclude_terms=["reddit", "social media"],
+            artifact_type_hint="technical_report",
+            max_results=15,
+            freeform_note="Looking for recent safety reports",
+        )
+        cli.composite_plan_cmd(args)
+        out = json.loads(capsys.readouterr().out)
+        assert out["mode"] == "composite"
+        assert len(out["exclude_terms"]) == 2
+        assert len(out["preferred_domains"]) == 2
+        assert out["max_results"] == 15
+        assert out["input_signals"]["freeform_note"] != ""
+        assert "github" in out["source_hints"]  # technical_report triggers github/huggingface
+
+    def test_composite_plan_empty_signals(self, tmp_path, monkeypatch, capsys):
+        args = SimpleNamespace(
+            topic_id=None,
+            names=[],
+            titles=[],
+            authors=[],
+            institutions=[],
+            keywords=[],
+            known_urls=[],
+            preferred_domains=[],
+            exclude_terms=[],
+            artifact_type_hint="unknown",
+            max_results=20,
+            freeform_note="",
+        )
+        cli.composite_plan_cmd(args)
+        out = json.loads(capsys.readouterr().out)
+        assert out["mode"] == "composite"
+        assert out["queries"] == []
+
+    def test_composite_plan_query_cap(self, tmp_path, monkeypatch, capsys):
+        args = SimpleNamespace(
+            topic_id=None,
+            names=[f"name-{i}" for i in range(10)],
+            titles=[f"title-{i}" for i in range(10)],
+            authors=[f"author-{i}" for i in range(5)],
+            institutions=[f"inst-{i}" for i in range(5)],
+            keywords=[f"kw-{i}" for i in range(10)],
+            known_urls=[],
+            preferred_domains=[],
+            exclude_terms=[],
+            artifact_type_hint="unknown",
+            max_results=20,
+            freeform_note="",
+        )
+        cli.composite_plan_cmd(args)
+        out = json.loads(capsys.readouterr().out)
+        assert len(out["queries"]) <= 10
+
+
+# ---------------------------------------------------------------------------
 # Full workflow
 # ---------------------------------------------------------------------------
 
