@@ -20,5 +20,6 @@
 - 用户流程变化时，先更新 `user-manual.md`，再按需更新 README 的页面清单。
 - CLI 参数、测试命令或批处理入口变化时，先更新 `cli-manual.md` 和 `scripts/README.md`。
 - agent 权限边界、交接格式、审核轮次或任务派发方式变化时，先更新 `agent-manual.md` 和相关协议文档。
+- 文档整理完成后，按 `agent-manual.md` 的“状态理解复核模板”派只读子 agent 复核项目状态。
 - 新增、拆分或合并手册时，同步更新 `docs/README.md` 和根 `README.md` 的文档入口。
 - 历史完成记录仍写入 `docs/PROJECT_HISTORY.md`；未来计划仍写入 `FUTURE_WORK_PLAN.md`；问题和验收状态仍写入 `USER_ISSUES.md`。

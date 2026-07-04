@@ -13,7 +13,13 @@
 - FastAPI 后端：`19527`
 - Vue 前端：`19528`
 
-启动后端：
+启动后端（日常推荐）：
+
+```powershell
+uv run python scripts\run_api.py
+```
+
+启动后端（开发热重载）：
 
 ```powershell
 uvicorn api.main:app --port 19527 --reload

@@ -70,7 +70,34 @@
 - 哪些风险或限制仍然存在。
 - 哪些文档已经同步，哪些历史文档只是证据不再维护。
 
-## 给下一轮 agent 的提示词模板
+## 状态理解复核模板
+
+每次完成一轮文档整理、交接整理或路线图重排后，建议先派一个只读子 agent 使用下面模板复核项目状态。该 agent 不应修改文件，只输出理解和疑点，用来发现文档漂移。
+
+```text
+你是 literature_library 项目的新接手 agent。请只做项目状态理解，不做代码或文档修改。
+
+工作目录：D:\02_academic\doctoral\literature_library
+
+请按顺序读取：
+1. README.md
+2. docs/README.md
+3. docs/HANDOVER_GUIDE.md
+4. docs/manuals/agent-manual.md
+5. FUTURE_WORK_PLAN.md
+6. USER_ISSUES.md
+7. docs/PROJECT_HISTORY.md 最近 2026-07-04/05 相关章节
+
+输出：
+- 你理解的项目目标和当前主流程
+- 当前已完成的关键能力
+- 当前下一步最应该做什么，哪些明确暂缓
+- 你看到的文档体系结构和每类文档职责
+- 你发现的疑点、矛盾或需要复核的地方
+- 不要修改任何文件，不要提交，只做状态理解报告
+```
+
+## 给下一轮实施 agent 的提示词模板
 
 ```text
 你是 literature_library 项目的协作 agent。请先读取：
@@ -103,4 +130,3 @@
 - 已完成的重要阶段：追加 `docs/PROJECT_HISTORY.md`。
 - 仍未完成或暂缓的方向：更新 `FUTURE_WORK_PLAN.md`。
 - 用户提出的问题、修复状态和验收口径：更新 `USER_ISSUES.md`。
-

@@ -71,3 +71,7 @@ python scripts\check_docs.py
 - 不要把历史计划当作当前任务说明；历史材料默认只作证据。
 - 不要在 README 复制三类手册的大段内容；README 只保留摘要和链接。
 - 不要新增 `docs/plans/`、`docs/reviews/`、`docs/uperpowers/` 这类散落目录；阶段性材料统一走 `docs/superpowers/`。
+
+## 文档整理后的复核
+
+完成一轮文档整理后，按 [manuals/agent-manual.md](manuals/agent-manual.md) 的“状态理解复核模板”派一个只读子 agent 复述项目状态和疑点。确认过的漂移再回写到当前权威文档。

@@ -98,6 +98,7 @@
 - 网页上传功能：`POST /ingest/upload` 接口 + NUpload 组件（多选拖拽 PDF → _inbox/ → 自动 execute_plan）
 - 数据统计修复：新增 `GET /pipeline/stats` 区分「待抽取」vs「待审核」；新增 pending-metadata/pending-classification 列表接口
 - 双模式设计：extract 模式（待抽取文件列表+批量操作）+ review 模式（审核列表纯展示）；selectable/actionDisabled 双开关防逻辑矛盾
+- UX-001 按“每个阶段支持批量触发，然后分别到审核页面审核”的口径关闭：Pipeline 支持批量摄入、批量解析、批量元数据抽取、批量分类抽取；不做无人工闸门的一键全流程自动跑。
 - PDF 预览+快速隔离：每行预览按钮 → 右侧 PdfPreviewDrawer 并列显示；隔离弹窗复用 useQuarantine composable
 - 布局重构：从底部接续改为左右并列（`.pipeline-layout` flex 双栏）
 - 审核报告：`docs/_archive/superpowers/reviews/2026-07-01-pipeline-enhancement-audit.md`（PASS 有条件通过，TD-P1/P2/P3 已修复）
@@ -292,7 +293,7 @@
 
 | Issue | 标题 | 状态 |
 |-------|------|------|
-| UX-001 | 缺少批量触发流程的管理页面 | 📋 待处理 |
+| UX-001 | 缺少批量触发流程的管理页面 | ✅ 已完成 |
 | UX-002 | PyMuPDF 解析后丢失图片/图表 | 📋 待处理 |
 | UX-004 | 字段级重抽前端入口（双模式） | ✅ 已完成 |
 | QA-001 | 元数据模板接入真实抽取链路 | ✅ 已完成 |
