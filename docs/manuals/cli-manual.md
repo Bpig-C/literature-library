@@ -51,6 +51,7 @@ python scripts\healthcheck_library.py --json
 
 ```powershell
 git diff --check
+python scripts\check_docs.py
 ```
 
 前端构建：
@@ -148,4 +149,3 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal --
 - 不要手动移动 `works`、`_quarantine`、`_archive` 中的文件后忘记同步数据库。
 - 不要恢复旧的自部署 MinerU / document-parser 默认路径。
 - 不要把一次性脚本长期留在 `scripts/` 根目录；需要归档到 `scripts/_archive/`。
-

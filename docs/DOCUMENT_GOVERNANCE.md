@@ -55,7 +55,15 @@
 
 ## 发布前文档门禁
 
-发布前运行文档漂移检查，并逐条分类命中结果：
+发布前先运行轻量文档治理脚本：
+
+```powershell
+python scripts\check_docs.py
+```
+
+该脚本检查当前权威入口、三类使用手册互链、废弃 docs 目录和旧路径误用。当前本地若存在空的 `docs/plans`、`docs/reviews`、`docs/uperpowers`，脚本只给 warning；若这些目录下出现被跟踪文件或实际文件，则视为错误。
+
+如需继续人工复核历史漂移，可运行 grep 并逐条分类命中结果：
 
 ```powershell
 rg -n "parse_ledger|literature_healthcheck|D:\\\\06_tools\\\\document-parser|18200|18201|scripts/_|待确认|未实现|待评审" README.md TECHNICAL_OVERVIEW.md FUTURE_WORK_PLAN.md docs scripts web -S

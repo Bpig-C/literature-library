@@ -228,6 +228,7 @@ cd web && npm run build      # 构建检查
 # 测试
 pytest tests/ -q             # 后端测试
 python scripts/healthcheck_library.py --json  # 健康检查
+python scripts/check_docs.py  # 文档治理检查
 
 # 数据库直查（调试用）
 sqlite3 literature.sqlite "SELECT COUNT(*) FROM works;"

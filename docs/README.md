@@ -33,6 +33,16 @@
 | [superpowers/README.md](superpowers/README.md) | 当前 specs/plans/reviews 索引和状态规则 |
 | [_archive/README.md](_archive/README.md) | 归档文档索引 |
 
+## 检查命令
+
+发布前或文档结构调整后运行：
+
+```powershell
+python scripts\check_docs.py
+```
+
+脚本会检查权威入口、三类手册互链、废弃文档目录和旧路径误用。当前本地若仍有空的 `docs/plans`、`docs/reviews`、`docs/uperpowers`，会以 warning 形式提示；不要继续往这些目录写新文档。
+
 ## 专题文档
 
 | 文档 | 何时阅读 |

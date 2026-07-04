@@ -51,6 +51,7 @@ views\library_dashboard.html
 | `literature_ingest.py` | active | `_inbox` dry-run / execute 摄入，写 `works`、`source_files`、`literature_parse_runs`。 |
 | `literature_batch_parse.py` | active | DB-only pending 解析，调用 `parser/core/mineru/router.py::route_and_parse`。 |
 | `healthcheck_library.py` | active | 当前只读健康检查和可选修复入口。 |
+| `check_docs.py` | active | 轻量文档治理检查：入口互链、三类手册、废弃目录和旧路径误用。 |
 | `run_api.py` | active | 启动 FastAPI 后端。 |
 | `literature_intake.py` | active | collector/intake CLI。 |
 | `dedup_cleanup.py` / `dedup_apply.py` / `scan_title_duplicates.py` | active | 去重维护与候选生成。 |
