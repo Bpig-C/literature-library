@@ -31,7 +31,7 @@ BAD_URL_PATTERNS = (
 )
 
 # Core fields whose absence is high risk
-CORE_FIELDS = {"title", "date", "authors", "abstract"}
+CORE_FIELDS = {"title", "publication_date", "authors", "abstract"}
 
 # Fields whose absence is low risk
 LOW_RISK_MISSING = {"doi", "venue", "title_zh", "arxiv_id"}
@@ -63,17 +63,17 @@ def compute_risk(extracted: dict, confidence: dict, validation_warnings: list,
             reasons.append(f"missing field: {f}")
 
     # --- Confidence checks ---
-    for field in ("title", "date", "authors", "abstract"):
+    for field in ("title", "publication_date", "authors", "abstract"):
         conf = confidence.get(field)
         if conf == "low":
             score += 15
             reasons.append(f"low confidence: {field}")
-        elif conf == "medium" and field in ("title", "date"):
+        elif conf == "medium" and field in ("title", "publication_date"):
             score += 5
             reasons.append(f"medium confidence: {field}")
 
     # --- Date checks ---
-    date_obj = extracted.get("date")
+    date_obj = extracted.get("publication_date") or extracted.get("date")
     if isinstance(date_obj, dict):
         year = date_obj.get("year")
         raw = (date_obj.get("raw") or "").lower()
@@ -119,11 +119,11 @@ def compute_risk(extracted: dict, confidence: dict, validation_warnings: list,
                 score += 20
                 reasons.append(f"title mismatch: extracted='{extracted.get('title', '')[:40]}' vs current='{current_title[:40]}'")
 
-    # --- Institution type unknown ---
-    for inst in extracted.get("institutions", []):
+    # --- Contributor/institution type unknown ---
+    for inst in (extracted.get("contributors") or extracted.get("institutions") or []):
         if isinstance(inst, dict) and inst.get("type") == "unknown":
             score += 5
-            reasons.append(f"institution type unknown: {inst.get('name', '?')}")
+            reasons.append(f"contributor type unknown: {inst.get('name', '?')}")
             break  # only count once
 
     # --- Team/group author (not individual) ---

@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "version": "1.1",
+    "modified_at": "2026-07-04T00:00:00+08:00",
+    "_note": "Baseline metadata extraction template tracked in repo; editable from /templates.",
+    "fields": [
+      {
+        "key": "title",
+        "label": "标题",
+        "type": "text",
+        "rules": "非空字符串，去除首尾空白",
+        "description": "文献主标题（通常来自 PDF 首页或元数据区）"
+      },
+      {
+        "key": "title_zh",
+        "label": "中文标题",
+        "type": "text",
+        "rules": "可为空；存在则优先用于中文检索索引",
+        "description": "中文译名或并列中文标题；原文不是中文时给出中文翻译，专名不要硬翻译"
+      },
+      {
+        "key": "publication_date",
+        "label": "发布日期",
+        "type": "date-object",
+        "rules": "{year, month, day, raw, kind} 或 null; year 为 4 位数字; kind ∈ {exact, inferred}",
+        "description": "出版、发布或提交日期；至少抽取 year，month/day 未找到时为 null"
+      },
+      {
+        "key": "authors",
+        "label": "作者",
+        "type": "author-list",
+        "rules": "个人作者字符串列表，最多 5 个；超过 5 个时前 5 个写 authors，完整列表可写 all_authors",
+        "description": "只记录个人姓名，不要把机构、团队、出版社放进 authors"
+      },
+      {
+        "key": "contributors",
+        "label": "贡献方",
+        "type": "contributor-list",
+        "rules": "列表；每项 {name, type, role}; type ∈ {university, company, government, lab, team, standards_body, unknown}; role ∈ {author, publisher, issuer, funder, collaborator}",
+        "description": "机构、团队、出版方、资助方等非个人贡献者；技术报告和标准尤其重要"
+      },
+      {
+        "key": "doi",
+        "label": "DOI",
+        "type": "text",
+        "rules": "正则 ^10\\.\\d{4,}/.+ 或 null",
+        "description": "数字对象标识符。格式不符或只看到 DOI URL 但无法确认时置 null"
+      },
+      {
+        "key": "arxiv_id",
+        "label": "arXiv ID",
+        "type": "text",
+        "rules": "正则 ^\\d{4}\\.\\d{4,5}(v\\d+)?$ 或 null",
+        "description": "arXiv 论文编号，如 2212.08073 或 2212.08073v2"
+      },
+      {
+        "key": "venue",
+        "label": "发表 venue",
+        "type": "text",
+        "rules": "自由文本或 null",
+        "description": "会议、期刊、机构、网站或发布平台；技术报告可填发布机构/报告系列"
+      },
+      {
+        "key": "url",
+        "label": "主页 URL",
+        "type": "text",
+        "rules": "合法 http(s) URL 或 null；优先官方页面、arXiv abs、DOI landing、publisher page",
+        "description": "不要使用 license、GitHub/GitLab、ORCID、补充材料等非文献主页链接"
+      },
+      {
+        "key": "abstract",
+        "label": "摘要",
+        "type": "textarea",
+        "rules": "多行文本，建议 ≤ 2000 字；没有正式摘要时可写简短 summary",
+        "description": "论文摘要或报告概要，必须来自文档内容，不要编造"
+      }
+    ]
+  }
+}

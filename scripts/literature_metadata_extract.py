@@ -32,6 +32,15 @@ DB_PATH = LIBRARY_ROOT / "literature.sqlite"
 
 # Import risk computation from api package
 sys.path.insert(0, str(LIBRARY_ROOT))
+from api.metadata_template import (  # noqa: E402
+    APPLY_TO_WORKS_FIELDS,
+    SYSTEM_PROMPT,
+    USER_PROMPT_TEMPLATE,
+    build_metadata_system_prompt,
+    build_metadata_user_prompt,
+    get_metadata_field_keys,
+    get_metadata_template,
+)
 from api.risk import compute_risk  # noqa: E402
 from scripts import llm_judge  # noqa: E402  opencode→MiMo；scripts 是包，勿裸 import（pytest 包导入会 ModuleNotFoundError）
 
@@ -143,81 +152,6 @@ def get_works_to_process(conn: sqlite3.Connection, limit: int | None,
         works = works[:limit]
 
     return works
-
-
-# ---------------------------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPT = """/no_think
-You extract structured metadata from documents (papers, reports, standards, webpages, etc.).
-Output ONLY valid JSON. No explanations, no markdown, no <think> tags.
-If information is not found, use null for scalars and [] for arrays.
-Always include "evidence" and "confidence" objects.
-Confidence: "high" = explicitly stated, "medium" = inferred, "low" = guessed.
-For "missing", list field names that could not be filled from: title, title_zh, publication_date, authors, contributors, doi, arxiv_id, venue, url, abstract."""
-
-USER_PROMPT_TEMPLATE = """Extract metadata from this document.
-
-Step 1 — Identify the document type (for your reference, do NOT output it):
-- research_article: academic paper with authors, abstract, venue
-- technical_report: report from a company/lab/team, may have no personal authors
-- standard_guideline: published by standards body or government
-- webpage_blog: online content, blog post, news article
-- survey_review: literature review or meta-analysis
-- other: anything else
-
-Step 2 — Apply rules based on document type:
-
-COMMON RULES:
-- title_zh: Chinese translation if original is not Chinese. Keep proper nouns untranslated. null if uncertain.
-- url: Priority: (1) paper homepage, (2) arXiv abs, (3) DOI landing, (4) publisher page.
-  NEVER use license URLs, GitHub/GitLab links, or news articles.
-- publication_date: extract year at minimum. Add month/day if found. "raw" is original text, "kind" is "exact" or "inferred".
-
-AUTHORS — personal names only:
-- research_article: list key authors (first, last, corresponding). Max 5. String format.
-- technical_report: personal authors IF present. If only institution/team authored it, authors = [].
-- standard_guideline: usually no personal authors, authors = [].
-- webpage_blog: author name if present, otherwise [].
-
-CONTRIBUTORS — non-personal entities (institution, team, publisher, funder):
-- Always include the publishing/releasing entity.
-- type MUST be one of: university, company, government, lab, team, standards_body, unknown.
-  - lab = stable research unit (Google DeepMind, MIT Media Lab)
-  - team = project/temporary team (Anthropic Red Team, Meta FAIR Team)
-- role MUST be one of: author, publisher, issuer, funder, collaborator.
-  - author = entity credited as author (e.g. "Anthropic Red Team")
-  - publisher = entity that published/released the document
-  - issuer = entity that formally issued/certified (standards body, government)
-  - funder = funding organization
-  - collaborator = contributing organization
-
-TYPE-SPECIFIC RULES:
-- research_article: doi, arxiv_id, venue are important. institutions from author affiliations.
-- technical_report: contributors (publisher/team) is key. No doi/venue expected.
-- standard_guideline: issuer is the standards body. version/number if present.
-- webpage_blog: url is primary identifier. site name in venue.
-
-{{
-  "title": "exact document title",
-  "title_zh": "Chinese title or null",
-  "publication_date": {{"year": 2025, "month": null, "day": null, "raw": "2025", "kind": "exact"}},
-  "authors": ["Personal Author Name"],
-  "contributors": [{{"name": "Org Name", "type": "company", "role": "publisher"}}],
-  "doi": "10.xxxx/... or null",
-  "arxiv_id": "2512.01166 or null",
-  "venue": "journal/conference/institution or null",
-  "url": "primary URL or null",
-  "abstract": "full abstract/summary text or null",
-  "evidence": {{"title": "snippet", "publication_date": "snippet", "authors": "snippet", "contributors": "snippet", "abstract": "snippet"}},
-  "confidence": {{"title": "high|medium|low", "publication_date": "high|medium|low", "authors": "high|medium|low", "contributors": "high|medium|low", "abstract": "high|medium|low"}},
-  "missing": []
-}}
-
-Document:
-
-{text}"""
 
 
 # ---------------------------------------------------------------------------
@@ -444,11 +378,7 @@ def validate_extraction(data: dict) -> tuple[dict, list[str]]:
 
     # --- missing ---
     _absent = lambda v: v is None or v == "" or v == []
-    data["missing"] = sorted([
-        k for k in ("title", "title_zh", "publication_date", "authors", "contributors",
-                     "doi", "arxiv_id", "venue", "url", "abstract")
-        if _absent(data.get(k))
-    ])
+    data["missing"] = sorted([k for k in get_metadata_field_keys() if _absent(data.get(k))])
 
     return data, warnings
 
@@ -457,17 +387,7 @@ def validate_extraction(data: dict) -> tuple[dict, list[str]]:
 # Apply high-confidence fields to works
 # ---------------------------------------------------------------------------
 
-HIGH_CONFIDENCE_FIELDS = {
-    "title": "title",
-    # year intentionally excluded: arXiv headers contain submission dates
-    # that model extracts as date.year — auto-applying corrupts works.year.
-    "doi": "doi",
-    "arxiv_id": "arxiv_id",
-    "venue": "venue",
-    "url": "url",
-    "abstract": "abstract",
-    "title_zh": "title_zh",
-}
+HIGH_CONFIDENCE_FIELDS = APPLY_TO_WORKS_FIELDS
 
 
 def apply_to_works(conn: sqlite3.Connection, extractions: list[dict],
@@ -586,6 +506,9 @@ def run_extraction(args: argparse.Namespace) -> None:
         print(f"待处理：{len(works)} 篇文献")
         print(f"模型：{args.model}")
         print(f"Ollama：{args.url}")
+        metadata_template = get_metadata_template()
+        system_prompt = build_metadata_system_prompt(metadata_template)
+        print(f"模板：metadata v{metadata_template.get('version', '1.0')} ({len(metadata_template.get('fields', []))} fields)")
         print()
 
         results = []
@@ -611,9 +534,9 @@ def run_extraction(args: argparse.Namespace) -> None:
             print(f"  输入：{len(text)} 字符 ≈ {input_tokens} tokens")
 
             # Build prompt
-            user_msg = USER_PROMPT_TEMPLATE.format(text=text)
+            user_msg = build_metadata_user_prompt(text, metadata_template)
             messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ]
             options = {

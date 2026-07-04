@@ -384,17 +384,12 @@ const FIELDS = [
   { key: 'abstract', label: '摘要', type: 'textarea' },
 ]
 
-const RERUN_FIELD_MAP = {
-  publication_date: 'date',
-  contributors: 'institutions',
-}
-
 const VALID_RERUN_FIELDS = new Set([
   'title',
   'title_zh',
-  'date',
+  'publication_date',
   'authors',
-  'institutions',
+  'contributors',
   'doi',
   'arxiv_id',
   'venue',
@@ -501,7 +496,7 @@ function statusLabel(s) {
 }
 
 function apiRerunFieldKey(field) {
-  return RERUN_FIELD_MAP[field.key] || field.key
+  return field.key
 }
 
 function canRerunField(field) {
@@ -509,8 +504,7 @@ function canRerunField(field) {
 }
 
 function rerunFieldLabel(key) {
-  const uiKey = Object.keys(RERUN_FIELD_MAP).find(k => RERUN_FIELD_MAP[k] === key) || key
-  return FIELDS.find(f => f.key === uiKey)?.label || key
+  return FIELDS.find(f => f.key === key)?.label || key
 }
 
 function stringifyValue(value) {

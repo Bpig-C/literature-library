@@ -256,10 +256,22 @@
 - 后端新增 `POST /api/metadata/{ext_id}/rerun-preview`：复用 `scripts/literature_metadata_rerun.py` 的字段级重抽逻辑，调用同一 opencode/llm_judge 链路，返回旧值/新值 diff，不直接写库。
 - 后端新增 `POST /api/metadata/{ext_id}/rerun-apply`：确认后写入新的 metadata extraction，并 supersede 原记录；写入前校验 `preview_id`、`old_id`、`work_id` 和重复写入。
 - 后端新增 `GET /api/metadata/{ext_id}/rerun-prompt`：生成带 `field_focus_instruction()` 的完整 prompt，作为智能链路不可用时的手动降级方案。
-- 前端 `MetadataReview.vue` 在每个可重抽字段旁新增「重抽」和「复制」按钮；`publication_date` 映射到 rerun 字段 `date`，`contributors` 映射到 `institutions`。
+- 前端 `MetadataReview.vue` 在每个可重抽字段旁新增「重抽」和「复制」按钮；字段使用 canonical key（如 `publication_date`、`contributors`），后端兼容旧别名 `date` / `institutions`。
 - 「重抽」走预览弹窗，用户确认后写库并刷新到新记录；「复制」优先写剪贴板，剪贴板不可用时打开手动复制窗口。
 - 测试新增 `tests/test_metadata_rerun_api.py` 覆盖 preview/apply/prompt、非法字段、缺失文件、重复写入、当前审核备注传递和 DB 隔离。
 - 验证：`python -m pytest tests/test_metadata_rerun_api.py -q -p no:cacheprovider --basetemp .codex_tmp\pytest-rerun-api-20260704-4` 通过（15 passed）；`web` 构建通过；健康检查通过。
+
+### 2026-07-04 QA-001 元数据模板接入真实抽取链路
+
+模板管理从“页面可编辑但抽取脚本仍硬编码”补齐为 runtime 事实源：
+
+- 新增 `api/metadata_template.py`：统一管理 `templates/templates.json` 路径、内置字段、用户自定义合并、字段校验、prompt 生成、rerun 字段白名单和旧字段别名。
+- 新增 `templates/templates.json` baseline（metadata v1.1），让元数据模板成为可审查、可 diff、可交接的项目资产。
+- `api/routes/templates.py` 改为复用共享 loader，模板页面展示的默认字段与真实抽取链路不再分叉。
+- `scripts/literature_metadata_extract.py` 和 `POST /api/metadata/extract` 改为按当前模板生成 system/user prompt；`validate_extraction()` 的 missing 字段按当前模板字段计算。
+- `scripts/literature_metadata_rerun.py`、`rerun-preview`、`rerun-prompt` 接入同一模板 loader；旧 `date` / `institutions` rerun 字段会归一到 `publication_date` / `contributors`。
+- 风险计算和分类审核机构展示兼容 canonical `contributors` 字段，避免新模板抽取结果在下游不可见。
+- 验证：`python -m pytest tests/test_metadata_template_loader.py tests/test_metadata_rerun_api.py tests/test_api.py -q -p no:cacheprovider --basetemp .codex_tmp\pytest-template-runtime-2` 通过（100 passed, 4 skipped）；`npm.cmd run build` 通过；相关 Python 文件 `py_compile` 通过。
 
 #### 七、已记录 Issue（待后续处理）
 
@@ -268,6 +280,8 @@
 | UX-001 | 缺少批量触发流程的管理页面 | 📋 待处理 |
 | UX-002 | PyMuPDF 解析后丢失图片/图表 | 📋 待处理 |
 | UX-004 | 字段级重抽前端入口（双模式） | ✅ 已完成 |
+| QA-001 | 元数据模板接入真实抽取链路 | ✅ 已完成 |
+| QA-004 | 分类词汇模板同步/发布流程 | 📋 待处理 |
 
 ## 历史路线图摘录
 
@@ -282,6 +296,7 @@
 - IngestHub 文献入库统一页面（发现检索+收件箱 Tab 合并/侧边栏整合）记录。
 - 2026-07-02 前端体验大范围改进：导航栏调整/发现检索Tab改造/采集审核深度改造(追溯卡片+PDF体验+根因修复)/PDF下载链路修复/流程管理增强/模板管理独立页面。
 - 2026-07-04 字段级重抽前端化：MetadataReview 字段行重抽预览写入 + 复制 prompt 降级，后端 rerun preview/apply/prompt 三端点。
+- 2026-07-04 元数据模板 runtime 接入：`templates/templates.json` + `api/metadata_template.py` 统一驱动 metadata extract CLI/API/rerun。
 - 旧的 document-parser / 自部署 MinerU 方案与 `parse_ledger.json` 迁移记录。
 - 早期关于 collections、analysis_runs、综述矩阵、引用导出的初始设想。
 

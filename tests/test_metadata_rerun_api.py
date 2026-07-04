@@ -22,15 +22,24 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(sample_db, monkeypatch):
     """创建使用临时 sample DB 的 FastAPI TestClient。"""
+    import sqlite3
     import api.db as db
+    import api.routes.metadata as metadata_route
 
     monkeypatch.setattr(db, "DB_PATH", sample_db)
+    def _get_conn():
+        conn = sqlite3.connect(str(sample_db))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+    monkeypatch.setattr(metadata_route, "get_conn", _get_conn)
+
     from api.main import app
     return TestClient(app)
 
 
 @pytest.fixture
-def sample_extraction(client):
+def sample_extraction(client, sample_db):
     """创建一个有完整 extracted_json 的 extraction 记录用于 rerun 测试。"""
     import tempfile
     from pathlib import Path
@@ -52,8 +61,7 @@ def sample_extraction(client):
 
     # 直接操作数据库：先插入 work（extraction_by_id 需要 JOIN works）
     import sqlite3
-    from api.db import DB_PATH
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(sample_db))
     try:
         # 插入 work（INSERT OR IGNORE 避免重复）
         conn.execute("""
@@ -118,7 +126,15 @@ def sample_extraction(client):
     finally:
         conn.close()
 
-    return ext_data
+    yield ext_data
+
+    conn = sqlite3.connect(str(sample_db))
+    try:
+        conn.execute("DELETE FROM metadata_extractions WHERE id LIKE ? OR id = ?", ("ME-rerun-%", f"ME-apply-{ext_id}"))
+        conn.execute("DELETE FROM works WHERE id LIKE ?", ("W-rerun-%",))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ============================================================
@@ -311,8 +327,8 @@ class TestRerunApplyEndpoint:
 
         # 验证旧记录被 supersede
         import sqlite3
-        from api.db import DB_PATH
-        conn = sqlite3.connect(str(DB_PATH))
+        import api.db as db
+        conn = sqlite3.connect(str(db.DB_PATH))
         conn.row_factory = sqlite3.Row
         old_record = conn.execute(
             "SELECT superseded_by FROM metadata_extractions WHERE id = ?",

@@ -14,15 +14,15 @@
 |---|---|---|
 | `README.md` | 操作者入口、日常命令、当前主流程。 | 功能入口、启动方式、主流程变化时同步更新。 |
 | `TECHNICAL_OVERVIEW.md` | 系统架构、不变量、数据边界。 | 架构或事实源变化时同步更新。 |
-| `FUTURE_WORK_PLAN.md` | 未完成路线图和待办队列。 | 完成任务后移动到历史记录或标记完成。 |
+| `FUTURE_WORK_PLAN.md` | 当前未完成路线图和下一步候选；想掌握“接下来做什么”优先看这里。 | 完成任务后移动到历史记录或标记完成。 |
 | `USER_ISSUES.md` | 用户提出的问题、状态与验收记录。 | 每次修复或确认后更新状态。 |
-| `docs/HANDOVER_GUIDE.md` | 当前交接、页面清单、已知遗留。 | 大轮次交接或功能批量完成后更新。 |
-| `docs/PROJECT_HISTORY.md` | 已完成阶段、历史路线和旧判断。 | 只追加重大完成记录，不作为当前待办。 |
+| `docs/HANDOVER_GUIDE.md` | 当前交接、页面清单、已知遗留；想快速接手项目优先看这里。 | 大轮次交接或功能批量完成后更新。 |
+| `docs/PROJECT_HISTORY.md` | 已完成阶段、历史路线和旧判断；想确认“某功能是否已完成”看这里。 | 只追加重大完成记录，不作为当前待办。 |
 | `docs/DOCUMENT_GOVERNANCE.md` | 文档状态、归档和发布前门禁规则。 | 文档体系变化时同步更新。 |
 | `docs/superpowers/README.md` | 当前审核证据和 dated docs 索引。 | 新增/归档 review、plan、spec 时同步更新。 |
 | `docs/_archive/README.md` | 已归档文档索引。 | 归档文件时同步更新分类说明。 |
 
-当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
+当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。模板管理已成为元数据抽取资产入口：`/templates` 编辑 `templates/templates.json`，真实元数据抽取 CLI/API/rerun 均读取 `api/metadata_template.py` loader。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
 
 ## 目录架构
 
@@ -38,6 +38,7 @@ D:\02_academic\doctoral\literature_library
   api\                 # FastAPI 后端（Phase 3b）
   web\                 # Vue 3 前端 SPA（Phase 3b）
   tests\               # 本地维护脚本测试
+  templates\           # 可审查模板资产（metadata baseline、analysis angle 模板等）
   literature.sqlite    # 主数据库
   pyproject.toml       # Python 项目配置（uv 环境）
   index.json           # 前端/脚本可读的文献索引
@@ -202,6 +203,7 @@ npm run dev
 - `/duplicates` — 去重确认（决策按钮、localStorage 持久化）
 - `/relations` — 关系管理（新增、删除）
 - `/metadata` — 元数据抽取审核（风险分级、原文预览、证据定位、人工编辑、审核回填）
+- `/templates` — 模板管理（元数据字段资产；保存后影响真实元数据抽取 CLI/API/rerun）
 - `/classification` — 分类标签审核（primary_doc_type、risk_domain、method_tags 等）
 - `/intake` — 采集候选审核（resolution、review_status、promote）
 - `/inbox` — Inbox 摄入 dry-run 预览与确认

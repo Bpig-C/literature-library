@@ -11,6 +11,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY_ROOT
+from ..metadata_template import (
+    build_metadata_system_prompt,
+    build_metadata_user_prompt,
+    get_metadata_template,
+    normalize_metadata_fields,
+    valid_rerun_fields,
+)
 from ..models import MetadataReviewAction, MetadataSupersedeAction, QuarantineAction
 from ..risk import compute_risk
 from ..security import build_status_filter, validate_status
@@ -628,8 +635,6 @@ def trigger_metadata_extraction(body: ExtractRequest):
         compute_risk,
         rough_token_count,
         INPUT_CHAR_BUDGET,
-        SYSTEM_PROMPT,
-        USER_PROMPT_TEMPLATE,
         parse_llm_json,
     )
     import uuid as _uuid
@@ -657,6 +662,8 @@ def trigger_metadata_extraction(body: ExtractRequest):
         created = 0
         skipped = 0
         failed = []
+        metadata_template = get_metadata_template()
+        system_prompt = build_metadata_system_prompt(metadata_template)
 
         for w in works:
             work_id = w["id"]
@@ -677,9 +684,9 @@ def trigger_metadata_extraction(body: ExtractRequest):
             text = raw_text[:INPUT_CHAR_BUDGET]
             input_tokens = rough_token_count(text)
 
-            user_msg = USER_PROMPT_TEMPLATE.format(text=text)
+            user_msg = build_metadata_user_prompt(text, metadata_template)
             messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ]
 
@@ -765,18 +772,19 @@ async def rerun_metadata_fields_preview(ext_id: str, body: RerunPreviewRequest):
     用户确认后调用 /{ext_id}/rerun-apply 写入。
     """
     from scripts.literature_metadata_rerun import (
-        VALID_RERUN_FIELDS,
         build_new_extraction,
         extraction_by_id,
     )
 
     # 校验字段合法性
-    invalid = [f for f in body.fields if f not in VALID_RERUN_FIELDS]
+    allowed_fields = valid_rerun_fields()
+    invalid = [f for f in body.fields if f not in allowed_fields]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid fields: {', '.join(invalid)}")
 
     if not body.fields:
         raise HTTPException(status_code=400, detail="fields must be non-empty")
+    fields = normalize_metadata_fields(body.fields)
 
     conn = get_conn()
     try:
@@ -792,7 +800,7 @@ async def rerun_metadata_fields_preview(ext_id: str, body: RerunPreviewRequest):
         try:
             new_ext = build_new_extraction(
                 rerun_ext,
-                fields=body.fields,
+                fields=fields,
                 model="mimo-2.5-pro",
                 url="",
                 timeout=300,
@@ -807,7 +815,7 @@ async def rerun_metadata_fields_preview(ext_id: str, body: RerunPreviewRequest):
         new_data = new_ext["extracted_json"]
 
         diff = {}
-        for field in body.fields:
+        for field in fields:
             diff[field] = {
                 "old": old_data.get(field),
                 "new": new_data.get(field),
@@ -816,7 +824,7 @@ async def rerun_metadata_fields_preview(ext_id: str, body: RerunPreviewRequest):
 
         return {
             "preview_id": new_ext["id"],
-            "fields": body.fields,
+            "fields": fields,
             "diff": diff,
             "new_extraction": new_ext,
             "risk": new_ext["risk"],
@@ -880,20 +888,21 @@ async def get_rerun_prompt(
     返回: { prompt: "...", fields: [...], content_chars: int, content_preview: "..." }
     """
     from scripts.literature_metadata_rerun import (
-        VALID_RERUN_FIELDS,
         field_focus_instruction,
         extraction_by_id,
     )
-    from scripts.literature_metadata_extract import USER_PROMPT_TEMPLATE, INPUT_CHAR_BUDGET
+    from scripts.literature_metadata_extract import INPUT_CHAR_BUDGET
     from pathlib import Path
 
     field_list = [f.strip() for f in fields.split(",") if f.strip()]
-    invalid = [f for f in field_list if f not in VALID_RERUN_FIELDS]
+    allowed_fields = valid_rerun_fields()
+    invalid = [f for f in field_list if f not in allowed_fields]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid fields: {', '.join(invalid)}")
 
     if not field_list:
         raise HTTPException(status_code=400, detail="fields must be non-empty")
+    field_list = normalize_metadata_fields(field_list)
 
     conn = get_conn()
     try:
@@ -911,7 +920,7 @@ async def get_rerun_prompt(
         text = raw_text[:INPUT_CHAR_BUDGET]
 
         # 构建 prompt
-        base_prompt = USER_PROMPT_TEMPLATE.format(text=text)
+        base_prompt = build_metadata_user_prompt(text, get_metadata_template())
         focus_instr = field_focus_instruction(field_list, review_note.strip() or ext.get("review_note") or "")
         full_prompt = base_prompt + focus_instr
 

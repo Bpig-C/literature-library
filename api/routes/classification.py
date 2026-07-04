@@ -310,13 +310,20 @@ def _enrich_extraction(row: dict, conn) -> dict:
         else:
             ext["work_date_display"] = None
 
-        # Institutions from metadata_extractions (approved/latest only)
+        # Contributors/institutions from metadata_extractions (approved/latest only).
+        # Keep response key work_institutions for frontend compatibility.
         inst_row = conn.execute("""
-            SELECT json_extract(me.extracted_json, '$.institutions') as institutions
+            SELECT COALESCE(
+                json_extract(me.extracted_json, '$.contributors'),
+                json_extract(me.extracted_json, '$.institutions')
+            ) as institutions
             FROM metadata_extractions me
             WHERE me.work_id = ?
             AND me.review_status = 'approved'
-            AND json_extract(me.extracted_json, '$.institutions') IS NOT NULL
+            AND COALESCE(
+                json_extract(me.extracted_json, '$.contributors'),
+                json_extract(me.extracted_json, '$.institutions')
+            ) IS NOT NULL
             ORDER BY me.created_at DESC LIMIT 1
         """, (ext["work_id"],)).fetchone()
         if inst_row and inst_row[0]:

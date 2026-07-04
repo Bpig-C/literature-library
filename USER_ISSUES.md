@@ -56,11 +56,11 @@
 - **状态**：📋 待处理
 - **技术备注**：后端 API 已支持批量（`work_ids` 数组或 `all_pending: true`），缺的是前端入口
 
-### QA-001: 模板管理当前只完成 CRUD，尚未接入真实抽取链路
-- **发现日期**：2026-07-03
-- **页面/模块**：模板管理（`api/routes/templates.py`、`TemplateManage.vue`）+ 元数据/分类抽取脚本
-- **问题描述**：模板页面可编辑并保存 `templates/templates.json`，但 `scripts/literature_metadata_extract.py` 仍使用硬编码 prompt 和字段清单；分类模板保存端点也只是预留，不会自动同步 `classification_vocab.py` / 前端 labels。
-- **期望行为**：抽取脚本、rerun 脚本、测试 fixture 和审核 UI 统一读取模板 loader；分类模板变更应有明确同步/审核流程。
+### QA-004: 分类词汇模板仍是预留能力，尚未建立同步/发布流程
+- **发现日期**：2026-07-04
+- **页面/模块**：模板管理（`api/routes/templates.py`、`TemplateManage.vue`）+ `api/classification_vocab.py` + 前端 labels
+- **问题描述**：元数据模板已经接入真实抽取链路；但分类词汇 Tab 仍为只读/预留，保存端点不会自动同步 `classification_vocab.py`、前端 labels 和测试 fixture。
+- **期望行为**：分类模板变更应有明确的审核、同步、测试和发布流程；前端编辑入口开放前必须保证后端 vocab、前端 labels、分类抽取 prompt 和测试 fixture 一致。
 - **优先级**：🟡 中
 - **状态**：📋 待处理
 
@@ -97,6 +97,13 @@
 - **解决方式**：新增后端 `rerun-preview` / `rerun-apply` / `rerun-prompt` 三个端点，复用 `scripts/literature_metadata_rerun.py` 的字段级重抽、field_focus prompt 和 supersede 链路。
 - **前端入口**：`MetadataReview.vue` 每个可重抽字段旁新增「重抽」和「复制」按钮；重抽先预览 diff，确认后写入新 extraction 并 supersede 旧记录；复制 prompt 作为剪贴板/手动降级方案。
 - **验证**：`tests/test_metadata_rerun_api.py` 15 passed；`web` 构建通过；健康检查通过。
+
+### QA-001: 元数据模板接入真实抽取链路 → ✅ 已完成
+- **解决日期**：2026-07-04
+- **解决方式**：新增共享 loader `api/metadata_template.py`，把 `templates/templates.json`、内置字段、字段校验、prompt 生成、rerun 字段白名单统一为一个运行时事实源。
+- **接入范围**：`scripts/literature_metadata_extract.py`、`POST /api/metadata/extract`、`scripts/literature_metadata_rerun.py`、`rerun-preview`、`rerun-prompt` 均读取当前元数据模板；`validate_extraction()` 的 missing 字段也按模板字段计算。
+- **资产落地**：新增可审查的 `templates/templates.json` baseline（metadata v1.1）。
+- **遗留拆分**：分类词汇模板同步/发布流程另记为 QA-004。
 
 ### UX-003: 元数据字段模板可视化展示 → ✅ 升级为独立模板管理页面
 - **解决方式**：从 MetadataReview 详情弹窗（只读展示）升级为 `/templates` 独立页面（可编辑+三大Tab）

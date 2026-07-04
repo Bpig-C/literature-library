@@ -2,7 +2,7 @@
 
 > 状态：当前路线图
 > 更新时间：2026-07-04
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
+> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；元数据模板已接入真实抽取/rerun 链路；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 
@@ -42,7 +42,7 @@
 
 > ✅ 近期发布/启动阻断项已清零。详见 `docs/PROJECT_HISTORY.md`。
 >
-> 当前仍有高优先级体验与治理待办（如 UX-001、UX-002、QA-001），但不阻塞项目启动和基础回归。
+> 当前仍有高优先级体验与治理待办（如 UX-001、UX-002、QA-004），但不阻塞项目启动和基础回归。
 
 ---
 
@@ -59,7 +59,7 @@
 - 文献类型越多，元数据字段和边界情况越多。
 - 不同来源 PDF 的结构差异会暴露新的抽取失败模式。
 - 审核中积累的人工修正应反哺模板，而不是只停留在单条记录。
-- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`。详见 `docs/PROJECT_HISTORY.md`「2026-07-02 前端体验与流程完善」§六。
+- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`；元数据抽取 CLI、API 和 rerun/prompt 已统一读取 `api/metadata_template.py` loader。详见 `docs/PROJECT_HISTORY.md`「2026-07-04 QA-001 元数据模板接入真实抽取链路」。
 
 后续方向：
 
@@ -74,11 +74,13 @@
    - 降级模式：「复制」→ 后端 `rerun-prompt` → 复制带 field_focus 的 prompt
    - 写入模式：`rerun-apply` 校验 preview/new_extraction 后写入新记录并 supersede 旧记录
 
-3. **【当前下一步候选】模板管理接入真实抽取链路**（QA-001）
-   - 建立元数据抽取模板版本号。
-   - 将字段定义、证据要求、风险规则、回填语义写成可审查文档。
-   - 抽取脚本、rerun 脚本、测试 fixture 和审核 UI 统一读取模板 loader。
-4. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
+3. **~~【第三步】元数据模板接入真实抽取链路~~（QA-001）— ✅ 已完成**
+   - `templates/templates.json` baseline 已落地为可审查资产。
+   - 抽取脚本、rerun 脚本、API 抽取端点和 rerun prompt 均统一读取 `api/metadata_template.py`。
+   - `validate_extraction()` 的 missing 字段按当前模板计算；rerun 兼容旧字段别名并归一到 canonical key。
+4. **【当前下一步候选】分类词汇模板同步/发布流程**（QA-004）
+   - 模板管理 Tab2 仍是只读/预留；开放编辑前，需要同步 `classification_vocab.py`、前端 labels、分类 prompt 和测试 fixture。
+5. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
 
 优先级：高。它直接影响后续所有文献的结构化质量。
 
@@ -99,8 +101,11 @@
 | 元数据字段在线编辑 | ✅ UI | 内联编辑 + 增删 + 导出 JSON/Prompt |
 | 字段级重抽 HTTP API | ✅ HTTP | `POST /api/metadata/{ext_id}/rerun-preview` / `rerun-apply`，`GET /rerun-prompt` |
 | 字段级重抽前端入口 | ✅ UI | MetadataReview 字段行「重抽」+「复制」双模式 |
+| 元数据模板 runtime loader | ✅ 代码 | `api/metadata_template.py` 统一生成 prompt、字段列表、rerun 白名单 |
+| 元数据模板资产文件 | ✅ JSON | `templates/templates.json`（metadata v1.1 baseline） |
+| 抽取链路读取模板 | ✅ CLI/API | metadata extract CLI、`POST /api/metadata/extract`、rerun CLI/API |
 
-缺口：模板定义仍未接入真实抽取链路（QA-001）；模板版本号、脚本 loader、测试 fixture 和审核 UI 需要统一。
+缺口：分类词汇模板仍未接入真实同步/发布流程（QA-004）；模板管理 Tab2 开放编辑前，需要把后端 vocab、前端 labels、分类抽取 prompt 和测试 fixture 统一。
 
 ### B. 文献分类规范与审核模板
 
@@ -180,11 +185,12 @@
 
 剩余目标：
 
-- 梳理当前 metadata 字段、证据要求、风险分级、回填语义。（部分完成——字段定义已统一到 templates.json）
-- 定义模板版本号和变更记录方式。（备份机制已有，版本号待加）
+- 梳理当前 metadata 字段、证据要求、风险分级、回填语义。（已形成 `templates/templates.json` baseline，可继续迭代）
+- 定义模板版本号和变更记录方式。（metadata v1.1 baseline + 自动备份已有；更严格的发布流程可后续加）
 - 建立从 MetadataReview 人工修正反哺模板的流程。
 - 增加最小 fixture，覆盖常见文献类型和已知失败模式。
 - **✅ 已完成**：字段级重抽前端化（UX-004），已具备智能预览写入 + prompt 复制降级双模式。
+- **✅ 已完成**：元数据模板接入真实抽取链路（QA-001）。
 
 验证：
 

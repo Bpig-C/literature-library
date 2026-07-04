@@ -30,32 +30,25 @@ LIBRARY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LIBRARY_ROOT))
 
 from api.db import DB_PATH, ensure_metadata_review_columns  # noqa: E402
+from api.metadata_template import (  # noqa: E402
+    build_metadata_system_prompt,
+    build_metadata_user_prompt,
+    get_metadata_template,
+    normalize_metadata_fields,
+    valid_rerun_fields,
+)
 from api.risk import compute_risk  # noqa: E402
 from scripts import llm_judge  # noqa: E402  opencode→MiMo；scripts 是包，勿裸 import（pytest 包导入会 ModuleNotFoundError）
 from scripts.literature_metadata_extract import (  # noqa: E402
     DEFAULT_MODEL,
     DEFAULT_URL,
     INPUT_CHAR_BUDGET,
-    SYSTEM_PROMPT,
-    USER_PROMPT_TEMPLATE,
     parse_llm_json,
     rough_token_count,
     validate_extraction,
 )
 
-VALID_RERUN_FIELDS = {
-    "title",
-    "title_zh",
-    "date",
-    "authors",
-    "author_count",
-    "institutions",
-    "doi",
-    "arxiv_id",
-    "venue",
-    "url",
-    "abstract",
-}
+VALID_RERUN_FIELDS = valid_rerun_fields()
 
 
 def connect_db() -> sqlite3.Connection:
@@ -141,10 +134,10 @@ def parse_fields(value: str | None) -> list[str]:
     if not value:
         return []
     fields = [item.strip() for item in value.split(",") if item.strip()]
-    invalid = [field for field in fields if field not in VALID_RERUN_FIELDS]
+    invalid = [field for field in fields if field not in valid_rerun_fields()]
     if invalid:
         raise SystemExit(f"Invalid --fields values: {', '.join(invalid)}")
-    return fields
+    return normalize_metadata_fields(fields)
 
 
 def field_focus_instruction(fields: list[str], review_note: str = "") -> str:
@@ -199,11 +192,12 @@ def build_new_extraction(
     text = raw_text[:INPUT_CHAR_BUDGET]
     input_tokens = rough_token_count(text)
 
-    prompt = USER_PROMPT_TEMPLATE.format(text=text) + field_focus_instruction(
+    metadata_template = get_metadata_template()
+    prompt = build_metadata_user_prompt(text, metadata_template) + field_focus_instruction(
         fields, ext.get("review_note") or ""
     )
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_metadata_system_prompt(metadata_template)},
         {"role": "user", "content": prompt},
     ]
     options = {
