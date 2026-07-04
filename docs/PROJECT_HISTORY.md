@@ -284,7 +284,8 @@
 - 新增 `docs/manuals/user-manual.md`：浏览器用户操作流程、页面入口和人工审核边界。
 - 新增 `docs/manuals/cli-manual.md`：CLI/自动化命令、测试、健康检查、批处理和元数据重抽入口。
 - 新增 `docs/manuals/agent-manual.md`：agent 必读文档、权限边界、任务派发、两轮审核和交付格式。
-- `README.md`、`docs/DOCUMENT_GOVERNANCE.md` 和 `docs/HANDOVER_GUIDE.md` 已链接三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
+- 新增 `docs/README.md`：文档体系总目录，按角色、职责和写入位置分流。
+- `README.md` 已瘦身为项目首页；`docs/DOCUMENT_GOVERNANCE.md`、`docs/HANDOVER_GUIDE.md` 和 `docs/manuals/README.md` 已链接文档总目录与三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
 
 #### 七、已记录 Issue（待后续处理）
 
@@ -310,7 +311,7 @@
 - 2026-07-02 前端体验大范围改进：导航栏调整/发现检索Tab改造/采集审核深度改造(追溯卡片+PDF体验+根因修复)/PDF下载链路修复/流程管理增强/模板管理独立页面。
 - 2026-07-04 字段级重抽前端化：MetadataReview 字段行重抽预览写入 + 复制 prompt 降级，后端 rerun preview/apply/prompt 三端点。
 - 2026-07-04 元数据模板 runtime 接入：`templates/templates.json` + `api/metadata_template.py` 统一驱动 metadata extract CLI/API/rerun。
-- 2026-07-05 文档结构按协作角色拆分：`docs/manuals/` 下维护用户、CLI自动化、agent 三类当前使用手册。
+- 2026-07-05 文档结构按协作角色拆分：`docs/README.md` 作为文档总目录，`docs/manuals/` 下维护用户、CLI自动化、agent 三类当前使用手册。
 - 旧的 document-parser / 自部署 MinerU 方案与 `parse_ledger.json` 迁移记录。
 - 早期关于 collections、analysis_runs、综述矩阵、引用导出的初始设想。
 

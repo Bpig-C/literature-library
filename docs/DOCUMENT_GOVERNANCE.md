@@ -22,6 +22,7 @@
 ## 当前维护地图
 
 - `README.md`：项目首页、核心概念和文档导航；不承载全部使用细节。
+- `docs/README.md`：文档体系总目录，按角色、职责和写入位置分流。
 - `docs/manuals/README.md`：三类使用手册索引。
 - `docs/manuals/user-manual.md`：浏览器用户手册，维护 UI 页面、日常流程、人工审核边界。
 - `docs/manuals/cli-manual.md`：CLI/自动化手册，维护脚本、API、测试、健康检查和批处理命令。
@@ -42,6 +43,7 @@
 
 | 读者 | 首选入口 | 不应承担的内容 |
 |------|----------|----------------|
+| 不确定该看哪里的人 | `docs/README.md` | 不替代具体手册和专题文档 |
 | 浏览器用户 | `docs/manuals/user-manual.md` | 不写批处理脚本细节，不写 agent 派发规范 |
 | CLI/自动化操作者 | `docs/manuals/cli-manual.md` | 不写页面逐步点击说明，不写历史路线 |
 | Agent/协调者 | `docs/manuals/agent-manual.md` | 不替代具体协议文档，不记录全部历史完成流水 |

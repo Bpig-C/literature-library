@@ -27,6 +27,7 @@
 | 文档 | 看什么 |
 |------|--------|
 | `README.md` | 项目首页、目录结构、核心概念和文档导航 |
+| `docs/README.md` | 文档总目录：按角色、职责和写入位置分流 |
 | `docs/manuals/user-manual.md` | 浏览器用户怎么操作页面和审核流程 |
 | `docs/manuals/cli-manual.md` | CLI/自动化命令、测试、健康检查和批处理入口 |
 | `docs/manuals/agent-manual.md` | agent 协作边界、任务派发、两轮审核和交接格式 |
@@ -161,7 +162,7 @@
 | **字段级重抽前端化** (2026-07-04) | MetadataReview 字段行双模式入口：重抽预览写入 + 复制 prompt 降级 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板 runtime 接入** (2026-07-04/05) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun，MetadataReview 动态字段审核 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板使用文档同步** (2026-07-05) | README 和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `README.md` §9、`scripts/README.md` |
-| **使用手册角色拆分** (2026-07-05) | 新增用户手册、CLI/自动化手册、Agent 协作手册，README 改为总入口 | `docs/manuals/README.md` |
+| **使用手册角色拆分** (2026-07-05) | 新增用户手册、CLI/自动化手册、Agent 协作手册，README 改为总入口 | `docs/README.md` |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
