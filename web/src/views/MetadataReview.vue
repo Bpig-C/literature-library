@@ -119,7 +119,7 @@
           <div class="field-conf">置信</div>
           <div class="field-actions">操作</div>
         </div>
-        <div v-for="f in FIELDS" :key="f.key" class="field-row" :class="{ missing: isMissing(f.key) }">
+        <div v-for="f in metadataFields" :key="f.key" class="field-row" :class="{ missing: isMissing(f.key) }">
           <div class="field-name">{{ f.label }}</div>
           <div class="field-current">{{ formatCurrent(f) }}</div>
           <div class="field-extracted">
@@ -139,6 +139,15 @@
             <!-- textarea for abstract -->
             <template v-else-if="f.type === 'textarea'">
               <textarea v-model="editForm[f.key]" rows="4" class="full-input"></textarea>
+            </template>
+            <!-- generic list/json field -->
+            <template v-else-if="f.type === 'list'">
+              <textarea
+                class="full-input mono-input"
+                rows="4"
+                :value="formatJsonValue(editForm[f.key])"
+                @input="updateJsonField(f.key, $event.target.value)"
+              ></textarea>
             </template>
             <!-- author/inst/contributor list (read-only) -->
             <template v-else-if="f.type === 'author-list' || f.type === 'inst-list' || f.type === 'contributor-list'">
@@ -330,6 +339,7 @@ import {
   contentUrl,
   pdfUrl,
 } from '../api'
+import { getTemplates } from '../api_templates'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -371,7 +381,7 @@ const QUARANTINE_REASONS = [
   { key: 'user_removed', label: '用户移除：明确不想保留' },
 ]
 
-const FIELDS = [
+const DEFAULT_FIELDS = [
   { key: 'title', label: '标题', type: 'text' },
   { key: 'title_zh', label: '中文标题', type: 'text' },
   { key: 'publication_date', label: '发布日期', type: 'date-object' },
@@ -383,19 +393,6 @@ const FIELDS = [
   { key: 'url', label: 'URL', type: 'text' },
   { key: 'abstract', label: '摘要', type: 'textarea' },
 ]
-
-const VALID_RERUN_FIELDS = new Set([
-  'title',
-  'title_zh',
-  'publication_date',
-  'authors',
-  'contributors',
-  'doi',
-  'arxiv_id',
-  'venue',
-  'url',
-  'abstract',
-])
 
 const statusFilter = ref(queryValue('status', 'pending'))
 const riskFilter = ref('all')
@@ -442,6 +439,7 @@ const rerunPreview = ref(null)
 const rerunApplyLoading = ref(false)
 const showPromptModal = ref(false)
 const rerunPromptText = ref('')
+const metadataFields = ref([...DEFAULT_FIELDS])
 
 const confidence = computed(() => selected.value?.confidence_json || {})
 const evidence = computed(() => selected.value?.extracted_json?.evidence || {})
@@ -495,22 +493,87 @@ function statusLabel(s) {
   return STATUSES.find(st => st.key === s)?.label || s
 }
 
+function normalizeTemplateField(field) {
+  const allowed = new Set(['text', 'textarea', 'date-object', 'author-list', 'contributor-list', 'list'])
+  const type = allowed.has(field?.type) ? field.type : 'text'
+  return {
+    key: field?.key || '',
+    label: field?.label || field?.key || '',
+    type,
+    description: field?.description || '',
+    rules: field?.rules || '',
+  }
+}
+
+async function loadMetadataTemplate() {
+  try {
+    const res = await getTemplates()
+    const fields = (res.metadata?.fields || [])
+      .map(normalizeTemplateField)
+      .filter(f => f.key)
+    metadataFields.value = fields.length ? fields : [...DEFAULT_FIELDS]
+    if (selected.value) selectExtraction(selected.value)
+  } catch (e) {
+    console.warn('[MetadataReview] template load failed, using defaults:', e)
+    metadataFields.value = [...DEFAULT_FIELDS]
+  }
+}
+
 function apiRerunFieldKey(field) {
   return field.key
 }
 
 function canRerunField(field) {
-  return VALID_RERUN_FIELDS.has(apiRerunFieldKey(field))
+  return Boolean(apiRerunFieldKey(field))
 }
 
 function rerunFieldLabel(key) {
-  return FIELDS.find(f => f.key === key)?.label || key
+  return metadataFields.value.find(f => f.key === key)?.label || key
 }
 
 function stringifyValue(value) {
   if (value === null || value === undefined || value === '') return '-'
   if (typeof value === 'object') return JSON.stringify(value, null, 2)
   return String(value)
+}
+
+function fieldDefaultValue(field) {
+  if (field.type === 'date-object') return { year: null, month: null, day: null, raw: '', kind: 'inferred' }
+  if (field.type === 'author-list' || field.type === 'contributor-list' || field.type === 'list') return []
+  return ''
+}
+
+function normalizeFieldValue(field, extracted) {
+  if (field.key === 'publication_date') {
+    return {
+      year: extracted.publication_date?.year ?? extracted.date?.year ?? null,
+      month: extracted.publication_date?.month ?? extracted.date?.month ?? null,
+      day: extracted.publication_date?.day ?? extracted.date?.day ?? null,
+      raw: extracted.publication_date?.raw || extracted.date?.raw || '',
+      kind: extracted.publication_date?.kind || extracted.date?.kind || 'inferred',
+    }
+  }
+  if (field.key === 'contributors') return extracted.contributors || extracted.institutions || []
+  const value = extracted[field.key]
+  if (value === undefined || value === null) return fieldDefaultValue(field)
+  return value
+}
+
+function formatJsonValue(value) {
+  if (value === undefined || value === null) return ''
+  return JSON.stringify(value, null, 2)
+}
+
+function updateJsonField(key, raw) {
+  if (!raw.trim()) {
+    editForm.value[key] = []
+    return
+  }
+  try {
+    editForm.value[key] = JSON.parse(raw)
+  } catch {
+    editForm.value[key] = raw
+  }
 }
 
 function onResizeList(w) {
@@ -601,18 +664,11 @@ function selectExtraction(ext) {
   selected.value = ext
   if (keepPdfOpen) openPdfDrawer()
   const ej = ext.extracted_json || {}
-  editForm.value = {
-    title: ej.title || '',
-    title_zh: ej.title_zh || '',
-    publication_date: { year: ej.publication_date?.year ?? ej.date?.year ?? null, month: ej.publication_date?.month ?? ej.date?.month ?? null, day: ej.publication_date?.day ?? ej.date?.day ?? null, raw: ej.publication_date?.raw || ej.date?.raw || '', kind: ej.publication_date?.kind || ej.date?.kind || 'inferred' },
-    authors: ej.authors || [],
-    contributors: ej.contributors || ej.institutions || [],
-    doi: ej.doi || '',
-    arxiv_id: ej.arxiv_id || '',
-    venue: ej.venue || '',
-    url: ej.url || '',
-    abstract: ej.abstract || '',
+  const nextForm = {}
+  for (const field of metadataFields.value) {
+    nextForm[field.key] = normalizeFieldValue(field, ej)
   }
+  editForm.value = nextForm
   reviewNote.value = ''
   showEvidence.value = false
   showRaw.value = false
@@ -683,13 +739,17 @@ async function doReview(status) {
   const editedFields = {}
   // Build diff: only send fields that changed from original extracted_json
   const orig = selected.value.extracted_json || {}
-  for (const f of FIELDS) {
+  for (const f of metadataFields.value) {
     if (f.type === 'date-object') {
       const cur = JSON.stringify(editForm.value[f.key])
       const oth = JSON.stringify(orig[f.key] || orig.date) // fallback for legacy date field
       if (cur !== oth) editedFields[f.key] = editForm.value[f.key]
     } else if (f.type === 'author-list' || f.type === 'inst-list' || f.type === 'contributor-list') {
       // These are read-only, don't send diffs
+    } else if (f.type === 'list') {
+      if (JSON.stringify(editForm.value[f.key] || []) !== JSON.stringify(orig[f.key] || [])) {
+        editedFields[f.key] = editForm.value[f.key]
+      }
     } else {
       if (editForm.value[f.key] !== (orig[f.key] || '')) {
         editedFields[f.key] = editForm.value[f.key]
@@ -826,7 +886,10 @@ function resetAndLoad() {
   loadList()
 }
 
-onMounted(loadList)
+onMounted(async () => {
+  await loadMetadataTemplate()
+  await loadList()
+})
 </script>
 
 <style scoped>
@@ -972,6 +1035,7 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 /* Inputs in field table */
 .full-input { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 6px; font: inherit; font-size: 13px; }
 textarea.full-input { height: auto; padding: 6px; resize: vertical; }
+.mono-input { font-family: Consolas, monospace; font-size: 12px; }
 .sm-input { height: 28px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 4px; font: inherit; font-size: 12px; }
 .xs-input { width: 48px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 4px; font: inherit; font-size: 12px; }
 .md-input { width: 100px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 4px; font: inherit; font-size: 12px; }

@@ -78,6 +78,7 @@
    - `templates/templates.json` baseline 已落地为可审查资产。
    - 抽取脚本、rerun 脚本、API 抽取端点和 rerun prompt 均统一读取 `api/metadata_template.py`。
    - `validate_extraction()` 的 missing 字段按当前模板计算；rerun 兼容旧字段别名并归一到 canonical key。
+   - MetadataReview 审核表已动态读取模板字段；自定义字段可展示、编辑、复制 prompt 和字段级重抽。
 4. **【当前下一步候选】分类词汇模板同步/发布流程**（QA-004）
    - 模板管理 Tab2 仍是只读/预留；开放编辑前，需要同步 `classification_vocab.py`、前端 labels、分类 prompt 和测试 fixture。
 5. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
@@ -104,6 +105,7 @@
 | 元数据模板 runtime loader | ✅ 代码 | `api/metadata_template.py` 统一生成 prompt、字段列表、rerun 白名单 |
 | 元数据模板资产文件 | ✅ JSON | `templates/templates.json`（metadata v1.1 baseline） |
 | 抽取链路读取模板 | ✅ CLI/API | metadata extract CLI、`POST /api/metadata/extract`、rerun CLI/API |
+| 元数据审核动态字段 | ✅ UI | MetadataReview 按模板字段渲染，支持自定义字段编辑/重抽/prompt |
 
 缺口：分类词汇模板仍未接入真实同步/发布流程（QA-004）；模板管理 Tab2 开放编辑前，需要把后端 vocab、前端 labels、分类抽取 prompt 和测试 fixture 统一。
 
@@ -191,6 +193,7 @@
 - 增加最小 fixture，覆盖常见文献类型和已知失败模式。
 - **✅ 已完成**：字段级重抽前端化（UX-004），已具备智能预览写入 + prompt 复制降级双模式。
 - **✅ 已完成**：元数据模板接入真实抽取链路（QA-001）。
+- **✅ 已完成**：元数据审核页动态读取模板字段，自定义字段不再只停留在 raw JSON。
 
 验证：
 

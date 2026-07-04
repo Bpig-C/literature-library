@@ -261,7 +261,7 @@
 - 测试新增 `tests/test_metadata_rerun_api.py` 覆盖 preview/apply/prompt、非法字段、缺失文件、重复写入、当前审核备注传递和 DB 隔离。
 - 验证：`python -m pytest tests/test_metadata_rerun_api.py -q -p no:cacheprovider --basetemp .codex_tmp\pytest-rerun-api-20260704-4` 通过（15 passed）；`web` 构建通过；健康检查通过。
 
-### 2026-07-04 QA-001 元数据模板接入真实抽取链路
+### 2026-07-04/05 QA-001 元数据模板接入真实抽取链路
 
 模板管理从“页面可编辑但抽取脚本仍硬编码”补齐为 runtime 事实源：
 
@@ -270,8 +270,10 @@
 - `api/routes/templates.py` 改为复用共享 loader，模板页面展示的默认字段与真实抽取链路不再分叉。
 - `scripts/literature_metadata_extract.py` 和 `POST /api/metadata/extract` 改为按当前模板生成 system/user prompt；`validate_extraction()` 的 missing 字段按当前模板字段计算。
 - `scripts/literature_metadata_rerun.py`、`rerun-preview`、`rerun-prompt` 接入同一模板 loader；旧 `date` / `institutions` rerun 字段会归一到 `publication_date` / `contributors`。
+- `MetadataReview.vue` 改为读取模板字段渲染审核表；新增元数据字段后，可在审核页展示、编辑、复制 prompt、发起字段级重抽。
+- 人工编辑的模板字段会被后端视为 human-confirmed 并提升为 high confidence；自定义字段不再只停留在 raw JSON。
 - 风险计算和分类审核机构展示兼容 canonical `contributors` 字段，避免新模板抽取结果在下游不可见。
-- 验证：`python -m pytest tests/test_metadata_template_loader.py tests/test_metadata_rerun_api.py tests/test_api.py -q -p no:cacheprovider --basetemp .codex_tmp\pytest-template-runtime-2` 通过（100 passed, 4 skipped）；`npm.cmd run build` 通过；相关 Python 文件 `py_compile` 通过。
+- 验证：`python -m pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-metadata-dynamic-all` 通过（531 passed, 5 skipped）；`python scripts\healthcheck_library.py --json` 五类问题全空；`npm.cmd run build` 通过。
 
 #### 七、已记录 Issue（待后续处理）
 

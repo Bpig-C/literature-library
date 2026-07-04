@@ -156,7 +156,7 @@
 | **前端体验大优化** (2026-07-02) | 导航栏调整/发现检索Tab改造/采集审核深度改造/PDF链路修复/来源追溯/模板管理页 | `PROJECT_HISTORY.md` §2026-07-02 |
 | **模板管理页面** (2026-07-02) | 独立 `/templates` 页面，三大模板资产（元数据可编辑/分类预留/Discovery预留） | `PROJECT_HISTORY.md` §六 |
 | **字段级重抽前端化** (2026-07-04) | MetadataReview 字段行双模式入口：重抽预览写入 + 复制 prompt 降级 | `PROJECT_HISTORY.md` §2026-07-04 |
-| **元数据模板 runtime 接入** (2026-07-04) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun | `PROJECT_HISTORY.md` §2026-07-04 |
+| **元数据模板 runtime 接入** (2026-07-04/05) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun，MetadataReview 动态字段审核 | `PROJECT_HISTORY.md` §2026-07-04 |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
@@ -164,7 +164,7 @@
 - A. 元数据抽取模板固化
   - **✅ 已完成**：独立模板管理页面（`/templates`），元数据字段可在线编辑，保存到 `templates/templates.json`
   - **✅ 已完成**：UX-004 字段级重抽前端化（智能预览写入 + 复制 prompt 降级）
-  - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路
+  - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路，审核页可动态展示/编辑/重抽自定义字段
   - **当前下一步建议**：若继续资产治理，做 QA-004 分类词汇模板同步/发布流程；若优先效率，做 UX-001 批量流程入口
   - 详见 `USER_ISSUES.md` 已解决 UX-004/QA-001、待处理 QA-004 和 `FUTURE_WORK_PLAN.md` §A
 - B. 分类规范与审核模板

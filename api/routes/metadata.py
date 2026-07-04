@@ -14,6 +14,7 @@ from ..db import get_conn, ensure_metadata_review_columns, table_exists, LIBRARY
 from ..metadata_template import (
     build_metadata_system_prompt,
     build_metadata_user_prompt,
+    get_metadata_field_keys,
     get_metadata_template,
     normalize_metadata_fields,
     valid_rerun_fields,
@@ -38,8 +39,12 @@ APPLY_FIELDS = {
     "publication_date": "publication_date_json",
 }
 
-# Fields edited by a human reviewer are treated as confirmed for apply.
-HUMAN_CONFIRMED_FIELDS = set(APPLY_FIELDS) | {"date", "institutions", "author_count"}
+# Legacy aliases edited by a human reviewer are treated as confirmed.
+LEGACY_HUMAN_CONFIRMED_FIELDS = {"date", "institutions", "author_count"}
+
+
+def _human_confirmed_fields() -> set[str]:
+    return set(APPLY_FIELDS) | set(get_metadata_field_keys()) | LEGACY_HUMAN_CONFIRMED_FIELDS
 
 # Valid quarantine reasons
 QUARANTINE_REASONS = {"bad_source", "out_of_scope", "not_literature", "duplicate_residual", "user_removed", "needs_rerun"}
@@ -233,8 +238,9 @@ def review_metadata(ext_id: str, body: MetadataReviewAction):
         # Merge edited fields into extracted_json and promote them to human-confirmed.
         if body.edited_fields:
             extracted.update(body.edited_fields)
+            confirmed_fields = _human_confirmed_fields()
             for field in body.edited_fields:
-                if field in HUMAN_CONFIRMED_FIELDS:
+                if field in confirmed_fields:
                     confidence[field] = "high"
             # Recompute risk after edits
             work = conn.execute("SELECT title FROM works WHERE id = ?", (ext["work_id"],)).fetchone()
@@ -508,8 +514,9 @@ def supersede_extraction(ext_id: str, body: MetadataSupersedeAction):
         confidence = json.loads(ext["confidence_json"]) if ext["confidence_json"] else {}
 
         extracted.update(body.edited_fields)
+        confirmed_fields = _human_confirmed_fields()
         for field in body.edited_fields:
-            if field in HUMAN_CONFIRMED_FIELDS:
+            if field in confirmed_fields:
                 confidence[field] = "high"
 
         # Compute risk for new extraction

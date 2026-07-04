@@ -22,7 +22,7 @@
 | `docs/superpowers/README.md` | 当前审核证据和 dated docs 索引。 | 新增/归档 review、plan、spec 时同步更新。 |
 | `docs/_archive/README.md` | 已归档文档索引。 | 归档文件时同步更新分类说明。 |
 
-当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。模板管理已成为元数据抽取资产入口：`/templates` 编辑 `templates/templates.json`，真实元数据抽取 CLI/API/rerun 均读取 `api/metadata_template.py` loader。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
+当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。模板管理已成为元数据抽取资产入口：`/templates` 编辑 `templates/templates.json`，真实元数据抽取 CLI/API/rerun 均读取 `api/metadata_template.py` loader，`/metadata` 审核表也会按模板字段动态渲染。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
 
 ## 目录架构
 
@@ -202,7 +202,7 @@ npm run dev
 - `/works/:id` — 文献详情（源文件 -> 解析 -> 元数据 -> 分类 workflow bar，编辑元数据、查看 content.md、管理关系）
 - `/duplicates` — 去重确认（决策按钮、localStorage 持久化）
 - `/relations` — 关系管理（新增、删除）
-- `/metadata` — 元数据抽取审核（风险分级、原文预览、证据定位、人工编辑、审核回填）
+- `/metadata` — 元数据抽取审核（按模板字段动态渲染、风险分级、原文预览、证据定位、人工编辑、字段级重抽、审核回填）
 - `/templates` — 模板管理（元数据字段资产；保存后影响真实元数据抽取 CLI/API/rerun）
 - `/classification` — 分类标签审核（primary_doc_type、risk_domain、method_tags 等）
 - `/intake` — 采集候选审核（resolution、review_status、promote）

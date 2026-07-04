@@ -98,6 +98,29 @@ def test_rerun_field_aliases_normalize_to_canonical():
     ]
 
 
+def test_human_confirmed_fields_include_custom_template_field(monkeypatch, tmp_path):
+    _use_tmp_templates(
+        monkeypatch,
+        tmp_path,
+        {
+            "version": "2.0-test",
+            "fields": [
+                *mt_fields_without_custom(),
+                {
+                    "key": "journal",
+                    "label": "期刊",
+                    "type": "text",
+                    "rules": "journal name or null",
+                    "description": "Publication journal when explicitly stated",
+                },
+            ],
+        },
+    )
+    from api.routes.metadata import _human_confirmed_fields
+
+    assert "journal" in _human_confirmed_fields()
+
+
 def mt_fields_without_custom():
     from api.metadata_template import BUILTIN_METADATA_FIELDS
 
