@@ -1,8 +1,11 @@
 # 文献库项目说明
 
-本目录是本地文献管理系统的数据根目录，用来保存已经迁移、去重、解析后的文献库。它和阶段规划文档分工不同：
+本目录是本地文献管理系统的数据根目录，用来保存已经迁移、去重、解析后的文献库。README 是项目总入口，不再承担全部使用细节；具体操作按读者角色分流到三类手册。
 
-- 本文档：说明当前项目架构、目录含义、日常使用流程和常用命令。
+- 本文档：说明当前项目定位、目录结构、核心概念和文档入口。
+- `docs/manuals/user-manual.md`：浏览器用户手册。
+- `docs/manuals/cli-manual.md`：CLI/自动化手册。
+- `docs/manuals/agent-manual.md`：agent 协作手册。
 - `FUTURE_WORK_PLAN.md`：只记录后续尚未完成的维护计划。
 - `docs/PROJECT_HISTORY.md`：记录已完成阶段、历史路线和旧判断。
 
@@ -12,7 +15,11 @@
 
 | 文档 | 用途 | 维护要求 |
 |---|---|---|
-| `README.md` | 操作者入口、日常命令、当前主流程。 | 功能入口、启动方式、主流程变化时同步更新。 |
+| `README.md` | 项目首页、目录结构、核心概念和文档导航。 | 文档入口、主流程或长期维护文档变化时同步更新。 |
+| `docs/manuals/README.md` | 三类使用手册索引。 | 新增、拆分或合并手册时同步更新。 |
+| `docs/manuals/user-manual.md` | 浏览器用户手册：页面入口、日常流程、人工审核边界。 | UI 页面、用户流程或模板页面行为变化时同步更新。 |
+| `docs/manuals/cli-manual.md` | CLI/自动化手册：脚本、API、测试、批处理命令。 | 脚本参数、验证命令、API 自动化入口变化时同步更新。 |
+| `docs/manuals/agent-manual.md` | Agent 协作手册：边界、派发方式、两轮审核、交接格式。 | agent 权限边界、任务派发或审核流程变化时同步更新。 |
 | `TECHNICAL_OVERVIEW.md` | 系统架构、不变量、数据边界。 | 架构或事实源变化时同步更新。 |
 | `FUTURE_WORK_PLAN.md` | 当前未完成路线图和下一步候选；想掌握“接下来做什么”优先看这里。 | 完成任务后移动到历史记录或标记完成。 |
 | `USER_ISSUES.md` | 用户提出的问题、状态与验收记录。 | 每次修复或确认后更新状态。 |
@@ -21,6 +28,16 @@
 | `docs/DOCUMENT_GOVERNANCE.md` | 文档状态、归档和发布前门禁规则。 | 文档体系变化时同步更新。 |
 | `docs/superpowers/README.md` | 当前审核证据和 dated docs 索引。 | 新增/归档 review、plan、spec 时同步更新。 |
 | `docs/_archive/README.md` | 已归档文档索引。 | 归档文件时同步更新分类说明。 |
+
+## 三类使用手册
+
+| 你是谁 | 先看哪个 |
+|---|---|
+| 通过浏览器管理文献、审核抽取结果 | [用户手册](docs/manuals/user-manual.md) |
+| 通过命令行跑摄入、解析、抽取、测试和健康检查 | [CLI 与自动化手册](docs/manuals/cli-manual.md) |
+| 派发 Codex/opencode/本地模型执行长任务、审核或批处理 | [Agent 协作手册](docs/manuals/agent-manual.md) |
+
+团队协作时，先按角色读对应手册，再回到 `FUTURE_WORK_PLAN.md` 看下一步做什么，去 `USER_ISSUES.md` 查问题状态，最后用 `docs/PROJECT_HISTORY.md` 查历史完成证据。
 
 当前状态：V1.1 前端端到端主流程和受约束发现检索已打通。FastAPI + Vue SPA 可从前端完成“发现/检索 -> hit 回填 -> 候选审核 -> 摄入/入库 -> 解析 -> 元数据抽取 -> 分类抽取 -> 人工审核 -> 回填/应用”的主链路；解析状态以 SQLite `literature_parse_runs` 为唯一权威。模板管理已成为元数据抽取资产入口：`/templates` 编辑 `templates/templates.json`，真实元数据抽取 CLI/API/rerun 均读取 `api/metadata_template.py` loader，`/metadata` 审核表也会按模板字段动态渲染。V1 发布审查见 `docs/_archive/superpowers/reviews/2026-06-29-v1-final-publication-p1-remediation.md`，V1.1 主流程完成报告见 `docs/_archive/superpowers/reviews/2026-06-30-v1.1-frontend-end-to-end-flow-result.md`，发现检索 agent 协议见 `docs/discovery-agent-protocol.md`。
 

@@ -26,7 +26,10 @@
 
 | 文档 | 看什么 |
 |------|--------|
-| `README.md` | 目录结构、日常使用命令、核心概念（`_inbox` → `works` 的流转） |
+| `README.md` | 项目首页、目录结构、核心概念和文档导航 |
+| `docs/manuals/user-manual.md` | 浏览器用户怎么操作页面和审核流程 |
+| `docs/manuals/cli-manual.md` | CLI/自动化命令、测试、健康检查和批处理入口 |
+| `docs/manuals/agent-manual.md` | agent 协作边界、任务派发、两轮审核和交接格式 |
 | `FUTURE_WORK_PLAN.md` | 当前路线图 + 维护原则 + 所有未完成任务列表 |
 | `docs/PROJECT_HISTORY.md` | 已完成工作的完整归档（V1 → V1.3 → Pipeline → IngestHub） |
 
@@ -158,6 +161,7 @@
 | **字段级重抽前端化** (2026-07-04) | MetadataReview 字段行双模式入口：重抽预览写入 + 复制 prompt 降级 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板 runtime 接入** (2026-07-04/05) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun，MetadataReview 动态字段审核 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板使用文档同步** (2026-07-05) | README 和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `README.md` §9、`scripts/README.md` |
+| **使用手册角色拆分** (2026-07-05) | 新增用户手册、CLI/自动化手册、Agent 协作手册，README 改为总入口 | `docs/manuals/README.md` |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
@@ -167,7 +171,7 @@
   - **✅ 已完成**：UX-004 字段级重抽前端化（智能预览写入 + 复制 prompt 降级）
   - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路，审核页可动态展示/编辑/重抽自定义字段
   - **✅ 已完成**：使用文档已明确 `/templates`、`/metadata`、CLI/API 和 agent 批量处理方式；批量 agent 不需要从界面复制 prompt，应直接读模板并调用命令
-  - **当前下一步建议**：若继续资产治理，做 QA-004 分类词汇模板同步/发布流程；若优先效率，做 UX-001 批量流程入口
+  - **当前下一步建议**：继续元数据模板资产治理，把 `needs_fix` / `rejected` / supersede 案例沉淀为模板改进建议；QA-004 分类词汇模板同步/发布流程暂缓
   - 详见 `USER_ISSUES.md` 已解决 UX-004/QA-001、待处理 QA-004 和 `FUTURE_WORK_PLAN.md` §A
 - B. 分类规范与审核模板
   - 模板管理页面 Tab2 已有只读展示，后端编辑 API 已预留（🔒 前端未开放按钮）

@@ -1,7 +1,7 @@
 # 文档治理说明
 
 > 状态：当前权威文档
-> 更新时间：2026-07-03
+> 更新时间：2026-07-05
 
 本仓库同时保存“当前操作文档”和“历史设计/审核证据”。不要把所有带日期的文档都当成当前事实；当前行为必须以代码、测试、当前数据库健康检查和当前有效文档共同验证。
 
@@ -21,7 +21,11 @@
 
 ## 当前维护地图
 
-- `README.md`：操作者入口与日常命令。
+- `README.md`：项目首页、核心概念和文档导航；不承载全部使用细节。
+- `docs/manuals/README.md`：三类使用手册索引。
+- `docs/manuals/user-manual.md`：浏览器用户手册，维护 UI 页面、日常流程、人工审核边界。
+- `docs/manuals/cli-manual.md`：CLI/自动化手册，维护脚本、API、测试、健康检查和批处理命令。
+- `docs/manuals/agent-manual.md`：Agent 协作手册，维护 agent 边界、派发方式、两轮审核和交接格式。
 - `TECHNICAL_OVERVIEW.md`：系统架构、不变量和当前限制。
 - `FUTURE_WORK_PLAN.md`：当前路线图与 V1.1+ 待办队列。
 - `USER_ISSUES.md`：用户问题、修复状态与验收记录。
@@ -33,6 +37,19 @@
 - `docs/_archive/README.md`：已归档文档索引；只作历史查证入口。
 - `scripts/README.md`：脚本生命周期与操作命令。
 - `web/README.md`：前端开发与产品界面说明。
+
+## 读者分层
+
+| 读者 | 首选入口 | 不应承担的内容 |
+|------|----------|----------------|
+| 浏览器用户 | `docs/manuals/user-manual.md` | 不写批处理脚本细节，不写 agent 派发规范 |
+| CLI/自动化操作者 | `docs/manuals/cli-manual.md` | 不写页面逐步点击说明，不写历史路线 |
+| Agent/协调者 | `docs/manuals/agent-manual.md` | 不替代具体协议文档，不记录全部历史完成流水 |
+| 项目接手者 | `docs/HANDOVER_GUIDE.md` | 不作为路线图，不堆所有命令细节 |
+| 规划者 | `FUTURE_WORK_PLAN.md` | 不记录已完成实施细节 |
+| 审核/追溯者 | `docs/PROJECT_HISTORY.md`、`docs/superpowers/README.md` | 不作为当前操作入口 |
+
+新增当前操作说明时，先判断读者角色，再放入对应手册。README 只链接和摘要，不复制大段正文。
 
 ## 发布前文档门禁
 

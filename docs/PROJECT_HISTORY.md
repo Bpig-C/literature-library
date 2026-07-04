@@ -276,6 +276,16 @@
 - 使用文档已同步：`README.md` §9 明确前端用户通过 `/templates` 和 `/metadata` 操作；`scripts/README.md` 明确 agent/CLI 批量处理直接读取 `templates/templates.json` 并调用抽取/重抽脚本，不需要从界面复制 prompt。
 - 验证：`python -m pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-metadata-dynamic-all` 通过（531 passed, 5 skipped）；`python scripts\healthcheck_library.py --json` 五类问题全空；`npm.cmd run build` 通过。
 
+### 2026-07-05 文档结构按协作角色拆分
+
+为适配多人/多 agent 协作，文档入口从“README 混合承载所有说明”调整为“README 总入口 + 三类当前使用手册”：
+
+- 新增 `docs/manuals/README.md`：三类使用手册索引。
+- 新增 `docs/manuals/user-manual.md`：浏览器用户操作流程、页面入口和人工审核边界。
+- 新增 `docs/manuals/cli-manual.md`：CLI/自动化命令、测试、健康检查、批处理和元数据重抽入口。
+- 新增 `docs/manuals/agent-manual.md`：agent 必读文档、权限边界、任务派发、两轮审核和交付格式。
+- `README.md`、`docs/DOCUMENT_GOVERNANCE.md` 和 `docs/HANDOVER_GUIDE.md` 已链接三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
+
 #### 七、已记录 Issue（待后续处理）
 
 | Issue | 标题 | 状态 |
@@ -300,6 +310,7 @@
 - 2026-07-02 前端体验大范围改进：导航栏调整/发现检索Tab改造/采集审核深度改造(追溯卡片+PDF体验+根因修复)/PDF下载链路修复/流程管理增强/模板管理独立页面。
 - 2026-07-04 字段级重抽前端化：MetadataReview 字段行重抽预览写入 + 复制 prompt 降级，后端 rerun preview/apply/prompt 三端点。
 - 2026-07-04 元数据模板 runtime 接入：`templates/templates.json` + `api/metadata_template.py` 统一驱动 metadata extract CLI/API/rerun。
+- 2026-07-05 文档结构按协作角色拆分：`docs/manuals/` 下维护用户、CLI自动化、agent 三类当前使用手册。
 - 旧的 document-parser / 自部署 MinerU 方案与 `parse_ledger.json` 迁移记录。
 - 早期关于 collections、analysis_runs、综述矩阵、引用导出的初始设想。
 

@@ -292,12 +292,13 @@ V1 中 `needs_better_copy` promote 已被安全拒绝，避免误创建重复 wo
 
 ### 9. 文档治理自动化
 
-当前已经有 `docs/DOCUMENT_GOVERNANCE.md` 和 `docs/superpowers/README.md`，但文档门禁仍靠人工 grep。
+当前已经有 `docs/DOCUMENT_GOVERNANCE.md`、`docs/superpowers/README.md` 和 `docs/manuals/` 三类使用手册（用户 / CLI自动化 / Agent协作），文档职责已按读者分层；但文档门禁仍靠人工 grep。
 
 目标：
 
 - 增加一个轻量文档检查脚本或测试。
 - 检查 active 文档中是否出现禁止性旧入口：`parse_ledger.json` 当前状态源、默认 `D:\06_tools\document-parser`、当前 healthcheck 指向旧脚本、root-level `scripts/_*.py`。
+- 检查 README、`docs/manuals/README.md`、`docs/DOCUMENT_GOVERNANCE.md`、`docs/HANDOVER_GUIDE.md` 是否互相链接当前三类手册。
 - 输出允许命中与需处理命中的分类。
 
 验证：
