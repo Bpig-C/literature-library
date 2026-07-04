@@ -2,7 +2,7 @@
 
 > **用途**：帮助新接手者快速了解项目全貌，以便和用户一起决定下一步做什么。
 > **不指定具体任务**——本文档只负责"让你看得懂"，决策权在用户。
-> **更新时间**：2026-07-03
+> **更新时间**：2026-07-05
 
 ---
 
@@ -157,6 +157,7 @@
 | **模板管理页面** (2026-07-02) | 独立 `/templates` 页面，三大模板资产（元数据可编辑/分类预留/Discovery预留） | `PROJECT_HISTORY.md` §六 |
 | **字段级重抽前端化** (2026-07-04) | MetadataReview 字段行双模式入口：重抽预览写入 + 复制 prompt 降级 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板 runtime 接入** (2026-07-04/05) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun，MetadataReview 动态字段审核 | `PROJECT_HISTORY.md` §2026-07-04 |
+| **元数据模板使用文档同步** (2026-07-05) | README 和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `README.md` §9、`scripts/README.md` |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
@@ -165,6 +166,7 @@
   - **✅ 已完成**：独立模板管理页面（`/templates`），元数据字段可在线编辑，保存到 `templates/templates.json`
   - **✅ 已完成**：UX-004 字段级重抽前端化（智能预览写入 + 复制 prompt 降级）
   - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路，审核页可动态展示/编辑/重抽自定义字段
+  - **✅ 已完成**：使用文档已明确 `/templates`、`/metadata`、CLI/API 和 agent 批量处理方式；批量 agent 不需要从界面复制 prompt，应直接读模板并调用命令
   - **当前下一步建议**：若继续资产治理，做 QA-004 分类词汇模板同步/发布流程；若优先效率，做 UX-001 批量流程入口
   - 详见 `USER_ISSUES.md` 已解决 UX-004/QA-001、待处理 QA-004 和 `FUTURE_WORK_PLAN.md` §A
 - B. 分类规范与审核模板
@@ -203,6 +205,8 @@
 3. **浏览各页面**：按第四节的页面清单逐个打开，了解每个页面干什么
 4. **读 FUTURE_WORK_PLAN.md 全文**：了解有哪些方向可以选择
 5. **和用户讨论**：基于了解到的信息，一起决定下一步优先做哪个方向
+
+如果下一步继续做元数据模板资产治理，先读 `README.md` §9 和 `scripts/README.md` 的“元数据模板与批量重抽”。前端单条处理走 `/templates` + `/metadata`；agent 批量处理直接读 `templates/templates.json` 并调用 `scripts\literature_metadata_extract.py` / `scripts\literature_metadata_rerun.py` 或对应 HTTP API。界面的“复制 prompt”只作为单条降级方案，不是批量 agent 的主入口。
 
 ---
 

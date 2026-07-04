@@ -273,6 +273,7 @@
 - `MetadataReview.vue` 改为读取模板字段渲染审核表；新增元数据字段后，可在审核页展示、编辑、复制 prompt、发起字段级重抽。
 - 人工编辑的模板字段会被后端视为 human-confirmed 并提升为 high confidence；自定义字段不再只停留在 raw JSON。
 - 风险计算和分类审核机构展示兼容 canonical `contributors` 字段，避免新模板抽取结果在下游不可见。
+- 使用文档已同步：`README.md` §9 明确前端用户通过 `/templates` 和 `/metadata` 操作；`scripts/README.md` 明确 agent/CLI 批量处理直接读取 `templates/templates.json` 并调用抽取/重抽脚本，不需要从界面复制 prompt。
 - 验证：`python -m pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-metadata-dynamic-all` 通过（531 passed, 5 skipped）；`python scripts\healthcheck_library.py --json` 五类问题全空；`npm.cmd run build` 通过。
 
 #### 七、已记录 Issue（待后续处理）

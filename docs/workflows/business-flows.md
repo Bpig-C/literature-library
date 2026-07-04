@@ -1,6 +1,6 @@
 # 业务流程图
 
-> 最后更新：2026-06-30  
+> 最后更新：2026-07-05
 > 范围：用户浏览器操作、智能体 CLI 操作、API 自动化操作，以及跨 `web`、`api`、`collector`、`parser`、`scripts` 的协作。
 
 ## 总览
@@ -35,6 +35,18 @@
 ## 流程五：元数据/分类抽取与审核
 
 ![元数据/分类抽取与审核](../architecture/diagrams/flow-review.svg)
+
+#### 5.1 元数据模板动态链路
+
+元数据字段模板的事实源是 `templates/templates.json`，运行时由 `api/metadata_template.py` 合并默认模板和自定义模板。三条入口必须保持一致：
+
+| 入口 | 用户/agent 行为 | 写入点 | 门禁 |
+|------|-----------------|--------|------|
+| UI 模板维护 | 用户在 `/templates` 编辑元数据字段 | `templates/templates.json` | 保存前由 `api/routes/templates.py` 校验字段结构 |
+| UI 审核重抽 | 用户在 `/metadata` 编辑字段、点“重抽”或“复制” | `metadata_extractions` 新记录 + supersede 链 | 预览确认后才写库；批准后才可回填 `works` |
+| Agent/CLI 批量处理 | agent 读取模板定义并调用 `literature_metadata_extract.py` / `literature_metadata_rerun.py` | `metadata_extractions` | `--fields` 校验模板字段白名单；不绕过人工审核 |
+
+界面的“复制 prompt”只用于单条降级处理。批量 agent 不应从界面复制 prompt，而应直接按 `README.md` §9 和 `scripts/README.md` 调用 CLI/API。
 
 ## 流程六：主题驱动发现检索
 

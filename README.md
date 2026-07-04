@@ -271,6 +271,28 @@ V1.2 新增 **composite 多信号组合模式**：允许用户同时提供名称
 
 当前元数据抽取结果保存在 `metadata_extractions`，不会直接覆盖 `works` 稳定层。推荐流程是先在 SPA 的 `/metadata` 页面审核，再按需要回填。
 
+元数据模板已经是当前抽取链路的事实源：在 `/templates` 的“元数据字段”Tab 修改字段后，会保存到 `templates/templates.json`；后端通过 `api/metadata_template.py` 合并默认模板和自定义模板。新的元数据抽取、字段级重抽、prompt 复制和 `/metadata` 审核表都会读取同一份模板。新增字段只要保存成功，就可以在后续抽取/重抽中出现，也会在审核页作为可编辑字段展示。
+
+#### 9.1 前端用户怎么用
+
+1. 打开 `/templates`，在“元数据字段”Tab 查看或编辑字段。字段 `key` 是系统识别名，保存后不要随意改名；如果确实要改名，应把它当成一次模板迁移。
+2. 新增字段后，回到 `/metadata` 审核页。审核表会按当前模板动态展示字段；自定义字段支持编辑、复制 prompt 和字段级重抽。
+3. 对单个字段不满意时，优先点字段行旁边的“重抽”。系统会先生成预览 diff，确认后才写入新的 `metadata_extractions`，并把旧记录标为 superseded。
+4. 如果本地模型/API 暂时不可用，可以点“复制”拿到带 field focus 的 prompt，交给人工或外部模型手动处理；手动结果再通过审核页编辑或 API supersede 写回。
+5. 人工编辑过的模板字段会被视为已确认字段，`confidence_json[field]` 会提升为 `high`；批准后才能进入回填流程。
+
+#### 9.2 Agent/CLI 批量怎么用
+
+Agent 做批量抽取或批量重抽时，不需要从界面复制 prompt。正确做法是先读本文档、`scripts/README.md`、`templates/templates.json` 和 `api/metadata_template.py` 的字段定义，然后直接调用 CLI 或 HTTP API。界面的“复制 prompt”只是给单条人工降级场景用的。
+
+推荐边界：
+
+- 批量新增/调整元数据字段：优先让 agent 修改 `templates/templates.json`，或调用 `POST /api/templates/metadata`；改完必须跑测试和前端构建。
+- 批量抽取新文献：使用 `scripts\literature_metadata_extract.py` 或 `POST /api/metadata/extract`。
+- 批量重抽已存在候选：使用 `scripts\literature_metadata_rerun.py`。`--fields` 支持模板中的自定义字段 key；脚本会校验字段白名单。
+- 批量审核修复队列：先查 `GET /api/metadata/agent/queue` 或 CLI 队列，再按风险/错误模式分批处理；不要绕过人工审核直接写 `works`。
+- 自动化/CI 风格验证：至少跑后端相关测试、健康检查和前端构建，确认模板、审核页和 CLI 没有漂移。
+
 审核状态语义：
 
 - `approved`：候选值可回填 `works`。默认只填空字段，不覆盖已有人工字段，不自动回填 `year`。
@@ -291,6 +313,9 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun
 
 # 字段级重抽：模型仍返回完整 JSON，但系统只用新结果覆盖指定字段
 python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields title,date,url --rerun
+
+# 自定义字段级重抽：字段 key 来自 /templates 或 templates\templates.json
+python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal,artifact_version --rerun
 
 # 预览重抽结果，不写数据库
 python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields url --rerun --no-write --json
@@ -333,8 +358,15 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --rerun --url http:
 | POST | `/api/metadata/apply-approved` | 回填已批准且未应用的抽取结果 |
 | POST | `/api/metadata/batch-approve-low-risk` | 批量批准低风险 pending 记录 |
 | GET | `/api/metadata/agent/queue` | agent 修复队列，按风险排序并返回错误模式聚类 |
+| GET | `/api/metadata/{ext_id}/rerun-prompt` | 生成字段级重抽 prompt（前端“复制”使用） |
+| POST | `/api/metadata/{ext_id}/rerun-preview` | 字段级重抽预览，不直接写库 |
+| POST | `/api/metadata/{ext_id}/rerun-apply` | 确认预览并创建 superseding extraction |
 | POST | `/api/metadata/{ext_id}/supersede` | 使用外部提供的替换字段创建 superseding extraction |
 | POST | `/api/metadata/{ext_id}/quarantine` | 从元数据审核页隔离文献 |
+| GET | `/api/templates` | 模板概览，含元数据/分类/Discovery 当前状态 |
+| GET | `/api/templates/metadata/schema` | 元数据模板字段 schema |
+| POST | `/api/templates/metadata` | 保存元数据字段模板并自动备份 |
+| POST | `/api/templates/metadata/reset` | 恢复元数据默认模板 |
 | GET | `/api/classification/tags/{work_id}` | 获取文献分类标签 |
 | POST | `/api/classification/tags/{work_id}` | 创建分类标签 |
 | POST | `/api/classification/tags/{work_id}/batch` | 批量创建分类标签 |

@@ -1,8 +1,8 @@
 # 文献库未来工作计划
 
 > 状态：当前路线图
-> 更新时间：2026-07-04
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；元数据模板已接入真实抽取/rerun 链路；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
+> 更新时间：2026-07-05
+> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；元数据模板已接入真实抽取/rerun 链路；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；元数据模板 UI/CLI/API/agent 使用文档已同步；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 
@@ -59,7 +59,7 @@
 - 文献类型越多，元数据字段和边界情况越多。
 - 不同来源 PDF 的结构差异会暴露新的抽取失败模式。
 - 审核中积累的人工修正应反哺模板，而不是只停留在单条记录。
-- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`；元数据抽取 CLI、API 和 rerun/prompt 已统一读取 `api/metadata_template.py` loader。详见 `docs/PROJECT_HISTORY.md`「2026-07-04 QA-001 元数据模板接入真实抽取链路」。
+- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`；元数据抽取 CLI、API 和 rerun/prompt 已统一读取 `api/metadata_template.py` loader；`README.md` §9 和 `scripts/README.md` 已写明前端/agent/CLI 使用边界。详见 `docs/PROJECT_HISTORY.md`「2026-07-04/05 QA-001 元数据模板接入真实抽取链路」。
 
 后续方向：
 
@@ -79,9 +79,10 @@
    - 抽取脚本、rerun 脚本、API 抽取端点和 rerun prompt 均统一读取 `api/metadata_template.py`。
    - `validate_extraction()` 的 missing 字段按当前模板计算；rerun 兼容旧字段别名并归一到 canonical key。
    - MetadataReview 审核表已动态读取模板字段；自定义字段可展示、编辑、复制 prompt 和字段级重抽。
-4. **【当前下一步候选】分类词汇模板同步/发布流程**（QA-004）
+4. **【暂缓】分类词汇模板同步/发布流程**（QA-004）
    - 模板管理 Tab2 仍是只读/预留；开放编辑前，需要同步 `classification_vocab.py`、前端 labels、分类 prompt 和测试 fixture。
-5. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
+5. **【当前下一步候选】从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼元数据模板改进项。**
+   - 先聚焦元数据模板资产治理，不把分类词汇模板发布流程混入同一阶段。
 
 优先级：高。它直接影响后续所有文献的结构化质量。
 
@@ -106,8 +107,9 @@
 | 元数据模板资产文件 | ✅ JSON | `templates/templates.json`（metadata v1.1 baseline） |
 | 抽取链路读取模板 | ✅ CLI/API | metadata extract CLI、`POST /api/metadata/extract`、rerun CLI/API |
 | 元数据审核动态字段 | ✅ UI | MetadataReview 按模板字段渲染，支持自定义字段编辑/重抽/prompt |
+| 元数据模板使用文档 | ✅ 文档 | `README.md` §9、`scripts/README.md` 明确 UI/CLI/API/agent 批量处理方式 |
 
-缺口：分类词汇模板仍未接入真实同步/发布流程（QA-004）；模板管理 Tab2 开放编辑前，需要把后端 vocab、前端 labels、分类抽取 prompt 和测试 fixture 统一。
+当前元数据侧主要缺口：还没有把 `needs_fix` / `rejected` / supersede 案例自动沉淀为模板改进建议；结构化作者/贡献者列表仍不是深度表格编辑。分类词汇模板同步/发布流程（QA-004）暂缓，避免和元数据模板资产治理混在同一阶段。
 
 ### B. 文献分类规范与审核模板
 

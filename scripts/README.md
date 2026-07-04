@@ -58,6 +58,36 @@ views\library_dashboard.html
 | `literature_classification_extract.py` / `recompute_classification_ambiguity.py` | active | 分类抽取和模糊度重算。 |
 | `literature_dashboard.py` | legacy | 历史 HTML 台账生成器；SPA 已替代日常入口。 |
 
+## 元数据模板与批量重抽
+
+元数据字段模板的事实源是 `templates/templates.json`，运行时由 `api/metadata_template.py` 合并默认字段和用户字段。Agent 批量处理时不要从前端复制 prompt；应直接读取模板定义并调用脚本。
+
+常用命令：
+
+```powershell
+# 抽取待处理文献，使用当前模板
+python scripts\literature_metadata_extract.py --limit 10
+
+# 对指定 work 强制重抽
+python scripts\literature_metadata_extract.py --work-id W-arxiv-xxxx --force
+
+# 查看待修复队列
+python scripts\literature_metadata_rerun.py --status needs_fix --limit 20
+
+# 字段级重抽，字段 key 来自 templates\templates.json
+python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields title,url,journal --rerun
+
+# 预览字段级重抽结果，不写库，适合 agent 批量审核前抽样
+python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal --rerun --no-write --json
+```
+
+约束：
+
+- `--fields` 会校验当前模板字段白名单，旧别名会归一到 canonical key。
+- 重抽会创建新的 `metadata_extractions` 并让旧记录进入 superseded 链路，不直接改 `works`。
+- 真正回填仍需审核批准后执行 apply；不要让批量脚本绕过人工审核门禁。
+- 修改模板后至少运行相关后端测试、`python scripts\healthcheck_library.py --json` 和 `cd web && npm run build`。
+
 ## Archived One-Off Scripts
 
 下划线前缀的一次性脚本不应留在 `scripts/` 根目录。已归档到 `scripts/_archive/`：

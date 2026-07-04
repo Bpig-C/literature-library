@@ -4,7 +4,7 @@
 >
 > **使用方式**：发现问题时直接在下方添加，定期整理后转移到 `FUTURE_WORK_PLAN.md` 作为开发规划。
 >
-> **更新时间**：2026-07-04
+> **更新时间**：2026-07-05
 
 ---
 
@@ -103,6 +103,7 @@
 - **解决方式**：新增共享 loader `api/metadata_template.py`，把 `templates/templates.json`、内置字段、字段校验、prompt 生成、rerun 字段白名单统一为一个运行时事实源。
 - **接入范围**：`scripts/literature_metadata_extract.py`、`POST /api/metadata/extract`、`scripts/literature_metadata_rerun.py`、`rerun-preview`、`rerun-prompt` 均读取当前元数据模板；`validate_extraction()` 的 missing 字段也按模板字段计算。
 - **前端动态化**：`MetadataReview.vue` 已读取模板字段生成审核表；自定义字段可展示、编辑、复制 prompt、发起字段级重抽；人工编辑的模板字段会提升为 high confidence。
+- **使用文档**：`README.md` §9 已说明前端 `/templates` + `/metadata` 使用方式、CLI/API/agent 批量处理方式；`scripts/README.md` 已说明 agent 批量重抽直接读模板并调用脚本，不需要从界面复制 prompt。
 - **资产落地**：新增可审查的 `templates/templates.json` baseline（metadata v1.1）。
 - **遗留拆分**：分类词汇模板同步/发布流程另记为 QA-004。
 
