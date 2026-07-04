@@ -4,7 +4,7 @@
 >
 > **使用方式**：发现问题时直接在下方添加，定期整理后转移到 `FUTURE_WORK_PLAN.md` 作为开发规划。
 >
-> **更新时间**：2026-07-03
+> **更新时间**：2026-07-04
 
 ---
 
@@ -23,27 +23,6 @@
 ---
 
 ## 待处理问题
-
-### UX-004: 字段级重抽缺少前端入口
-- **发现日期**：2026-07-02
-- **页面/模块**：元数据审核（MetadataReview.vue）+ 模板管理（TemplateManage.vue）+ 后端 API
-- **问题描述**：
-  - 已有 CLI 工具支持字段级重抽：`python scripts/literature_metadata_rerun.py --ext-id ME-xxx --fields title,url --rerun`
-  - CLI 工具功能完整（字段选择、旧值保留预览、supersede 链、审计记录），但**只有命令行入口**
-  - 元数据审核页面每个字段旁边没有「🔄 重抽此字段」按钮
-  - 用户只能离开页面去终端操作，或对整条记录全量重新抽取（浪费且可能破坏已有正确字段）
-  - 全量抽取走的是同一链路（`POST /api/metadata/extract` → `llm_judge.chat()` → opencode subprocess），不需要额外配置 token
-- **期望行为**：
-  - **智能模式（主路径）**：每个字段旁加「🔄 重抽」按钮 → 调后端 rerun endpoint（复用 `literature_metadata_rerun.py` 核心逻辑 + `llm_judge.chat()` 同一 opencode 链路）→ 只覆盖指定字段
-  - **笨模式（降级方案）**：如果智能模式不可用（opencode 挂了/超时），提供「📋 复制 prompt」按钮 → 将带 field_focus 的完整 LLM prompt 复制到剪贴板 → 用户手动跑 CLI
-  - 两种模式保留，确保可靠性
-- **优先级**：🟡 中
-- **状态**：📋 待处理
-- **前置依赖**：✅ UX-003 已完成（模板管理页面就绪）
-- **技术备注**：
-  - 可重抽字段列表：title, title_zh, date, authors, author_count, institutions, doi, arxiv_id, venue, url, abstract（见 `VALID_RERUN_FIELDS`）
-  - 核心合并函数：`merge_selected_fields(old_data, new_data, fields)` 已实现于 `literature_metadata_rerun.py:165`
-  - field_focus 指令生成：`field_focus_instruction(fields, review_note)` 已实现于同文件第150行
 
 ### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表
 - **发现日期**：2026-07-02
@@ -112,6 +91,12 @@
 ## 已解决问题
 
 <!-- 解决后移到这里，保留记录供参考 -->
+
+### UX-004: 字段级重抽前端入口（双模式） → ✅ 已完成
+- **解决日期**：2026-07-04
+- **解决方式**：新增后端 `rerun-preview` / `rerun-apply` / `rerun-prompt` 三个端点，复用 `scripts/literature_metadata_rerun.py` 的字段级重抽、field_focus prompt 和 supersede 链路。
+- **前端入口**：`MetadataReview.vue` 每个可重抽字段旁新增「重抽」和「复制」按钮；重抽先预览 diff，确认后写入新 extraction 并 supersede 旧记录；复制 prompt 作为剪贴板/手动降级方案。
+- **验证**：`tests/test_metadata_rerun_api.py` 15 passed；`web` 构建通过；健康检查通过。
 
 ### UX-003: 元数据字段模板可视化展示 → ✅ 升级为独立模板管理页面
 - **解决方式**：从 MetadataReview 详情弹窗（只读展示）升级为 `/templates` 独立页面（可编辑+三大Tab）

@@ -738,3 +738,188 @@ def trigger_metadata_extraction(body: ExtractRequest):
         }
     finally:
         conn.close()
+
+
+# ============================================================
+# UX-004: 字段级重抽 API 端点
+# ============================================================
+
+class RerunPreviewRequest(BaseModel):
+    """重抽预览请求体"""
+    fields: list[str]  # 要重抽的字段列表
+    review_note: str = ""  # 可选的审核备注
+
+
+class RerunApplyRequest(BaseModel):
+    """确认应用重抽结果"""
+    preview_id: str  # preview 返回的临时 ID
+    new_extraction: dict  # preview 返回的完整新记录
+
+
+@router.post("/metadata/{ext_id}/rerun-preview")
+async def rerun_metadata_fields_preview(ext_id: str, body: RerunPreviewRequest):
+    """
+    预览重抽结果（不写入数据库）。
+
+    流程: 查询原记录 → 调 LLM 重抽指定字段 → 返回新旧值对比
+    用户确认后调用 /{ext_id}/rerun-apply 写入。
+    """
+    from scripts.literature_metadata_rerun import (
+        VALID_RERUN_FIELDS,
+        build_new_extraction,
+        extraction_by_id,
+    )
+
+    # 校验字段合法性
+    invalid = [f for f in body.fields if f not in VALID_RERUN_FIELDS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid fields: {', '.join(invalid)}")
+
+    if not body.fields:
+        raise HTTPException(status_code=400, detail="fields must be non-empty")
+
+    conn = get_conn()
+    try:
+        ensure_metadata_review_columns(conn)
+        ext = extraction_by_id(conn, ext_id)
+        if not ext:
+            raise HTTPException(status_code=404, detail=f"Extraction not found: {ext_id}")
+
+        # 执行重抽（不写入DB）
+        rerun_ext = dict(ext)
+        if body.review_note.strip():
+            rerun_ext["review_note"] = body.review_note.strip()
+        try:
+            new_ext = build_new_extraction(
+                rerun_ext,
+                fields=body.fields,
+                model="mimo-2.5-pro",
+                url="",
+                timeout=300,
+            )
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+
+        # 构建对比数据
+        old_data = ext.get("extracted_json", {})
+        new_data = new_ext["extracted_json"]
+
+        diff = {}
+        for field in body.fields:
+            diff[field] = {
+                "old": old_data.get(field),
+                "new": new_data.get(field),
+                "changed": old_data.get(field) != new_data.get(field),
+            }
+
+        return {
+            "preview_id": new_ext["id"],
+            "fields": body.fields,
+            "diff": diff,
+            "new_extraction": new_ext,
+            "risk": new_ext["risk"],
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/metadata/{ext_id}/rerun-apply")
+async def apply_rerun_result(ext_id: str, body: RerunApplyRequest):
+    """用户确认后，将预览结果写入数据库（supersede 旧记录）。"""
+    from scripts.literature_metadata_rerun import (
+        write_superseding_extraction,
+        extraction_by_id,
+    )
+
+    if body.preview_id != body.new_extraction.get("id"):
+        raise HTTPException(status_code=400, detail="preview_id does not match new_extraction.id")
+
+    conn = get_conn()
+    try:
+        ensure_metadata_review_columns(conn)
+        # 验证原记录存在
+        ext = extraction_by_id(conn, ext_id)
+        if not ext:
+            raise HTTPException(status_code=404, detail=f"Extraction not found: {ext_id}")
+        if body.new_extraction.get("old_id") != ext_id:
+            raise HTTPException(status_code=400, detail="new_extraction.old_id does not match ext_id")
+        if body.new_extraction.get("work_id") != ext["work_id"]:
+            raise HTTPException(status_code=400, detail="new_extraction.work_id does not match original extraction")
+        existing = conn.execute(
+            "SELECT 1 FROM metadata_extractions WHERE id = ?", (body.new_extraction["id"],)
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="rerun preview has already been applied")
+
+        # 写入新记录（自动 supersede 旧记录）
+        write_superseding_extraction(conn, body.new_extraction)
+
+        # 返回最终写入的记录（直接从 DB 查询原始行，再 enrich）
+        final_row = conn.execute(
+            "SELECT * FROM metadata_extractions WHERE id = ?", (body.new_extraction["id"],)
+        ).fetchone()
+        if not final_row:
+            raise HTTPException(status_code=500, detail="Failed to retrieve written record")
+        return _enrich_extraction(dict(final_row), conn)
+    finally:
+        conn.close()
+
+
+@router.get("/metadata/{ext_id}/rerun-prompt")
+async def get_rerun_prompt(
+    ext_id: str,
+    fields: str = Query(...),
+    review_note: str = Query(""),
+):
+    """
+    生成指定字段的 Prompt（降级方案：复制到手动工具处理）。
+
+    用法: GET /api/metadata/{ext_id}/rerun-prompt?fields=title,abstract
+    返回: { prompt: "...", fields: [...], content_chars: int, content_preview: "..." }
+    """
+    from scripts.literature_metadata_rerun import (
+        VALID_RERUN_FIELDS,
+        field_focus_instruction,
+        extraction_by_id,
+    )
+    from scripts.literature_metadata_extract import USER_PROMPT_TEMPLATE, INPUT_CHAR_BUDGET
+    from pathlib import Path
+
+    field_list = [f.strip() for f in fields.split(",") if f.strip()]
+    invalid = [f for f in field_list if f not in VALID_RERUN_FIELDS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid fields: {', '.join(invalid)}")
+
+    if not field_list:
+        raise HTTPException(status_code=400, detail="fields must be non-empty")
+
+    conn = get_conn()
+    try:
+        ensure_metadata_review_columns(conn)
+        ext = extraction_by_id(conn, ext_id)
+        if not ext:
+            raise HTTPException(status_code=404, detail=f"Extraction not found: {ext_id}")
+
+        # 读取 content.md
+        content_path = Path(ext["content_md_path"])
+        if not content_path.exists():
+            raise HTTPException(status_code=404, detail="content.md not found")
+
+        raw_text = content_path.read_text(encoding="utf-8", errors="replace")
+        text = raw_text[:INPUT_CHAR_BUDGET]
+
+        # 构建 prompt
+        base_prompt = USER_PROMPT_TEMPLATE.format(text=text)
+        focus_instr = field_focus_instruction(field_list, review_note.strip() or ext.get("review_note") or "")
+        full_prompt = base_prompt + focus_instr
+
+        return {
+            "prompt": full_prompt,
+            "fields": field_list,
+            "content_chars": len(text),
+            "content_preview": text[:500],
+        }
+    finally:
+        conn.close()

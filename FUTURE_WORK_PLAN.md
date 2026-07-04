@@ -1,8 +1,8 @@
 # 文献库未来工作计划
 
 > 状态：当前路线图
-> 更新时间：2026-07-03
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
+> 更新时间：2026-07-04
+> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 
@@ -42,7 +42,7 @@
 
 > ✅ 近期发布/启动阻断项已清零。详见 `docs/PROJECT_HISTORY.md`。
 >
-> 当前仍有高优先级体验与治理待办（如 UX-001、UX-004、QA-001），但不阻塞项目启动和基础回归。
+> 当前仍有高优先级体验与治理待办（如 UX-001、UX-002、QA-001），但不阻塞项目启动和基础回归。
 
 ---
 
@@ -69,16 +69,16 @@
    - 后端 API 6 个端点就绪（`api/routes/templates.py`），含自动备份和版本回滚
    - 归档位置：`docs/PROJECT_HISTORY.md` §六
 
-2. **【第二步】字段级重抽前端化**（UX-004）⬅️ **当前下一步**
-   - 智能模式：每个字段旁加「🔄 重抽」按钮 → 后端 rerun endpoint → 复用 opencode/llm_judge 链路 → 只覆盖指定字段
-   - 笨模式（降级）：「📋 复制 prompt」按钮 → 用户手动跑 CLI
-   - 两种模式保留，确保可靠性
-   - 前置依赖 ✅ 已满足：字段模板页面已完成
+2. **~~【第二步】字段级重抽前端化~~（UX-004）— ✅ 已完成**
+   - 智能模式：每个字段旁「重抽」→ 后端 `rerun-preview` → 复用 opencode/llm_judge 链路 → 预览 diff 后确认写入
+   - 降级模式：「复制」→ 后端 `rerun-prompt` → 复制带 field_focus 的 prompt
+   - 写入模式：`rerun-apply` 校验 preview/new_extraction 后写入新记录并 supersede 旧记录
 
-3. **建立元数据抽取模板版本号**。
-4. **将字段定义、证据要求、风险规则、回填语义写成可审查文档。**
-5. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
-6. **将模板变更与抽取脚本、测试 fixture 和审核界面同步。**
+3. **【当前下一步候选】模板管理接入真实抽取链路**（QA-001）
+   - 建立元数据抽取模板版本号。
+   - 将字段定义、证据要求、风险规则、回填语义写成可审查文档。
+   - 抽取脚本、rerun 脚本、测试 fixture 和审核 UI 统一读取模板 loader。
+4. **从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼模板改进项。**
 
 优先级：高。它直接影响后续所有文献的结构化质量。
 
@@ -97,8 +97,10 @@
 | 模板管理后端 API | ✅ HTTP | `GET/POST /api/templates/*`（6 端点） |
 | 模板管理前端页面 | ✅ 页面 | `/templates` → TemplateManage.vue |
 | 元数据字段在线编辑 | ✅ UI | 内联编辑 + 增删 + 导出 JSON/Prompt |
+| 字段级重抽 HTTP API | ✅ HTTP | `POST /api/metadata/{ext_id}/rerun-preview` / `rerun-apply`，`GET /rerun-prompt` |
+| 字段级重抽前端入口 | ✅ UI | MetadataReview 字段行「重抽」+「复制」双模式 |
 
-缺口：**后端 rerun HTTP endpoint** + **前端每个字段旁的重抽按钮**（UX-004）
+缺口：模板定义仍未接入真实抽取链路（QA-001）；模板版本号、脚本 loader、测试 fixture 和审核 UI 需要统一。
 
 ### B. 文献分类规范与审核模板
 
@@ -182,7 +184,7 @@
 - 定义模板版本号和变更记录方式。（备份机制已有，版本号待加）
 - 建立从 MetadataReview 人工修正反哺模板的流程。
 - 增加最小 fixture，覆盖常见文献类型和已知失败模式。
-- **【进行中】字段级重抽前端化（UX-004）**：智能模式 + 笨模式双保险。
+- **✅ 已完成**：字段级重抽前端化（UX-004），已具备智能预览写入 + prompt 复制降级双模式。
 
 验证：
 

@@ -117,6 +117,7 @@
           <div class="field-current">当前值</div>
           <div class="field-extracted">抽取值</div>
           <div class="field-conf">置信</div>
+          <div class="field-actions">操作</div>
         </div>
         <div v-for="f in FIELDS" :key="f.key" class="field-row" :class="{ missing: isMissing(f.key) }">
           <div class="field-name">{{ f.label }}</div>
@@ -178,6 +179,26 @@
           <div class="field-conf">
             <span v-if="confidence[f.key]" class="conf-badge" :class="confidence[f.key]">{{ confidence[f.key] }}</span>
           </div>
+          <div class="field-actions">
+            <button
+              v-if="canRerunField(f)"
+              class="field-action-btn rerun"
+              :disabled="fieldBusyKey === f.key || rerunApplyLoading"
+              :title="`只重抽${f.label}`"
+              @click.stop="previewFieldRerun(f)"
+            >
+              {{ fieldBusyKey === f.key ? '...' : '重抽' }}
+            </button>
+            <button
+              v-if="canRerunField(f)"
+              class="field-action-btn copy"
+              :disabled="promptBusyKey === f.key"
+              :title="`复制${f.label}重抽 prompt`"
+              @click.stop="copyFieldPrompt(f)"
+            >
+              {{ promptBusyKey === f.key ? '...' : '复制' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -224,6 +245,53 @@
         </div>
       </div>
 
+      <!-- Rerun preview modal -->
+      <div v-if="showRerunModal" class="modal-overlay" @click.self="closeRerunModal">
+        <div class="modal-box rerun-modal">
+          <h3>字段重抽预览</h3>
+          <p class="modal-desc">
+            只会用新结果覆盖指定字段；其余字段沿用旧抽取。确认后会创建新的 metadata extraction，并把旧记录标记为 superseded。
+          </p>
+          <div class="rerun-diff-list">
+            <div v-for="(diff, key) in rerunPreview?.diff || {}" :key="key" class="rerun-diff-item">
+              <div class="rerun-diff-title">
+                {{ rerunFieldLabel(key) }}
+                <span class="rerun-changed" :class="{ yes: diff.changed }">{{ diff.changed ? '已变化' : '未变化' }}</span>
+              </div>
+              <div class="rerun-diff-grid">
+                <div>
+                  <div class="tiny muted">旧值</div>
+                  <pre>{{ stringifyValue(diff.old) }}</pre>
+                </div>
+                <div>
+                  <div class="tiny muted">新值</div>
+                  <pre>{{ stringifyValue(diff.new) }}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn-cancel" @click="closeRerunModal">取消</button>
+            <button class="btn-confirm-rerun" :disabled="rerunApplyLoading" @click="applyRerunPreview">
+              {{ rerunApplyLoading ? '写入中...' : '确认写入' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Prompt fallback modal -->
+      <div v-if="showPromptModal" class="modal-overlay" @click.self="showPromptModal = false">
+        <div class="modal-box prompt-modal">
+          <h3>复制重抽 Prompt</h3>
+          <p class="modal-desc">剪贴板不可用时，可以从这里手动复制，再交给本地模型或 CLI 处理。</p>
+          <textarea class="prompt-textarea" readonly :value="rerunPromptText"></textarea>
+          <div class="modal-actions">
+            <button class="btn-cancel" @click="showPromptModal = false">关闭</button>
+            <button class="btn-confirm-rerun" @click="copyPromptText">再次复制</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Raw JSON toggle -->
       <div class="section">
         <h3 class="section-title" @click="showRaw = !showRaw">
@@ -251,7 +319,17 @@ import { ref, computed, onMounted, watch, nextTick, defineAsyncComponent } from 
 import { useRoute } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
-import { getMetadataExtractions, reviewMetadata, batchApproveLowRisk, quarantineFromReview, contentUrl, pdfUrl } from '../api'
+import {
+  getMetadataExtractions,
+  reviewMetadata,
+  batchApproveLowRisk,
+  quarantineFromReview,
+  previewMetadataRerun,
+  applyMetadataRerun,
+  getMetadataRerunPrompt,
+  contentUrl,
+  pdfUrl,
+} from '../api'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -306,6 +384,24 @@ const FIELDS = [
   { key: 'abstract', label: '摘要', type: 'textarea' },
 ]
 
+const RERUN_FIELD_MAP = {
+  publication_date: 'date',
+  contributors: 'institutions',
+}
+
+const VALID_RERUN_FIELDS = new Set([
+  'title',
+  'title_zh',
+  'date',
+  'authors',
+  'institutions',
+  'doi',
+  'arxiv_id',
+  'venue',
+  'url',
+  'abstract',
+])
+
 const statusFilter = ref(queryValue('status', 'pending'))
 const riskFilter = ref('all')
 const modelFilter = ref('all')
@@ -344,6 +440,13 @@ const listWidth = ref(340)
 const listPrevWidth = ref(340)
 const listCollapsed = ref(false)
 const detailWidth = ref(null)
+const fieldBusyKey = ref('')
+const promptBusyKey = ref('')
+const showRerunModal = ref(false)
+const rerunPreview = ref(null)
+const rerunApplyLoading = ref(false)
+const showPromptModal = ref(false)
+const rerunPromptText = ref('')
 
 const confidence = computed(() => selected.value?.confidence_json || {})
 const evidence = computed(() => selected.value?.extracted_json?.evidence || {})
@@ -395,6 +498,25 @@ function escapeRegex(s) {
 
 function statusLabel(s) {
   return STATUSES.find(st => st.key === s)?.label || s
+}
+
+function apiRerunFieldKey(field) {
+  return RERUN_FIELD_MAP[field.key] || field.key
+}
+
+function canRerunField(field) {
+  return VALID_RERUN_FIELDS.has(apiRerunFieldKey(field))
+}
+
+function rerunFieldLabel(key) {
+  const uiKey = Object.keys(RERUN_FIELD_MAP).find(k => RERUN_FIELD_MAP[k] === key) || key
+  return FIELDS.find(f => f.key === uiKey)?.label || key
+}
+
+function stringifyValue(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  return String(value)
 }
 
 function onResizeList(w) {
@@ -611,6 +733,85 @@ async function doQuarantine() {
   }
 }
 
+async function previewFieldRerun(field) {
+  if (!selected.value || !canRerunField(field)) return
+  const apiField = apiRerunFieldKey(field)
+  fieldBusyKey.value = field.key
+  try {
+    const res = await previewMetadataRerun(selected.value.id, [apiField], reviewNote.value.trim())
+    rerunPreview.value = res
+    showRerunModal.value = true
+  } catch (e) {
+    message.error(`重抽预览失败: ${e.message || e.detail || '未知错误'}`)
+  } finally {
+    fieldBusyKey.value = ''
+  }
+}
+
+function closeRerunModal() {
+  if (rerunApplyLoading.value) return
+  showRerunModal.value = false
+  rerunPreview.value = null
+}
+
+async function applyRerunPreview() {
+  if (!selected.value || !rerunPreview.value) return
+  rerunApplyLoading.value = true
+  try {
+    const applied = await applyMetadataRerun(
+      selected.value.id,
+      rerunPreview.value.preview_id,
+      rerunPreview.value.new_extraction,
+    )
+    message.success('字段重抽结果已写入，旧记录已 supersede')
+    showRerunModal.value = false
+    rerunPreview.value = null
+    await loadList()
+    const row = extractions.value.find(e => e.id === applied.id) || applied
+    selectExtraction(row)
+  } catch (e) {
+    message.error(`写入重抽结果失败: ${e.message || e.detail || '未知错误'}`)
+  } finally {
+    rerunApplyLoading.value = false
+  }
+}
+
+async function copyFieldPrompt(field) {
+  if (!selected.value || !canRerunField(field)) return
+  const apiField = apiRerunFieldKey(field)
+  promptBusyKey.value = field.key
+  rerunPromptText.value = ''
+  try {
+    const res = await getMetadataRerunPrompt(selected.value.id, [apiField], reviewNote.value.trim())
+    rerunPromptText.value = res.prompt || ''
+    const copied = await copyPromptText()
+    if (copied) {
+      message.success(`${field.label}重抽 prompt 已复制`)
+    } else {
+      message.warning('剪贴板不可用，已打开手动复制窗口')
+    }
+  } catch (e) {
+    message.error(`生成 prompt 失败: ${e.message || e.detail || '未知错误'}`)
+  } finally {
+    promptBusyKey.value = ''
+  }
+}
+
+async function copyPromptText() {
+  if (!rerunPromptText.value) return false
+  if (!navigator.clipboard?.writeText) {
+    showPromptModal.value = true
+    return false
+  }
+  try {
+    await navigator.clipboard.writeText(rerunPromptText.value)
+    return true
+  } catch {
+    showPromptModal.value = true
+    return false
+  }
+}
+
 watch(statusFilter, () => { reset(); riskFilter.value = 'all'; modelFilter.value = 'all'; loadList() })
 watch(riskFilter, () => { reset(); loadList() })
 watch(modelFilter, () => { reset(); loadList() })
@@ -749,7 +950,7 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 
 /* Field table */
 .field-table { border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 16px; }
-.field-row { display: grid; grid-template-columns: 100px 1fr 1fr 60px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.field-row { display: grid; grid-template-columns: 100px 1fr 1fr 60px 112px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .field-row:last-child { border-bottom: none; }
 .field-row.header { background: var(--bg-muted); font-weight: 600; font-size: 12px; color: var(--text-secondary); }
 .field-row.missing .field-extracted { background: #fef2f2; }
@@ -757,6 +958,22 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 .field-current { padding: 8px 10px; color: var(--text-primary); border-right: 1px solid var(--border); word-break: break-word; }
 .field-extracted { padding: 8px 10px; border-right: 1px solid var(--border); }
 .field-conf { padding: 8px 6px; text-align: center; }
+.field-actions { padding: 6px; display: flex; gap: 4px; align-items: center; justify-content: center; }
+.field-action-btn {
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.field-action-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.field-action-btn.rerun { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
+.field-action-btn.copy { background: var(--bg-muted); }
+.field-action-btn:disabled { opacity: .5; cursor: default; }
 
 /* Inputs in field table */
 .full-input { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 6px; font: inherit; font-size: 13px; }
@@ -811,6 +1028,20 @@ textarea.full-input { height: auto; padding: 6px; resize: vertical; }
 .btn-cancel { height: 34px; padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); cursor: pointer; font: inherit; }
 .btn-confirm-quarantine { height: 34px; padding: 0 16px; border: none; border-radius: var(--radius-lg); background: #c32f27; color: #fff; cursor: pointer; font: inherit; font-weight: 600; }
 .btn-confirm-quarantine:disabled { opacity: 0.5; cursor: default; }
+.btn-confirm-rerun { height: 34px; padding: 0 16px; border: none; border-radius: var(--radius-lg); background: var(--accent); color: #fff; cursor: pointer; font: inherit; font-weight: 600; }
+.btn-confirm-rerun:disabled { opacity: .5; cursor: default; }
+.rerun-modal { width: min(760px, 92vw); }
+.prompt-modal { width: min(820px, 92vw); }
+.rerun-diff-list { display: flex; flex-direction: column; gap: 12px; max-height: 56vh; overflow: auto; margin-bottom: 18px; }
+.rerun-diff-item { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.rerun-diff-title { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg-muted); font-weight: 600; font-size: 13px; }
+.rerun-changed { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--neutral-bg); color: var(--neutral-fg); }
+.rerun-changed.yes { background: var(--ok-bg); color: var(--ok-fg); }
+.rerun-diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.rerun-diff-grid > div { min-width: 0; padding: 10px; border-right: 1px solid var(--border); }
+.rerun-diff-grid > div:last-child { border-right: 0; }
+.rerun-diff-grid pre { margin: 4px 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; font-family: Consolas, monospace; background: var(--bg-muted); border-radius: var(--radius-md); padding: 8px; }
+.prompt-textarea { width: 100%; height: 420px; resize: vertical; font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px; margin-bottom: 14px; }
 
 /* Raw JSON */
 .raw-json { font-size: 11px; font-family: Consolas, monospace; background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; }

@@ -211,6 +211,28 @@ export function quarantineFromReview(extId, reason) {
   })
 }
 
+export function previewMetadataRerun(extId, fields, review_note = '') {
+  return request(`/metadata/${encodeURIComponent(extId)}/rerun-preview`, {
+    method: 'POST',
+    timeout: 360000,
+    body: JSON.stringify({ fields, review_note }),
+  })
+}
+
+export function applyMetadataRerun(extId, previewId, newExtraction) {
+  return request(`/metadata/${encodeURIComponent(extId)}/rerun-apply`, {
+    method: 'POST',
+    body: JSON.stringify({ preview_id: previewId, new_extraction: newExtraction }),
+  })
+}
+
+export function getMetadataRerunPrompt(extId, fields, review_note = '') {
+  const params = { fields: fields.join(',') }
+  if (review_note) params.review_note = review_note
+  const q = new URLSearchParams(params).toString()
+  return request(`/metadata/${encodeURIComponent(extId)}/rerun-prompt?${q}`)
+}
+
 // Classification tags
 export function getTags(workId) {
   return request(`/classification/tags/${encodeURIComponent(workId)}`)
