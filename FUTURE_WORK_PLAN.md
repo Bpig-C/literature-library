@@ -2,7 +2,14 @@
 
 > 状态：当前路线图
 > 更新时间：2026-07-05
-> 当前基线：V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成；前端全面重构 Phase 0-5 已完成；流程管理页面(Pipeline)已创建并增强；模板管理独立页面(TemplateManage)已创建（元数据可编辑，分类/Discovery预留）；元数据模板已接入真实抽取/rerun 链路；字段级重抽前端入口 UX-004 已完成（智能预览写入 + prompt 复制降级）；元数据模板 UI/CLI/API/agent 使用文档已同步；前端体验大范围优化已完成（导航栏/采集审核/PDF链路/来源追溯）。2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
+
+当前基线：
+
+- V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成。
+- 前端全面重构 Phase 0-5、Pipeline 页面、IngestHub 和 2026-07-02 前端体验优化已完成。
+- 模板管理独立页面已创建；元数据模板已接入真实抽取/rerun 链路；UX-004 字段级重抽前端入口已完成。
+- 元数据模板 UI/CLI/API/agent 使用文档已同步；文档总目录、三类手册和 `scripts/check_docs.py` 轻量门禁已建立。
+- 2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
 

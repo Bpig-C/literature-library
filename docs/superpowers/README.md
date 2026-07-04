@@ -1,11 +1,11 @@
 # Superpowers 规格、计划与审核索引
 
 > 状态：当前索引
-> 更新时间：2026-07-03
+> 更新时间：2026-07-05
 
 本目录只保留仍需当前维护或最近一轮复核的 superpowers 文档。已完成阶段的规格、计划和审核证据集中归档到 `docs/_archive/superpowers/`，避免后续维护者把旧任务清单或旧 finding 当成当前事实。
 
-判断当前行为时，应优先核对代码、测试、`scripts/healthcheck_library.py`、`docs/DOCUMENT_GOVERNANCE.md` 和 README 中列出的长期维护文档。
+判断当前行为时，应优先核对代码、测试、`scripts/healthcheck_library.py`、`docs/README.md`、`docs/DOCUMENT_GOVERNANCE.md` 和 README 中列出的长期维护文档。
 
 ## 目录角色
 

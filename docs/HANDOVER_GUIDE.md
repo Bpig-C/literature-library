@@ -41,7 +41,7 @@
 | `api/routes/*.py` | 后端 API 全部路由（约 10 个文件） |
 | `web/src/router.js` | 前端全部页面路由与导航结构 |
 | `web/src/api.js` | 前端所有后端调用封装 |
-| `web/src/views/*.vue` | 全部 18 个页面组件（含新增 TemplateManage.vue，见下方清单） |
+| `web/src/views/*.vue` | 当前 15 个页面组件（含 TemplateManage.vue 与 NotFound.vue） |
 | `web/src/components/*.vue` | 通用 UI 组件（9 个） |
 | `web/src/composables/use*.js` | 可复用逻辑封装（7 个） |
 
@@ -195,7 +195,7 @@
 | #6 | Dashboard 队列压力面板 | 中 | 📋 待处理 |
 | #7 | 审核日志语义统一 | 低 | 📋 待处理 |
 | #8 | needs_better_copy 替换源文件链路 | 低 | 📋 待处理 |
-| #9 | 文档治理自动化 | 低 | 📋 待处理 |
+| #9 | 文档治理自动化 | 低 | ◐ 部分完成（`scripts/check_docs.py` 已有；CI 接入待做） |
 | #10 | 引用导出与综述矩阵 | 中 | 📋 待处理 |
 | #11 | proposed_new 标签转正路径 | 中 | 📋 待处理 |
 
