@@ -160,8 +160,9 @@
 | **模板管理页面** (2026-07-02) | 独立 `/templates` 页面，三大模板资产（元数据可编辑/分类预留/Discovery预留） | `PROJECT_HISTORY.md` §六 |
 | **字段级重抽前端化** (2026-07-04) | MetadataReview 字段行双模式入口：重抽预览写入 + 复制 prompt 降级 | `PROJECT_HISTORY.md` §2026-07-04 |
 | **元数据模板 runtime 接入** (2026-07-04/05) | `templates/templates.json` + `api/metadata_template.py` 接入抽取 CLI/API/rerun，MetadataReview 动态字段审核 | `PROJECT_HISTORY.md` §2026-07-04 |
-| **元数据模板使用文档同步** (2026-07-05) | README 和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `README.md` §9、`scripts/README.md` |
+| **元数据模板使用文档同步** (2026-07-05) | 用户手册、CLI 手册和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md`、`scripts/README.md` |
 | **使用手册角色拆分** (2026-07-05) | 新增用户手册、CLI/自动化手册、Agent 协作手册，README 改为总入口 | `docs/README.md` |
+| **分类规范与审核模板 V1.1** (2026-07-05) | 分类方法规范 v0.2.2 与后端 VOCAB 对齐，补充变更流程、审核语义和字段实现状态 | `docs/methodology/classification-methodology.md` |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
@@ -171,10 +172,11 @@
   - **✅ 已完成**：UX-004 字段级重抽前端化（智能预览写入 + 复制 prompt 降级）
   - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路，审核页可动态展示/编辑/重抽自定义字段
   - **✅ 已完成**：使用文档已明确 `/templates`、`/metadata`、CLI/API 和 agent 批量处理方式；批量 agent 不需要从界面复制 prompt，应直接读模板并调用命令
-  - **当前下一步建议**：元数据模板资产治理是当前模板方向的下一步；全局第一优先仍需在元数据模板治理、UX-002 图片丢失、#3 分类规范之间由用户决策
+  - **当前下一步建议**：元数据模板资产治理仍可继续；全局第一优先建议在 UX-002 图片丢失、Discovery 本地模型自动执行器、分类词汇发布流程 QA-004 之间由用户决策
   - 详见 `USER_ISSUES.md` 已解决 UX-004/QA-001、待处理 QA-004 和 `FUTURE_WORK_PLAN.md` §A
 - B. 分类规范与审核模板
-  - 模板管理页面 Tab2 已有只读展示，后端编辑 API 已预留（🔒 前端未开放按钮）
+  - **✅ 已完成**：`docs/methodology/classification-methodology.md` v0.2.2 已与 `api/classification_vocab.py` 当前 VOCAB 对齐
+  - **仍暂缓**：模板管理页面 Tab2 只读展示，分类词汇前端编辑和同步/发布流程属于 QA-004，尚未开放
 - C. 采集与检索模板沉淀
 
 **高优先级任务队列**（#1 ~ #11 + UX）：
@@ -188,7 +190,7 @@
 | QA-004 | 分类词汇模板同步/发布流程 | 🟡 中 | 📋 待处理 |
 | #1 | Discovery 本地模型自动执行器 | 中高 | 📋 待处理 |
 | #2 | ~~元数据模板 V1.1~~ | — | ✅ 已完成 |
-| #3 | 分类规范与审核模板 V1.1 | 高 | 📋 待处理 |
+| #3 | 分类规范与审核模板 V1.1 | 高 | ✅ 已完成（方法论文档 v0.2.2 与 VOCAB 对齐） |
 | #4 | 分类标签事务式保存 | 中 | 📋 待处理 |
 | #5 | Parse status 多源语义 | 低 | 📋 待处理 |
 | #6 | Dashboard 队列压力面板 | 中 | 📋 待处理 |
@@ -210,7 +212,7 @@
 4. **读 FUTURE_WORK_PLAN.md 全文**：了解有哪些方向可以选择
 5. **和用户讨论**：基于了解到的信息，一起决定下一步优先做哪个方向
 
-如果下一步继续做元数据模板资产治理，先读 `README.md` §9 和 `scripts/README.md` 的“元数据模板与批量重抽”。前端单条处理走 `/templates` + `/metadata`；agent 批量处理直接读 `templates/templates.json` 并调用 `scripts\literature_metadata_extract.py` / `scripts\literature_metadata_rerun.py` 或对应 HTTP API。界面的“复制 prompt”只作为单条降级方案，不是批量 agent 的主入口。
+如果下一步继续做元数据模板资产治理，先读 `docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md` 和 `scripts/README.md` 的“元数据模板与批量重抽”。前端单条处理走 `/templates` + `/metadata`；agent 批量处理直接读 `templates/templates.json` 并调用 `scripts\literature_metadata_extract.py` / `scripts\literature_metadata_rerun.py` 或对应 HTTP API。界面的“复制 prompt”只作为单条降级方案，不是批量 agent 的主入口。
 
 ---
 

@@ -8,7 +8,7 @@
 - V1 发布阻断项已清零；V1.1 前端端到端主流程与受约束发现检索已完成；V1.3 知识闭环 P0-P2 已完成。
 - 前端全面重构 Phase 0-5、Pipeline 页面、IngestHub 和 2026-07-02 前端体验优化已完成。
 - 模板管理独立页面已创建；元数据模板已接入真实抽取/rerun 链路；UX-004 字段级重抽前端入口已完成。
-- 元数据模板 UI/CLI/API/agent 使用文档已同步；文档总目录、三类手册和 `scripts/check_docs.py` 轻量门禁已建立。
+- 元数据模板 UI/CLI/API/agent 使用文档已同步；分类方法规范 v0.2.2 已与后端 VOCAB 对齐；文档总目录、三类手册和 `scripts/check_docs.py` 轻量门禁已建立。
 - 2026-07-03 审查修复后复核：`pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-all-audit` 通过（511 passed, 5 skipped），`scripts/healthcheck_library.py --json` 五类问题全空，`npm.cmd run build` 通过。
 
 本文档只记录尚未完成、需要继续规划或实施的工作。已完成阶段、旧判断和历史路线迁移到 `docs/PROJECT_HISTORY.md`；已完成的分阶段细节归档到 `docs/_archive/superpowers/`，新计划和新审核再写入 `docs/superpowers/plans/` 与 `docs/superpowers/reviews/`。
@@ -49,7 +49,7 @@
 
 > ✅ 近期发布/启动阻断项已清零。详见 `docs/PROJECT_HISTORY.md`。
 >
-> 当前仍有高优先级体验与治理待办（如 UX-002、#3 分类规范、元数据模板资产治理），但不阻塞项目启动和基础回归。
+> 当前仍有高优先级体验与治理待办（如 UX-002、元数据模板资产治理、Discovery 本地模型自动执行器），但不阻塞项目启动和基础回归。
 
 ---
 
@@ -66,7 +66,7 @@
 - 文献类型越多，元数据字段和边界情况越多。
 - 不同来源 PDF 的结构差异会暴露新的抽取失败模式。
 - 审核中积累的人工修正应反哺模板，而不是只停留在单条记录。
-- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`；元数据抽取 CLI、API 和 rerun/prompt 已统一读取 `api/metadata_template.py` loader；`README.md` §9 和 `scripts/README.md` 已写明前端/agent/CLI 使用边界。详见 `docs/PROJECT_HISTORY.md`「2026-07-04/05 QA-001 元数据模板接入真实抽取链路」。
+- **当前状态**：独立模板管理页面已创建（`/templates` → TemplateManage.vue），元数据字段可在线查看和编辑，保存到 `templates/templates.json`；元数据抽取 CLI、API 和 rerun/prompt 已统一读取 `api/metadata_template.py` loader；`docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md` 和 `scripts/README.md` 已写明前端/agent/CLI 使用边界。详见 `docs/PROJECT_HISTORY.md`「2026-07-04/05 QA-001 元数据模板接入真实抽取链路」。
 
 后续方向：
 
@@ -114,7 +114,7 @@
 | 元数据模板资产文件 | ✅ JSON | `templates/templates.json`（metadata v1.1 baseline） |
 | 抽取链路读取模板 | ✅ CLI/API | metadata extract CLI、`POST /api/metadata/extract`、rerun CLI/API |
 | 元数据审核动态字段 | ✅ UI | MetadataReview 按模板字段渲染，支持自定义字段编辑/重抽/prompt |
-| 元数据模板使用文档 | ✅ 文档 | `README.md` §9、`scripts/README.md` 明确 UI/CLI/API/agent 批量处理方式 |
+| 元数据模板使用文档 | ✅ 文档 | `docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md`、`scripts/README.md` 明确 UI/CLI/API/agent 批量处理方式 |
 
 当前元数据侧主要缺口：还没有把 `needs_fix` / `rejected` / supersede 案例自动沉淀为模板改进建议；结构化作者/贡献者列表仍不是深度表格编辑。分类词汇模板同步/发布流程（QA-004）暂缓，避免和元数据模板资产治理混在同一阶段。
 
@@ -130,10 +130,10 @@
 
 后续方向：
 
-- 将分类标签、标量字段、多值标签的定义与例子写成规范。
-- 为容易混淆的标签建立判别规则和反例。
+- **✅ 已完成**：`docs/methodology/classification-methodology.md` 已升级到 v0.2.2，分类标签、标量字段、多值标签、判别规则和反例已作为当前方法论资产维护。
+- **✅ 已完成**：`artifact_focus`、`risk_domain`、`method_tags` 已与 `api/classification_vocab.py` 当前 VOCAB 对齐，并补充分类规范变更流程、审核操作语义和字段实现状态。
 - 从 ClassificationReview 的高模糊度、人工改动和 rejected 案例中定期更新规范。
-- 分类规范变更需要同步 `classification_vocab.py`、`labels.js`、测试和审核说明。
+- 后续若新增/修改分类词汇，仍需按规范流程同步 `classification_vocab.py`、`labels.js`、测试和审核说明。
 
 优先级：高。它决定文献库能否形成稳定、可复用的领域地图。
 
@@ -209,7 +209,7 @@
 - 模板文档、脚本参数、测试 fixture、审核页面说明一致。
 - 新增或更新测试能证明旧失败模式被覆盖。
 
-### 3. 分类规范与审核模板 V1.1
+### 3. 分类规范与审核模板 V1.1 — ✅ 已完成
 
 把分类本体从“代码中的词表”提升为“可维护的领域规范”。
 
@@ -217,15 +217,16 @@
 
 目标：
 
-- 明确标量字段和多值标签的定义、例子、反例。
-- 梳理高模糊度分类案例，沉淀判别规则。
-- 建立分类规范变更流程：文档 -> vocab -> labels -> 测试 -> 审核页面。
-- 明确人工审核时“保存草稿”“批准”“拒绝”“隔离”的语义。
+- **✅ 已完成**：明确标量字段和多值标签的定义、例子、反例。
+- **✅ 已完成**：补齐方法论文档与后端 VOCAB 的漂移，`artifact_focus`、`risk_domain`、`method_tags` 与代码一致。
+- **✅ 已完成**：建立分类规范变更流程：文档 -> vocab -> labels -> 抽取 prompt -> 测试 -> 审核页面。
+- **✅ 已完成**：明确人工审核时“保存草稿”“批准”“needs_fix”“拒绝”“隔离”的语义。
 
 验证：
 
 - `classification_vocab.py`、`labels.js` 和规范文档一致。
-- 高模糊度案例可在测试或审核样例中复现。
+- `python scripts\check_docs.py` 通过；`git diff --check` 通过。
+- 高模糊度案例的自动沉淀与测试样例仍可作为后续治理任务继续推进。
 
 ### 4. 分类标签事务式保存
 

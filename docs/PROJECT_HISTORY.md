@@ -289,6 +289,18 @@
 - `README.md` 已瘦身为项目首页；长命令流程、API 端点和脚本清单改由三类手册承接，`docs/DOCUMENT_GOVERNANCE.md`、`docs/HANDOVER_GUIDE.md` 和 `docs/manuals/README.md` 已链接文档总目录与三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
 - 新增 `scripts/check_docs.py`：第一版轻量文档治理检查，覆盖权威入口、手册互链、废弃 docs 目录和旧路径误用。当前运行通过，仅提示本地空目录 `docs/plans`、`docs/reviews`、`docs/uperpowers`。
 
+### 2026-07-05 分类规范与审核模板 V1.1
+
+分类本体从“代码中的词表”提升为“可维护的方法论资产”：
+
+- `docs/methodology/classification-methodology.md` 升级到 v0.2.2。
+- 补齐方法论文档与 `api/classification_vocab.py` 当前 VOCAB 的漂移：`artifact_focus`、`risk_domain`、`method_tags` 均与代码词表对齐。
+- 新增分类规范变更流程：规范文档 -> 后端 VOCAB -> 前端 labels -> 抽取 prompt -> 测试 fixture -> 审核页面。
+- 新增分类审核操作语义：保存草稿、批准、needs_fix、拒绝、隔离各自对 extraction、`works` 和标签稳定层的影响。
+- 新增字段实现状态说明：`primary_method_type` 仍是方法论推荐字段，暂不落库；`secondary_doc_type` 当前抽取/前端按 `primary_doc_type` 词表处理，伴随文档类值尚未完整接入 UI/抽取链路。
+- 未开放 QA-004：分类词汇模板前端编辑、自动同步 `classification_vocab.py` / `labels.js` / prompt / fixture 的发布流程仍暂缓。
+- 验证：`python scripts\check_docs.py` 通过；`git diff --check` 通过。
+
 #### 七、已记录 Issue（待后续处理）
 
 | Issue | 标题 | 状态 |
@@ -314,6 +326,7 @@
 - 2026-07-04 字段级重抽前端化：MetadataReview 字段行重抽预览写入 + 复制 prompt 降级，后端 rerun preview/apply/prompt 三端点。
 - 2026-07-04 元数据模板 runtime 接入：`templates/templates.json` + `api/metadata_template.py` 统一驱动 metadata extract CLI/API/rerun。
 - 2026-07-05 文档结构按协作角色拆分：`docs/README.md` 作为文档总目录，`docs/manuals/` 下维护用户、CLI自动化、agent 三类当前使用手册；`scripts/check_docs.py` 提供轻量文档门禁。
+- 2026-07-05 分类规范与审核模板 V1.1：`docs/methodology/classification-methodology.md` v0.2.2 与后端 VOCAB 对齐，补充分类规范变更流程、审核操作语义和字段实现状态；QA-004 分类词汇发布流程仍暂缓。
 - 旧的 document-parser / 自部署 MinerU 方案与 `parse_ledger.json` 迁移记录。
 - 早期关于 collections、analysis_runs、综述矩阵、引用导出的初始设想。
 
