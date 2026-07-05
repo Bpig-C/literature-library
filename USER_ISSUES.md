@@ -46,6 +46,27 @@
   - 生成的规则会进入真实元数据抽取 prompt、字段级重抽 prompt 和 `/metadata` 审核表，不只停留在前端展示。
   - 新增字段仍遵守人工审核门禁，不直接污染 `works` 稳定层。
 
+### UX-006: 分类词汇只读页缺少中英对照展示
+- **发现日期**：2026-07-05
+- **页面/模块**：模板管理 `/templates` → 分类词汇 Tab；分类审核 `/classification`
+- **问题描述**：
+  - 分类词汇当前仍是只读/预留状态，这个边界是合理的。
+  - 但只读页主要展示原始英文标识符，例如 `artifact_focus`、`risk_domain`、`method_tags` 及其 tag key，对人类用户不够友好。
+  - 当前分类方法规范已经有中文语义，前端 `labels.js` 也有中文标签；只读资产页没有充分把“英文 key + 中文翻译/解释”组合展示出来。
+  - 用户在审核分类时，需要同时知道英文标识符（便于 agent/CLI/代码协作）和中文含义（便于人工判断），两者缺一都会增加理解成本。
+- **期望行为**：
+  1. 分类词汇只读页按字段组展示中英对照：英文 key、中文标签、简短说明/定义。
+  2. 保留英文标识符作为主键，不隐藏；中文翻译作为辅助阅读。
+  3. 字段组也应中英对照，例如 `risk_domain / 风险领域`、`method_tags / 方法标签`。
+  4. 可从 `web/src/labels.js`、`api/classification_vocab.py` 和 `docs/methodology/classification-methodology.md` 组合生成只读展示数据。
+  5. 该项不等同于 QA-004，不开放分类词汇编辑或发布流程。
+- **优先级**：🟢 低
+- **状态**：📋 待处理
+- **验收口径**：
+  - `/templates` 分类词汇 Tab 中，用户能同时看到英文标识符和中文翻译。
+  - `/classification` 审核页中，关键字段和选项不只显示 raw key；需要 raw key 时也能保留查看。
+  - 不修改 `classification_vocab.py` 的词汇发布机制，不开放分类词汇保存。
+
 ### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表
 - **发现日期**：2026-07-02
 - **页面/模块**：解析流程（parser/core/mineru/router.py 路由策略）

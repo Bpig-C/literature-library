@@ -138,6 +138,7 @@
 - **✅ 已完成**：`docs/methodology/classification-methodology.md` 已升级到 v0.2.2，分类标签、标量字段、多值标签、判别规则和反例已作为当前方法论资产维护。
 - **✅ 已完成**：`artifact_focus`、`risk_domain`、`method_tags` 已与 `api/classification_vocab.py` 当前 VOCAB 对齐，并补充分类规范变更流程、审核操作语义和字段实现状态。
 - 从 ClassificationReview 的高模糊度、人工改动和 rejected 案例中定期更新规范。
+- 补强分类词汇只读资产页的中英对照展示，让人类用户能同时看到英文 key、中文标签和简短定义；该项不开放编辑，不等同于 QA-004。
 - 后续若新增/修改分类词汇，仍需按规范流程同步 `classification_vocab.py`、`labels.js`、测试和审核说明。
 
 优先级：高。它决定文献库能否形成稳定、可复用的领域地图。
