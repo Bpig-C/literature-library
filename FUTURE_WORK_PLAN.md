@@ -86,9 +86,14 @@
    - 抽取脚本、rerun 脚本、API 抽取端点和 rerun prompt 均统一读取 `api/metadata_template.py`。
    - `validate_extraction()` 的 missing 字段按当前模板计算；rerun 兼容旧字段别名并归一到 canonical key。
    - MetadataReview 审核表已动态读取模板字段；自定义字段可展示、编辑、复制 prompt 和字段级重抽。
-4. **【暂缓】分类词汇模板同步/发布流程**（QA-004）
+4. **【当前下一步候选】元数据新增字段体验补强**（UX-005）
+   - 扩展字段类型体系，评估加入 `bool`、`enum`、`number`、`url` 等基础类型。
+   - 添加字段弹窗补充 `description` 入口，避免新增后再二次编辑。
+   - `rules` 从只读展示升级为可编辑/可生成资产。
+   - 复用现有 opencode / LLM 调用链或后端 API，让本地 agent 基于字段 key、中文标签、类型、已有模板风格和用户意图生成候选说明/验证规则；用户确认后再写入 `templates/templates.json`。
+5. **【暂缓】分类词汇模板同步/发布流程**（QA-004）
    - 模板管理 Tab2 仍是只读/预留；开放编辑前，需要同步 `classification_vocab.py`、前端 labels、分类 prompt 和测试 fixture。
-5. **【当前下一步候选】从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼元数据模板改进项。**
+6. **【当前下一步候选】从 MetadataReview 的 rejected / needs_fix / supersede 案例中定期提炼元数据模板改进项。**
    - 先聚焦元数据模板资产治理，不把分类词汇模板发布流程混入同一阶段。
 
 优先级：高。它直接影响后续所有文献的结构化质量。
@@ -116,7 +121,7 @@
 | 元数据审核动态字段 | ✅ UI | MetadataReview 按模板字段渲染，支持自定义字段编辑/重抽/prompt |
 | 元数据模板使用文档 | ✅ 文档 | `docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md`、`scripts/README.md` 明确 UI/CLI/API/agent 批量处理方式 |
 
-当前元数据侧主要缺口：还没有把 `needs_fix` / `rejected` / supersede 案例自动沉淀为模板改进建议；结构化作者/贡献者列表仍不是深度表格编辑。分类词汇模板同步/发布流程（QA-004）暂缓，避免和元数据模板资产治理混在同一阶段。
+当前元数据侧主要缺口：新增字段体验仍偏薄，缺少基础类型、说明入口和 agent 辅助生成 rules；还没有把 `needs_fix` / `rejected` / supersede 案例自动沉淀为模板改进建议；结构化作者/贡献者列表仍不是深度表格编辑。分类词汇模板同步/发布流程（QA-004）暂缓，避免和元数据模板资产治理混在同一阶段。
 
 ### B. 文献分类规范与审核模板
 
