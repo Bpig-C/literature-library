@@ -274,7 +274,7 @@
 - `MetadataReview.vue` 改为读取模板字段渲染审核表；新增元数据字段后，可在审核页展示、编辑、复制 prompt、发起字段级重抽。
 - 人工编辑的模板字段会被后端视为 human-confirmed 并提升为 high confidence；自定义字段不再只停留在 raw JSON。
 - 风险计算和分类审核机构展示兼容 canonical `contributors` 字段，避免新模板抽取结果在下游不可见。
-- 使用文档已同步：`README.md` §9 明确前端用户通过 `/templates` 和 `/metadata` 操作；`scripts/README.md` 明确 agent/CLI 批量处理直接读取 `templates/templates.json` 并调用抽取/重抽脚本，不需要从界面复制 prompt。
+- 使用文档已同步：`docs/manuals/user-manual.md` 明确前端用户通过 `/templates` 和 `/metadata` 操作；`docs/manuals/cli-manual.md` 与 `scripts/README.md` 明确 agent/CLI 批量处理直接读取 `templates/templates.json` 并调用抽取/重抽脚本，不需要从界面复制 prompt。
 - 验证：`python -m pytest tests -q -p no:cacheprovider --basetemp .codex_tmp\pytest-metadata-dynamic-all` 通过（531 passed, 5 skipped）；`python scripts\healthcheck_library.py --json` 五类问题全空；`npm.cmd run build` 通过。
 
 ### 2026-07-05 文档结构按协作角色拆分
@@ -286,7 +286,7 @@
 - 新增 `docs/manuals/cli-manual.md`：CLI/自动化命令、测试、健康检查、批处理和元数据重抽入口。
 - 新增 `docs/manuals/agent-manual.md`：agent 必读文档、权限边界、任务派发、两轮审核和交付格式。
 - 新增 `docs/README.md`：文档体系总目录，按角色、职责和写入位置分流。
-- `README.md` 已瘦身为项目首页；`docs/DOCUMENT_GOVERNANCE.md`、`docs/HANDOVER_GUIDE.md` 和 `docs/manuals/README.md` 已链接文档总目录与三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
+- `README.md` 已瘦身为项目首页；长命令流程、API 端点和脚本清单改由三类手册承接，`docs/DOCUMENT_GOVERNANCE.md`、`docs/HANDOVER_GUIDE.md` 和 `docs/manuals/README.md` 已链接文档总目录与三类手册；`FUTURE_WORK_PLAN.md` 将后续文档治理重点收敛为自动化门禁，而不是继续堆手工说明。
 - 新增 `scripts/check_docs.py`：第一版轻量文档治理检查，覆盖权威入口、手册互链、废弃 docs 目录和旧路径误用。当前运行通过，仅提示本地空目录 `docs/plans`、`docs/reviews`、`docs/uperpowers`。
 
 #### 七、已记录 Issue（待后续处理）
