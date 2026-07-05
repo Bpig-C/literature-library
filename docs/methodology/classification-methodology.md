@@ -1,6 +1,16 @@
-# 文献库分类方法规范 v0.2.1
+# 文献库分类方法规范 v0.2.2
 
-> 版本说明：v0.2.1 在 v0.2 基础上针对 `primary_doc_type` 互斥性问题进行结构性补丁：新增类型层级与优先级规则，明确功能定位类型优先于文档形态类型；补充 8.16–8.17 两条辨析规则；更新 §9 第二步标注流程。不改动词汇表。
+> 版本说明：v0.2.2 在 v0.2.1 基础上补齐词汇表与后端 VOCAB 的缺失项，新增变更流程和审核语义说明。
+>
+> v0.2.2 变更：
+> - `artifact_focus` 新增 7 个值：`empirical_finding`、`capability_profile`、`policy_analysis`、`framework_proposal`、`eval_suite`、`theoretical_contribution`、`tool_release`
+> - `risk_domain` 新增 9 个值：`jailbreak_resistance`、`self_preservation`、`cyber_offense`、`power_seeking`、`autonomous_replication`、`systemic_risk`、`distributional_risk`、`bio_risk`、`alignment_tax`
+> - `method_tags` 新增 7 个值：`empirical_measurement`、`interpretability_analysis`、`framework_design`、`policy_review`、`theoretical_analysis`、`survey_synthesis`、`formal_verification`
+> - 新增 §12 分类规范变更流程
+> - 新增 §13 审核操作语义
+> - 新增 §14 字段实现状态说明（`primary_method_type`、`secondary_doc_type`）
+>
+> v0.2.1 变更：针对 `primary_doc_type` 互斥性问题进行结构性补丁：新增类型层级与优先级规则，明确功能定位类型优先于文档形态类型；补充 8.16–8.17 两条辨析规则；更新 §9 第二步标注流程。不改动词汇表。
 >
 > `risk_domain` 词汇版本：v1（随现象本体变化更新，预期低频）
 > `method_tags` 词汇版本：v1（随评估实践演进更新，预期高频）
@@ -1396,6 +1406,15 @@ artifact_focus:
   - trend
   - literature_index
   - workflow_cache
+  # ── 实证与分析类（v0.2.2 新增）──
+  - empirical_finding          # 实证发现（量化/实验结果）
+  - risk_assessment            # 风险评估（对特定对象的风险分析结论）
+  - capability_profile         # 能力画像（模型能力特征描述）
+  - policy_analysis            # 政策分析（对政策文本的结构化分析）
+  - framework_proposal         # 框架提案（提出新框架但未完整实现）
+  - eval_suite                 # 评测套件（evaluation_suite 的别名，用于 LLM 输出兼容）
+  - theoretical_contribution   # 理论贡献（形式化/数学/概念性贡献）
+  - tool_release               # 工具发布（开源工具、库、平台）
 ```
 
 ### 说明
@@ -1515,6 +1534,21 @@ risk_domain:
   - robustness              # 鲁棒性
   - safety_case_validity    # 安全论证有效性
 
+  # ── 对齐与安全验证类（v0.2.2 新增）──
+  - jailbreak_resistance    # 越狱抵抗（对抗性攻击防御能力）
+  - alignment_tax           # 对齐税（对齐导致的能力/效率损失）
+
+  # ── 失控现象扩展类（v0.2.2 新增）──
+  - self_preservation        # 自我保护（goal_preservation 的行为层表现）
+  - cyber_offense            # 网络攻击（cybersecurity 的进攻面向）
+  - power_seeking            # 权力寻求（获取更多资源/权限的倾向）
+  - autonomous_replication   # 自主复制（self_replication 的强化版，含环境适应）
+
+  # ── 系统性风险类（v0.2.2 新增）──
+  - systemic_risk            # 系统性风险（跨领域、跨模型的全局风险）
+  - distributional_risk      # 分布性风险（训练数据/部署分布导致的风险）
+  - bio_risk                 # 生物风险（biosecurity 的量化/具体化场景）
+
   - unknown
 ```
 
@@ -1608,6 +1642,17 @@ method_tags:
   - text_extraction              # 正文抽取
   - document_repair              # 文档修复
   - summary_synthesis            # 摘要综合
+
+  # ── 测量与验证类（v0.2.2 新增）──
+  - empirical_measurement        # 实证测量（侧重量化指标采集，区别于 empirical_experiment）
+  - formal_verification          # 形式化验证（数学证明、模型检查等）
+
+  # ── 分析与设计类（v0.2.2 新增）──
+  - interpretability_analysis    # 可解释性分析（广义，含 mechanistic/behavioral）
+  - framework_design             # 框架设计（提出新框架，区别于 framework_analysis）
+  - policy_review                # 政策评述（对政策文本的分析评价）
+  - theoretical_analysis         # 理论分析（形式化/数学/逻辑论证）
+  - survey_synthesis             # 综述综合（系统性文献综述方法）
 ```
 
 ### 示例
@@ -2989,3 +3034,173 @@ not_literature 和 workflow_artifact 是存在性标记，不与功能定位类�
 7. 前沿 AI 安全、评估、治理、系统卡、标准框架等复杂材料可以统一归档；
 8. 功能定位类型优先于形态类型，消除 evaluation_report / technical_report 等边界案例的竞争（三层结构 + secondary_doc_type 补充）。
 ```
+
+---
+
+# 12. 分类规范变更流程
+
+分类词汇变更必须遵循以下流程，确保文档、代码和前端一致。
+
+## 变更流程
+
+```
+规范文档 (本文档)
+    ↓
+后端词表 (api/classification_vocab.py)
+    ↓
+前端标签 (web/src/labels.js)
+    ↓
+抽取提示 (scripts/literature_classification_extract.py)
+    ↓
+测试 fixture (tests/)
+    ↓
+审核页面 (web/src/views/ClassificationReview.vue)
+```
+
+## 各环节职责
+
+| 环节 | 文件 | 职责 |
+|------|------|------|
+| 规范文档 | `docs/methodology/classification-methodology.md` | 定义字段语义、填写规则、辨析规则、可选值列表 |
+| 后端词表 | `api/classification_vocab.py` | 运行时验证、API 端点 `/classification/vocab`、抽取 prompt 生成 |
+| 前端标签 | `web/src/labels.js` | UI 显示中文标签、审核页面字段选项 |
+| 抽取提示 | `scripts/literature_classification_extract.py` | LLM 抽取指令中的词汇列表（通过 `vocab_strs` 动态生成） |
+| 测试 fixture | `tests/` | 覆盖新值的测试用例 |
+| 审核页面 | `web/src/views/ClassificationReview.vue` | 审核 UI 的字段选项（通过 `labels.js` 读取） |
+
+## 变更检查清单
+
+新增词汇时：
+- [ ] 更新本文档对应字段的可选值列表
+- [ ] 更新 `api/classification_vocab.py` 的 `VOCAB`
+- [ ] 更新 `web/src/labels.js` 的对应 `*_LABELS`
+- [ ] 运行 `python scripts\check_docs.py` 确认文档一致性
+- [ ] 运行 `pytest tests/ -q` 确认测试通过
+- [ ] 运行 `cd web && npm run build` 确认前端构建通过
+- [ ] 在审核页面确认新值可选
+
+修改词汇定义时：
+- [ ] 更新本文档对应字段的说明和辨析规则
+- [ ] 确认无需迁移已有标注（向后兼容原则）
+- [ ] 如需迁移，编写迁移脚本并更新测试
+
+## 版本号规则
+
+- `risk_domain` 词汇版本：`VOCAB_VERSIONS["risk_domain"]`（当前 v1）
+- `method_tags` 词汇版本：`VOCAB_VERSIONS["method_tags"]`（当前 v1）
+- 规范文档版本：文档头部 `版本说明`（当前 v0.2.2）
+
+版本升级时机：
+- 新增词汇：通常不升级 `VOCAB_VERSIONS`，追加到末尾即可（向后兼容）；规范文档版本可按文档发布批次升级
+- 修改词汇定义：升级对应词汇版本号
+- 删除词汇：升级版本号，需编写迁移脚本
+
+---
+
+# 13. 审核操作语义
+
+分类审核页面（`/classification`）提供以下操作，每个操作有明确语义。
+
+## 操作说明
+
+| 操作 | 按钮 | 语义 | 对 extraction 的影响 | 对 works 的影响 |
+|------|------|------|---------------------|----------------|
+| 保存草稿 | `save-draft` | 保存人工编辑，不改变审核状态 | 更新 `extracted_json`、`confidence_json`、`ambiguity_score` | 无 |
+| 批准 | `approved` | 确认分类结果正确，写入稳定层 | 设置 `review_status='approved'`、`applied=1` | 写入标量字段和多值标签 |
+| 需修正 | `needs_fix` | 分类结果有误，需人工修正后重新提交 | 设置 `review_status='needs_fix'` | 无 |
+| 拒绝 | `rejected` | 分类结果无效，丢弃 | 设置 `review_status='rejected'` | 无 |
+| 隔离 | `quarantine` | 文献本身有问题，移出审核队列 | 设置 `review_status='rejected'`、`fix_action='quarantined'` | 设置 `read_status='quarantined'`，移动源文件 |
+
+## 批准的详细语义
+
+当审核员点击"批准"时：
+
+1. **标量字段写入**（fill-empty 语义）：
+   - `primary_doc_type`、`secondary_doc_type`、`publication_status`、`ingestion_state`、`priority`、`primary_source_actor_type`、`region`
+   - 只在 `works` 表对应字段为空时写入，不覆盖已有值
+
+2. **多值标签写入**（skip-if-exists 语义）：
+   - `reading_lane`、`artifact_focus`、`risk_domain`、`method_tags`
+   - 写入 `work_classification_tags` 表，已存在的标签不重复写入
+   - 所有标签 `review_status='approved'`
+
+3. **Supersede 其他 extraction**：
+   - 同一 work 的其他 `pending` 或 `needs_fix` extraction 被标记为 `rejected`、`fix_action='superseded'`
+
+## 隔离的详细语义
+
+当审核员点击"隔离"时：
+
+1. **选择隔离原因**：
+   - `bad_source`：坏源（PDF 内容为空、反爬页、扫描损坏等）
+   - `out_of_scope`：不在范围（不属于当前研究主题或综述范围）
+   - `not_literature`：非文献（不是论文、报告、标准等目标文献）
+   - `duplicate_residual`：重复残留（已由其他 work 覆盖）
+   - `needs_rerun`：待重跑（主题对，但上传文档本身有问题，需替换后重新抽取）
+   - `user_removed`：用户移除（明确不想保留）
+
+2. **影响范围**：
+   - 当前 extraction 和同一 work 的所有 pending extraction 被标记为 `rejected`
+   - 同一 work 中 `review_status='approved'` 且 `applied=0` 的 extraction 也会被标记为 `rejected`、`fix_action='quarantined'`
+   - `works.read_status` 设置为 `'quarantined'`
+   - 源文件移动到 `_quarantine/` 目录
+   - 隔离状态在所有审核页面（元数据、分类、文献管理）同步可见
+
+## 保存草稿的详细语义
+
+当审核员点击"保存草稿"时：
+
+1. **合并人工编辑**：
+   - 将 `editForm` 中的值合并到 `extracted_json`
+   - 人工编辑的字段 `confidence` 提升为 `'high'`
+
+2. **重新计算模糊度**：
+   - 使用合并后的 `confidence` 重新计算 `ambiguity_score`
+
+3. **不改变审核状态**：
+   - `review_status` 保持 `'pending'`
+   - 不写入 `works` 表
+   - 不 supersede 其他 extraction
+
+---
+
+# 14. 字段实现状态说明
+
+## primary_method_type
+
+`primary_method_type` 当前只是方法论推荐字段，**暂不进入后端落库和审核页面**。
+
+**当前状态**：
+- 后端 `classification_vocab.py` 的 `VOCAB` 和 `SCALAR_VOCAB_FIELDS` 均未包含此字段
+- 前端 `ClassificationReview.vue` 的 `CLASS_FIELDS` 未展示此字段
+- 抽取 prompt 中未要求 LLM 输出此字段
+
+**后续如需落库，需**：
+1. 在 `VOCAB` 中新增 `primary_method_type` 键和对应值列表
+2. 在 `SCALAR_VOCAB_FIELDS` 中追加
+3. 在前端 `labels.js` 新增 `PRIMARY_METHOD_TYPE_LABELS`
+4. 在审核页面 `CLASS_FIELDS` 中追加
+5. 更新抽取 prompt
+
+## secondary_doc_type
+
+`secondary_doc_type` 当前实现说明：
+
+**抽取脚本和前端审核页**：
+- 按 `primary_doc_type` 词表处理（复用同一值列表）
+- 抽取 prompt 中要求 LLM 输出 `secondary_doc_type`，值域与 `primary_doc_type` 相同
+
+**API 校验**：
+- `api/classification_vocab.py` 的 `SCALAR_VOCAB_FIELDS` 未包含 `secondary_doc_type`
+- 这是有意设计：`secondary_doc_type` 允许自由文本输入（如 `addendum`、`risk_update`、`appendix` 等伴随文档类值）
+- 通用 scalar 校验不校验此字段
+
+**伴随文档类值**：
+- `addendum`（增补件）、`risk_update`（风险更新件）、`appendix`（附件）等伴随文档类值属于方法论扩展
+- 这些值尚未完整接入 UI/抽取链路
+- 本轮只记录为边界，不做实现
+
+**边界说明**：
+- `secondary_doc_type` 的形态类值（如 `technical_report`、`research_article`）可正常使用
+- 伴随文档类值（如 `addendum`、`risk_update`）需要配合 `related_doc_id` 和 `relation_type` 使用
+- 完整的伴随文档支持需后续实现
