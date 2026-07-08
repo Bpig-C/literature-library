@@ -45,10 +45,12 @@ migration_plan.dryrun.json
 # Internal directories
 .claude/
 PROJECT_INDEX/
+templates/backups/
 
 # IDE
 .vscode/
 .idea/
+.codebuddy/
 
 # OS
 Thumbs.db
