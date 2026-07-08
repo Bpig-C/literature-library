@@ -26,6 +26,8 @@ RESOLUTIONS = (
     "needs_better_copy", "sha256_duplicate", "fetch_failed",
 )
 
+DUPLICATE_RESOLUTIONS = {"exact_hit", "title_candidate", "needs_better_copy", "sha256_duplicate"}
+
 
 @router.get("/intake/candidates")
 def list_candidates(
@@ -153,7 +155,8 @@ def promote_candidates(body: PromoteBody):
     try:
         placeholders = ",".join("?" * len(body.ids))
         rows = conn.execute(
-            f"SELECT id, status, review_status, resolution, matched_work_id, ingested_work_id "
+            f"SELECT id, status, review_status, resolution, matched_work_id, "
+            f"ingested_work_id, local_pdf_path "
             f"FROM intake_candidates WHERE id IN ({placeholders})",
             list(body.ids),
         ).fetchall()
@@ -203,19 +206,25 @@ def promote_candidates(body: PromoteBody):
         if cid not in approved:
             failed.append({"id": cid, "error": "not approved (review_status != 'approved')"})
             continue
-        # P1-03: needs_better_copy candidates match a quarantined work and must
-        # REPLACE its bad source, not spawn a sibling work. That replacement path
-        # is post-V1; until wired, refuse so we never silently create a duplicate.
-        if row_map[cid].get("resolution") == "needs_better_copy":
-            failed.append({
-                "id": cid,
-                "error": (
-                    "needs_better_copy replacement is not supported in V1; promoting "
-                    "would create a duplicate of the matched quarantined work "
-                    f"(matched_work_id={row_map[cid].get('matched_work_id')}). "
-                    "Replace the source manually or wait for the replace-source promote path."
-                ),
-            })
+        current_resolution = row_map[cid].get("resolution")
+        if current_resolution == "new" and row_map[cid].get("local_pdf_path"):
+            # Final safety check: the library may have changed since PDF download.
+            current_resolution = gate.heavy_gate(cid)
+        if current_resolution != "new":
+            if current_resolution in DUPLICATE_RESOLUTIONS:
+                failed.append({
+                    "id": cid,
+                    "error": (
+                        f"duplicate candidate cannot be promoted "
+                        f"(resolution={current_resolution}, "
+                        f"matched_work_id={row_map[cid].get('matched_work_id')})"
+                    ),
+                })
+            else:
+                failed.append({
+                    "id": cid,
+                    "error": f"candidate is not ready for promotion (resolution={current_resolution})",
+                })
             continue
         try:
             work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT)

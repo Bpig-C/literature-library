@@ -246,6 +246,50 @@ def test_promote_rejects_needs_better_copy(monkeypatch):
     assert calls == []  # ingest_bridge 绝不被调用
 
 
+def test_promote_rejects_sha256_duplicate(monkeypatch):
+    import collector.ingest_bridge as br
+    calls = []
+    monkeypatch.setattr(br, "promote", lambda cid, *, library_root: calls.append(cid) or f"W-{cid[-4:]}")
+    conn = _conn()
+    conn.execute("""INSERT INTO intake_candidates
+        (id,source_type,url_canonical,title,arxiv_id,doi,resolution,review_status,
+         matched_work_id,collection_topic_id,status,raw_meta,collected_at)
+        VALUES ('IC-dupe','arxiv','https://arxiv.org/abs/2501.00006','Dup','2501.00006',
+                NULL,'sha256_duplicate','approved',NULL,'CT-1','pending',NULL,
+                '2026-06-28T00:00:05')""")
+    conn.commit(); conn.close()
+
+    r = client.post("/api/intake/promote", json={"ids": ["IC-dupe"]})
+    body = r.json()
+    assert body["promoted"] == []
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-dupe"
+    assert "sha256_duplicate" in body["failed"][0]["error"]
+    assert calls == []
+
+
+def test_promote_rechecks_new_pdf_before_ingest(monkeypatch):
+    import collector.gate as gate
+    import collector.ingest_bridge as br
+    calls = []
+    monkeypatch.setattr(gate, "heavy_gate", lambda cid: "sha256_duplicate")
+    monkeypatch.setattr(br, "promote", lambda cid, *, library_root: calls.append(cid) or f"W-{cid[-4:]}")
+    conn = _conn()
+    conn.execute("""INSERT INTO intake_candidates
+        (id,source_type,url_canonical,title,arxiv_id,doi,resolution,review_status,
+         matched_work_id,collection_topic_id,status,raw_meta,local_pdf_path,collected_at)
+        VALUES ('IC-stale','arxiv','https://arxiv.org/abs/2501.00007','Stale','2501.00007',
+                NULL,'new','approved',NULL,'CT-1','pending',NULL,
+                '_collector_cache/IC-stale.pdf','2026-06-28T00:00:06')""")
+    conn.commit(); conn.close()
+
+    r = client.post("/api/intake/promote", json={"ids": ["IC-stale"]})
+    body = r.json()
+    assert body["promoted"] == []
+    assert len(body["failed"]) == 1 and body["failed"][0]["id"] == "IC-stale"
+    assert "sha256_duplicate" in body["failed"][0]["error"]
+    assert calls == []
+
+
 def test_promote_collects_ingest_failures(monkeypatch):
     # approved 候选（非 needs_better_copy）但 ingest 抛错 → 进 failed（批次不中断）
     import collector.ingest_bridge as br

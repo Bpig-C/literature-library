@@ -141,7 +141,8 @@
           <tr><th>主题</th><td>{{ selected.topic_name || '—' }}</td></tr>
           <tr><th>状态</th><td>{{ selected.status }} / {{ selected.resolution }}</td></tr>
           <tr><th>PDF</th><td>
-            <span v-if="selected.local_pdf_path" class="pdf-ok">✅ 已下载</span>
+            <span v-if="selected.local_pdf_path && selectedIsDuplicate" class="pdf-duplicate">⚠ 已缓存（重复，不可晋升）</span>
+            <span v-else-if="selected.local_pdf_path" class="pdf-ok">✅ 已下载</span>
             <span v-else class="pdf-missing">❌ 未下载</span>
           </td></tr>
         </table>
@@ -166,8 +167,9 @@
         </div>
 
         <!-- 已下载时也显示一行提示 -->
-        <div class="pdf-action-bar pdf-done-bar" v-else>
-          <span class="pdf-ok">✅ PDF 已就绪</span>
+        <div class="pdf-action-bar pdf-done-bar" :class="{ duplicate: selectedIsDuplicate }" v-else>
+          <span v-if="selectedIsDuplicate" class="pdf-duplicate">⚠ PDF 已缓存，但为重复项</span>
+          <span v-else class="pdf-ok">✅ PDF 已就绪</span>
           <span class="muted tiny">{{ selected.local_pdf_path }}</span>
         </div>
 
@@ -177,7 +179,7 @@
         </details>
 
         <div class="review-bar">
-          <button class="btn-approve" :disabled="busy" @click="onApprove" title="批准后可晋升为正式文献">批准</button>
+          <button class="btn-approve" :disabled="busy || selectedIsDuplicate" @click="onApprove" title="批准后可晋升为正式文献">批准</button>
           <button class="btn-reject" :disabled="busy" @click="doReview('rejected')">拒绝</button>
           <button class="btn-promote" :disabled="busy || promotableCount === 0" @click="showPromoteConfirm">
             晋升已批准 ({{ promotableCount }})
@@ -220,6 +222,7 @@ const RESOLUTIONS = [
 ]
 const RES_LABEL = Object.fromEntries(RESOLUTIONS.map(r => [r.key, r.label]))
 const REVIEW_LABEL = { pending: '待审', approved: '已批准', rejected: '已拒绝' }
+const DUPLICATE_RESOLUTIONS = new Set(['exact_hit', 'title_candidate', 'needs_better_copy', 'sha256_duplicate'])
 
 const candidates = ref([])
 const stats = ref({})
@@ -249,7 +252,10 @@ const reviewLabel = k => REVIEW_LABEL[k] || k
 
 // approved 且尚未 ingested 的候选数（批量晋升按钮的可用/计数依据）
 const promotableCount = computed(() =>
-  candidates.value.filter(c => c.review_status === 'approved' && !c.ingested_work_id).length
+  candidates.value.filter(c => c.review_status === 'approved' && c.resolution === 'new' && !c.ingested_work_id).length
+)
+const selectedIsDuplicate = computed(() =>
+  selected.value ? DUPLICATE_RESOLUTIONS.has(selected.value.resolution) : false
 )
 
 // ====== 来源追溯 (Provenance) ======
@@ -375,7 +381,7 @@ async function doReview(status) {
 
 function showPromoteConfirm() {
   const targets = candidates.value
-    .filter(c => c.review_status === 'approved' && !c.ingested_work_id)
+    .filter(c => c.review_status === 'approved' && c.resolution === 'new' && !c.ingested_work_id)
     .map(c => c.id)
   if (!targets.length) { showError(new Error('没有可晋升的已批准候选')); return }
   confirmTitle.value = '批量晋升'
@@ -456,6 +462,10 @@ async function onPdfFileSelected(event) {
 /** 批准前检查：无 PDF 时引导先下载 */
 function onApprove() {
   if (!selected.value || busy.value) return
+  if (selectedIsDuplicate.value) {
+    window.__naive_message?.warning('该候选已命中重复，不应批准晋升。')
+    return
+  }
   // 有 PDF → 直接批准
   if (selected.value.local_pdf_path) {
     return doReview('approved')
@@ -541,6 +551,7 @@ table.kv td { padding: 4px 8px; }
 /* PDF 状态与操作 */
 .pdf-ok { color: var(--ok); font-weight: 600; }
 .pdf-missing { color: var(--warn); }
+.pdf-duplicate { color: var(--warn); font-weight: 600; }
 .pdf-action-bar {
   display: flex;
   gap: 10px;
@@ -602,6 +613,10 @@ table.kv td { padding: 4px 8px; }
 .pdf-done-bar {
   border-style: solid;
   border-color: var(--ok);
+}
+.pdf-done-bar.duplicate {
+  border-color: var(--warn);
+  background: var(--warn-bg);
 }
 
 /* ====== 来源追溯卡片 (Provenance) ====== */

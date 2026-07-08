@@ -1,8 +1,7 @@
 {
   "metadata": {
     "version": "1.1",
-    "modified_at": "2026-07-04T00:00:00+08:00",
-    "_note": "Baseline metadata extraction template tracked in repo; editable from /templates.",
+    "modified_at": "2026-07-05T08:03:03.493910+00:00",
     "fields": [
       {
         "key": "title",
@@ -73,6 +72,20 @@
         "type": "textarea",
         "rules": "多行文本，建议 ≤ 2000 字；没有正式摘要时可写简短 summary",
         "description": "论文摘要或报告概要，必须来自文档内容，不要编造"
+      },
+      {
+        "key": "open_source_status",
+        "label": "开源状态",
+        "type": "text",
+        "rules": "",
+        "description": "模型、系统、数据集或工具的开源状态。只能填写 open、closed、partial、unknown 四个值之一：open=明确开源；closed=明确闭源或仅 API/服务开放；partial=部分开源，如代码/数据/权重只开放一部分；unknown=原文未说明或无法判断。必须有原文证据，不能猜测。"
+      },
+      {
+        "key": "open_source_components",
+        "label": "开源组件",
+        "type": "list",
+        "rules": "",
+        "description": "列出明确开源或公开可获取的组件，如 code、weights、dataset、benchmark、model_card、api、license、none、unknown。仅在原文明确提及时填写。"
       }
     ]
   }
