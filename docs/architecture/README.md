@@ -18,6 +18,7 @@
 ## 维护约定
 
 - 系统级总图与业务流程图以 `scholar-os-architecture.html`（three.js 交互页）为准；修改架构事实时同步更新页面中的 NODES / EDGES / PATHS 数据。three.js 库本地化在 `vendor/`，不引入 npm 依赖。
+- 交互页节点必须对应**已实现**的代码能力（2026-07-17 全量核查）；含规划中部分的节点用 `status:'partial'`（琥珀虚线环）标记，完全未实现的能力用 `status:'planned'`（灰虚线环）或直接不画。
 - 子项目图仍使用 `docs/architecture/diagrams/*.svg`（api/collector/parser/scripts/web 五张），正文用普通 Markdown 图片引用，以兼容 VS Code 自带 Markdown Preview；不要改回 Mermaid 代码块。
 - 根目录图只画跨边界关系，不展开每个路由函数或 Vue 组件。
 - 子项目图只展开本子项目内部结构，不复制整张系统图。

@@ -55,6 +55,12 @@
   }
   .nlabel b { display: block; font-size: 12.5px; font-weight: 620; color: #f2f3f0; }
   .nlabel i { display: block; font-style: normal; font-size: 10px; color: #a9aca6; }
+  .nlabel u {
+    display: inline-block; text-decoration: none; margin-top: 2px;
+    padding: 1px 6px; border-radius: 999px; font-size: 9px;
+    border: 1px dashed #ffd166; color: #ffd166;
+  }
+  .nlabel u.planned { border-color: #8a8f98; color: #8a8f98; }
   .zlabel {
     position: absolute; transform: translate(-50%, 0);
     font-size: 10px; letter-spacing: .18em; color: #6f726d;
@@ -150,6 +156,7 @@
     <span><em style="background:#b794f6"></em>AI 抽取</span>
     <span><em style="background:#ffd166"></em>审核</span>
     <span><em style="background:#8a8f98"></em>治理</span>
+    <span title="虚线环 + 角标 = 含规划中部分；全部节点本身均已实现"><em style="background:transparent;border:1.5px dashed #ffd166;width:7px;height:7px"></em>部分实现</span>
   </div>
 </div>
 
@@ -247,8 +254,9 @@
       desc: '元数据字段 / 分类词汇 / Discovery 协议三大模板，/templates 页可维护。',
       contract: 'templates/templates.json + api/metadata_template.py。', rule: '元数据可在线编辑；分类 Tab 暂只读（QA-004）。' },
     { id: 'analysis',  label: '分析出口',    sub: 'analysis_runs',       kind: 'side',   x: 2.5,   z: 4.6, shape: 'box',
-      desc: 'digest 分析试点；引用导出与综述矩阵是下一步建设方向。',
-      contract: 'analysis_runs 表。', rule: '出口侧是当前优先级最高的待建能力。' }
+      status: 'partial', badge: '部分实现',
+      desc: 'digest 分析已落地（analysis_runs，试点 5 条）；引用导出与综述矩阵未实现，属规划中。',
+      contract: 'analysis_runs 表 + scripts/literature_analyze.py。', rule: '规划中部分：BibTeX/RIS 引用导出、综述矩阵（FUTURE_WORK_PLAN #10）。' }
   ];
 
   var ZONES = [
@@ -419,11 +427,35 @@
     glow.position.set(n.x, 0, n.z);
     scene.add(glow);
 
+    // 实现状态环：partial=琥珀虚线（含规划中部分），planned=灰色虚线（未实现）
+    if (n.status === 'partial' || n.status === 'planned') {
+      var ringColor = n.status === 'partial' ? 0xffd166 : 0x8a8f98;
+      var ringPts = [];
+      for (var ri = 0; ri <= 40; ri++) {
+        var ra = (ri / 40) * Math.PI * 2;
+        ringPts.push(new THREE.Vector3(Math.cos(ra) * 1.05 * s, 0, Math.sin(ra) * 1.05 * s));
+      }
+      var ring = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(ringPts),
+        new THREE.LineDashedMaterial({ color: ringColor, dashSize: 0.16, gapSize: 0.12, transparent: true, opacity: 0.9 })
+      );
+      ring.computeLineDistances();
+      ring.position.set(n.x, -0.42, n.z);
+      scene.add(ring);
+      n.ring = ring;
+    }
+
     var el = document.createElement('div');
     el.className = 'nlabel';
     el.innerHTML = '<b></b><i></i>';
     el.querySelector('b').textContent = n.label;
     el.querySelector('i').textContent = n.sub;
+    if (n.badge) {
+      var bd = document.createElement('u');
+      bd.textContent = n.badge;
+      if (n.status === 'planned') bd.className = 'planned';
+      el.appendChild(bd);
+    }
     labelLayer.appendChild(el);
 
     n.mesh = mesh;
@@ -587,6 +619,7 @@
       n.mesh.material.opacity = on ? 1 : 0.1;
       n.mesh.material.emissiveIntensity = on ? 0.55 : 0.08;
       n.glow.material.opacity = on ? 0.3 : 0.03;
+      if (n.ring) n.ring.material.opacity = on ? 0.9 : 0.1;
     });
     edgeLines.forEach(function (e) {
       var on = !activeSet || activeSet.edges[e.from + '>' + e.to];
