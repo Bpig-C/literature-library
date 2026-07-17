@@ -612,8 +612,8 @@ const filteredClassifyItems = computed(() => {
 
 // 模糊度工具
 function ambLevel(score) {
-  if (score >= 0.7) return 'high'
-  if (score >= 0.4) return 'medium'
+  if (score >= 50) return 'high'
+  if (score >= 20) return 'medium'
   return 'low'
 }
 
