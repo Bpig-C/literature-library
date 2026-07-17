@@ -1,7 +1,8 @@
 # 文献库技术说明
 
-> 更新时间：2026-06-30
-> 适用版本：V1.1。collector / parser / inbox / review / discovery 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
+> 更新时间：2026-07-17
+> 适用版本：V1.3。collector / parser / inbox / review / discovery 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
+> ⚠️ 注意：本文档部分页面/API 端点清单滞后于代码（缺 Pipeline/IngestHub/TemplateManage 页面与 templates 路由组），以代码为准；全面刷新待排期。
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
 
 ## 1. 系统目标

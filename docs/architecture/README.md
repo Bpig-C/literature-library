@@ -12,6 +12,7 @@
 | 子项目级 | `parser/docs/architecture.md` | PDF/文档解析路由、MinerU/PyMuPDF 后端、解析产物 |
 | 子项目级 | `web/docs/architecture.md` | Vue SPA 页面、API 客户端、用户交互入口 |
 | 子项目级 | `scripts/docs/architecture.md` | CLI 维护脚本、批处理、迁移、健康检查 |
+| 专题分析 | [migration-and-data-management-analysis.md](migration-and-data-management-analysis.md) | 迁移版本管理、备份/导出/导入/同步、一致性校验全景分析 |
 
 ## 维护约定
 
