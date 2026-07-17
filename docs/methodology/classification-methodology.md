@@ -1541,6 +1541,7 @@ risk_domain:
   # ── 失控现象扩展类（v0.2.2 新增）──
   - self_preservation        # 自我保护（goal_preservation 的行为层表现）
   - cyber_offense            # 网络攻击（cybersecurity 的进攻面向）
+  - reward_hacking           # 奖励黑客（操纵奖励/评估指标取巧得分，而非完成真实目标）
   - power_seeking            # 权力寻求（获取更多资源/权限的倾向）
   - autonomous_replication   # 自主复制（self_replication 的强化版，含环境适应）
 

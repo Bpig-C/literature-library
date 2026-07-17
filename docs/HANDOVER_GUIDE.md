@@ -2,7 +2,7 @@
 
 > **用途**：帮助新接手者快速了解项目全貌，以便和用户一起决定下一步做什么。
 > **不指定具体任务**——本文档只负责"让你看得懂"，决策权在用户。
-> **更新时间**：2026-07-05
+> **更新时间**：2026-07-17
 
 ---
 
@@ -38,12 +38,12 @@
 
 | 文档/目录 | 内容 |
 |-----------|------|
-| `api/routes/*.py` | 后端 API 全部路由（约 10 个文件） |
+| `api/routes/*.py` | 后端 API 全部路由（11 个文件） |
 | `web/src/router.js` | 前端全部页面路由与导航结构 |
 | `web/src/api.js` | 前端所有后端调用封装 |
 | `web/src/views/*.vue` | 当前 15 个页面组件（含 TemplateManage.vue 与 NotFound.vue） |
-| `web/src/components/*.vue` | 通用 UI 组件（9 个） |
-| `web/src/composables/use*.js` | 可复用逻辑封装（7 个） |
+| `web/src/components/*.vue` | 通用 UI 组件（12 个） |
+| `web/src/composables/use*.js` | 可复用逻辑封装（6 个） |
 
 ### 第三步：了解关键设计决策
 
@@ -60,31 +60,32 @@
 ## 三、前端页面全景
 
 ```
-侧边栏分组：
+侧边栏分组（Scholar OS 四组导航，2026-07-17 改版）：
 
-📊 总览
-├── Dashboard.vue          → 导航首页（待办概览）
+🧭 工作台
+├── Dashboard.vue (/)             → 研究总览（待办概览）
+├── Works.vue (/works)            → 文献列表
+└── WorkDetail.vue (/works/:id)   → 单篇文献详情（工作台）
 
-📚 文献库
-├── Works.vue              → 文献列表
-├── WorkDetail.vue         → 单篇文献详情（工作台）
+🔍 探索与处理
+├── DiscoveryReview.vue (/discovery) → 智能探索（发现检索审核 + agent 回填入口）
+├── TopicsReview.vue (/topics)       → 研究主题（主题闸门，含悬浮提示）
+├── IngestHub.vue (/ingest)          → 文献入库（发现检索 + 收件箱 Tab 合并）
+└── PipelineView.vue (/pipeline)     → ⭐ 处理流程：4阶段流水线（收件箱→解析→元数据→分类）
+                                       + 发现检索审核 + 采集审核 审计节点
 
-── 流程 ──
-├── PipelineView.vue       → ⭐ 4阶段流水线（收件箱→解析→元数据→分类）
-│                          │   + 发现检索审核 + 采集审核 审计节点
-├── TopicsReview.vue       → 主题闸门（管理研究主题，含悬浮提示）
-├── IngestHub.vue          → 文献入库（发现检索 + 收件箱 Tab 合并）
-├── IntakeReview.vue       → 采集审核（discovery hit → intake candidate）
-│                          │   含来源追溯卡片 + PDF 操作栏
-├── ClassificationReview.vue → 分类审核
-└── MetadataReview.vue     → 元数据审核
+🗂 审核与组织
+├── IntakeReview.vue (/intake)             → 采集审核（discovery hit → intake candidate）
+│                                            含来源追溯卡片 + PDF 操作栏
+├── MetadataReview.vue (/metadata)         → 元数据审核
+├── ClassificationReview.vue (/classification) → 分类审核
+├── Duplicates.vue (/duplicates)           → 重复项（去重管理）
+└── Relations.vue (/relations)             → 文献关系（关系图）
 
-── 库内 ──
-├── Duplicates.vue          → 去重管理
-└── Relations.vue           → 关系图
+⚙️ 设置
+└── TemplateManage.vue (/templates)   → 抽取模板（元数据/分类/Discovery 三大模板资产）
 
-── 系统 ──
-└── TemplateManage.vue      → 🆕 模板管理（元数据/分类/Discovery 三大模板资产）
+注：/inbox（InboxReview）仍是独立路由，但导航入口已并入"文献入库"（/ingest 收件箱 Tab）。
 ```
 
 ---
@@ -172,7 +173,7 @@
   - **✅ 已完成**：UX-004 字段级重抽前端化（智能预览写入 + 复制 prompt 降级）
   - **✅ 已完成**：QA-001 元数据模板接入真实抽取/rerun 链路，审核页可动态展示/编辑/重抽自定义字段
   - **✅ 已完成**：使用文档已明确 `/templates`、`/metadata`、CLI/API 和 agent 批量处理方式；批量 agent 不需要从界面复制 prompt，应直接读模板并调用命令
-  - **当前下一步建议**：元数据模板资产治理仍可继续；全局第一优先建议在 UX-002 图片丢失、Discovery 本地模型自动执行器、分类词汇发布流程 QA-004 之间由用户决策
+  - **当前下一步建议**：元数据模板资产治理仍可继续；全局第一优先建议在 UX-002 图片丢失与 Discovery 本地模型自动执行器之间由用户决策；分类词汇发布流程 QA-004 维持有意暂缓
   - 详见 `USER_ISSUES.md` 已解决 UX-004/QA-001、待处理 QA-004 和 `FUTURE_WORK_PLAN.md` §A
 - B. 分类规范与审核模板
   - **✅ 已完成**：`docs/methodology/classification-methodology.md` v0.2.2 已与 `api/classification_vocab.py` 当前 VOCAB 对齐
@@ -256,7 +257,7 @@ sqlite3 literature.sqlite ".tables"
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `api/routes/templates.py` | **新建** | 模板管理后端 API（6 端点 + 备份机制） |
+| `api/routes/templates.py` | **新建** | 模板管理后端 API（7 端点 + 备份机制） |
 | `web/src/api_templates.js` | **新建** | 前端模板 API 封装（7 函数） |
 | `web/src/views/TemplateManage.vue` | **新建** | 模板管理主页面（~560 行，三大 Tab） |
 | `web/src/views/IntakeReview.vue` | 大改 | 来源追溯卡片 + PDF 操作栏 + 布局滚动修复 + 根因修复 |
@@ -283,8 +284,7 @@ sqlite3 literature.sqlite ".tables"
 ### 已知遗留问题（未解决）
 
 1. **UX-002**：PyMuPDF 解析丢失图片 —— 需要修改路由策略或增加 VLM 回退
-2. **UX-001**：批量触发流程管理页面 —— 已由 Pipeline 分阶段批量操作满足；Dashboard 保留入口/概览角色
-3. **#11**：proposed_new 标签转正路径清晰化
-4. **QA-004**：分类词汇模板同步/发布流程 —— 当前 Tab2 只读/预留
-5. **QA-002**：候选 PDF 手动上传缺少生命周期保护
-6. **QA-003**：收件箱上传缺少大小限制和同名保护
+2. **#11**：proposed_new 标签转正路径清晰化
+3. **QA-004**：分类词汇模板同步/发布流程 —— 当前 Tab2 只读/预留
+4. **QA-002**：候选 PDF 手动上传缺少生命周期保护
+5. **QA-003**：收件箱上传缺少大小限制和同名保护

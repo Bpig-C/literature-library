@@ -110,9 +110,10 @@ D:\02_academic\doctoral\literature_library
 
 | 页面 | 用途 |
 |---|---|
-| `/dashboard` | 待办概览和流程入口 |
+| `/` | 待办概览和流程入口 |
 | `/pipeline` | 收件箱、解析、元数据、分类四阶段流水线 |
 | `/ingest` | 新文献入库，包含发现检索和本地上传入口 |
+| `/inbox` | 收件箱 dry-run 预览与确认（仍独立可达，导航已并入 `/ingest`） |
 | `/topics` | 采集主题管理 |
 | `/discovery` | 审核 agent 回填的发现检索命中 |
 | `/intake` | 审核采集候选并 promote |

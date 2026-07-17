@@ -2,7 +2,7 @@
 
 > 更新时间：2026-07-17
 > 适用版本：V1.3。collector / parser / inbox / review / discovery 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
-> ⚠️ 注意：本文档部分页面/API 端点清单滞后于代码（缺 Pipeline/IngestHub/TemplateManage 页面与 templates 路由组），以代码为准；全面刷新待排期。
+> ⚠️ 注意：本次已按 2026-07-17 审计修正路由组/页面/端点/导航/抽取链路；其余细节仍以代码为准。
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
 
 ## 1. 系统目标
@@ -25,7 +25,7 @@
 | PDF 解析 | 二元路由：PyMuPDF 本地（文本层，默认/免费）↔ MinerU 官网 cloud vlm（扫描型/降级） | 经 parser/ 子项目 |
 | 文献采集 | collector 子项目（topics 成熟度闸门 / collect·resolve / intake 审核 / ingest_bridge） | CLI·API·UI 三链 |
 | 发现检索 | discovery 子项目（topic/name/title/url/composite 五种模式 + agent 回填协议 + web-access 约束） | CLI·API·UI·Agent |
-| 元数据抽取 | Ollama (qwen3:4b) / opencode→MiMo-v2.5-pro（质量裁判） | 11435 |
+| 元数据抽取 | llm_judge → opencode → MiMo-v2.5-pro（当前链路）；Ollama (qwen3:4b，端口 11435) 已弃用，仅历史记录 | — |
 
 ### 目录结构
 
@@ -62,11 +62,11 @@ literature_library/
 
 ### FastAPI 后端
 
-`api/main.py` 启动 FastAPI 应用，挂载 10 组路由：works、relations、duplicates、files、metadata、classification、intake、discovery、parse、ingest。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
+`api/main.py` 启动 FastAPI 应用，挂载 11 组路由：works、relations、duplicates、files、metadata、classification、intake、discovery、parse、ingest、templates。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
 
 ### Vue 前端
 
-单页应用，11 个页面：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview、IntakeReview、InboxReview、TopicsReview、DiscoveryReview。通过 `/api` 前缀与后端通信。
+单页应用，15 个页面（路由以 `web/src/router.js` 为准）：Dashboard、Works、WorkDetail、Duplicates、Relations、MetadataReview、ClassificationReview、IntakeReview、InboxReview、TopicsReview、DiscoveryReview、IngestHub、PipelineView、TemplateManage、NotFound。通过 `/api` 前缀与后端通信。
 
 ### MinerU / content.md 解析链路
 
@@ -347,13 +347,16 @@ MetadataReview 页面（`/metadata`）提供人工审核门禁：
 
 ### 前端管理
 
-Vue SPA 提供 11 个页面：
+Vue SPA 提供 15 个页面（含 NotFound 兜底页）：
 
 | 页面 | 路径 | 职责 |
 |---|---|---|
 | Dashboard | `/` | 统计总览、快捷入口 |
 | Works | `/works` | 文献列表，搜索/筛选/分页，隔离/恢复操作 |
 | WorkDetail | `/works/:id` | 文献详情，编辑元数据，查看 content.md，管理关系 |
+| PipelineView | `/pipeline` | 处理流程：收件箱→解析→元数据→分类四阶段流水线与批量触发 |
+| IngestHub | `/ingest` | 文献入库：发现检索 + 收件箱上传统一入口 |
+| TemplateManage | `/templates` | 抽取模板管理（元数据字段可编辑；分类/Discovery 只读展示） |
 | Duplicates | `/duplicates` | 去重候选组，决策按钮，合并预览 |
 | Relations | `/relations` | 文献关系管理 |
 | MetadataReview | `/metadata` | 元数据抽取结果审核（双模型对比、覆盖式批准） |
@@ -403,6 +406,8 @@ Vue SPA 提供 11 个页面：
 | PATCH | `/api/works/{id}` | 更新文献元数据 |
 | POST | `/api/works/{id}/quarantine` | 隔离文献（移文件到 _quarantine/） |
 | POST | `/api/works/{id}/restore` | 恢复隔离文献 |
+| POST | `/api/works/{id}/sources/{source_file_id}/archive` | 归档单个源文件 |
+| POST | `/api/works/{id}/sources/{source_file_id}/restore` | 恢复已归档源文件 |
 | GET | `/api/relations` | 所有文献关系 |
 | POST | `/api/relations` | 新增关系 |
 | DELETE | `/api/relations` | 删除关系 |
@@ -417,14 +422,26 @@ Vue SPA 提供 11 个页面：
 | POST | `/api/metadata/apply-approved` | 批量应用已批准的抽取结果 |
 | POST | `/api/metadata/batch-approve-low-risk` | 批量批准低风险待审抽取（Mimo 优先） |
 | POST | `/api/metadata/{ext_id}/quarantine` | 从元数据审核页隔离文献 |
+| POST | `/api/metadata/extract` | 触发元数据抽取（读当前模板） |
+| GET | `/api/metadata/agent/queue` | agent 待处理抽取队列 |
+| POST | `/api/metadata/{ext_id}/supersede` | 用指定抽取取代旧记录 |
+| POST | `/api/metadata/{ext_id}/rerun-preview` | 字段级重抽预览 |
+| POST | `/api/metadata/{ext_id}/rerun-apply` | 字段级重抽写入（supersede 旧记录） |
+| GET | `/api/metadata/{ext_id}/rerun-prompt` | 获取字段级重抽 prompt |
 | GET | `/api/classification/tags/{work_id}` | 获取文献分类标签 |
 | POST | `/api/classification/tags/{work_id}` | 创建分类标签 |
+| POST | `/api/classification/tags/{work_id}/batch` | 批量保存分类标签 |
 | DELETE | `/api/classification/tags/{tag_id}` | 删除分类标签 |
+| PATCH | `/api/classification/tags/{tag_id}/review` | 审核单条分类标签 |
 | GET | `/api/classification/vocab` | 分类词汇表 |
 | GET | `/api/classification/extractions` | 分类抽取列表 |
 | GET | `/api/classification/extractions/{ext_id}` | 分类抽取详情 |
 | PATCH | `/api/classification/extractions/{ext_id}/review` | 审核分类抽取结果 |
+| PATCH | `/api/classification/extractions/{ext_id}/save-draft` | 保存分类抽取草稿 |
 | POST | `/api/classification/extractions/batch-approve-low-risk` | 批量批准低歧义分类抽取 |
+| POST | `/api/classification/extractions/batch-approve-with-tag` | 批量批准并写入标签 |
+| POST | `/api/classification/extractions/{ext_id}/quarantine` | 从分类审核页隔离文献 |
+| POST | `/api/classification/extract` | 触发分类抽取 |
 | GET | `/api/intake/candidates` | 采集候选列表 |
 | GET | `/api/intake/stats` | 采集统计 |
 | POST | `/api/intake/resolve` | 触发 SHA256 门控解析 |
@@ -433,11 +450,15 @@ Vue SPA 提供 11 个页面：
 | GET | `/api/intake/topics` | 采集主题列表 |
 | POST | `/api/intake/topics` | 主题成熟度转换 |
 | POST | `/api/intake/collect` | 按主题/显式 ID 发起采集 |
+| POST | `/api/intake/topics/create` | 新建采集主题 |
+| PATCH | `/api/intake/topics/{topic_id}/query-def` | 更新主题检索定义 |
+| POST | `/api/intake/candidates/{candidate_id}/upload-pdf` | 为候选手动上传 PDF |
 | POST | `/api/discovery/plan` | 生成 discovery search plan，不创建 run |
 | POST | `/api/discovery/composite-plan` | 生成 composite 多信号 discovery search plan |
 | POST | `/api/discovery/run` | 创建 discovery run |
 | GET | `/api/discovery/runs` | 发现检索 run 列表 |
 | GET | `/api/discovery/runs/{run_id}` | 查看单个 run 和 search plan |
+| POST | `/api/discovery/runs/{run_id}/complete` | 标记 discovery run 完成 |
 | POST | `/api/discovery/runs/{run_id}/hits` | agent 回填 discovery hits |
 | GET | `/api/discovery/hits` | 发现检索命中列表 |
 | POST | `/api/discovery/hits/{hit_id}/accept` | 接受单个 hit 并创建 intake candidate |
@@ -447,6 +468,17 @@ Vue SPA 提供 11 个页面：
 | POST | `/api/parse/trigger` | 触发解析 |
 | GET | `/api/ingest/plan` | 摄入 dry-run 预览 |
 | POST | `/api/ingest/execute` | 执行摄入 |
+| POST | `/api/ingest/upload` | 上传 PDF 到 `_inbox` |
+| GET | `/api/pipeline/stats` | 四阶段流水线统计 |
+| GET | `/api/pipeline/pending-metadata` | 待元数据抽取队列 |
+| GET | `/api/pipeline/pending-classification` | 待分类抽取队列 |
+| GET | `/api/templates` | 模板资产总览 |
+| GET | `/api/templates/metadata/schema` | 元数据字段模板（合并默认+用户字段） |
+| GET | `/api/templates/classification/raw` | 分类词汇原始定义（只读） |
+| POST | `/api/templates/metadata` | 保存元数据字段模板（自动备份） |
+| POST | `/api/templates/metadata/reset` | 重置元数据模板为默认 |
+| POST | `/api/templates/classification` | 保存分类模板（预留，不发布） |
+| POST | `/api/templates/discovery` | 保存 Discovery 模板（预留） |
 
 ## 7. CLI 工具
 
@@ -474,7 +506,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 
 见第 5 节"前端管理"表格。前端通过 `web/src/api.js` 封装所有 API 调用，所有请求走 `/api` 前缀。
 
-侧边栏导航：总览 → 文献 → 去重 → 关系 → 元数据 → 分类。
+侧边栏导航为 Scholar OS 四组（2026-07-17 改版）：**工作台**（研究总览 `/`、文献库 `/works`）、**探索与处理**（智能探索 `/discovery`、研究主题 `/topics`、文献入库 `/ingest`、处理流程 `/pipeline`）、**审核与组织**（采集审核 `/intake`、元数据审核 `/metadata`、分类审核 `/classification`、重复项 `/duplicates`、文献关系 `/relations`）、**设置**（抽取模板 `/templates`）。`/inbox` 仍是独立路由，导航入口并入"文献入库"。
 
 ## 9. 质量护栏
 
@@ -496,7 +528,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 - `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。
 - 前端路由已改为惰性加载（`router.js`），构建产物按页面拆分 chunk，避免单 chunk 过大。
 - 隔离/恢复路径已收敛到共享 nucleus `api/quarantine.py`。新 quarantine 操作必须保持 `works.read_status`、`source_files.source_path`、`source_files.status` 一致；以 `healthcheck_library.py` 复核为准。
-- P1.1 全库 digest 尚未批量生成（当前 5/112 覆盖率）。
+- P1.1 全库 digest 尚未批量生成（当前 5/150 覆盖率，非隔离 122 篇）。
 
 ## 11. 变更记录
 

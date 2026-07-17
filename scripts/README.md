@@ -57,6 +57,10 @@ views\library_dashboard.html
 | `dedup_cleanup.py` / `dedup_apply.py` / `scan_title_duplicates.py` | active | 去重维护与候选生成。 |
 | `literature_metadata_extract.py` / `literature_metadata_rerun.py` / `backfill_risk.py` | active | 元数据抽取、重抽和风险回填。 |
 | `literature_classification_extract.py` / `recompute_classification_ambiguity.py` | active | 分类抽取和模糊度重算。 |
+| `literature_discovery.py` | active | 受约束发现检索 CLI（plan/run/hits 审核流转）。 |
+| `literature_analyze.py` | active | 分析运行 CLI（plan/submit/status/review），写 `analysis_runs` 并双写 Markdown。 |
+| `llm_judge.py` | active | LLM 质量裁判：opencode→MiMo 对 content.md 出类型化裁决，元数据/分类抽取共用基础设施。 |
+| `migrate_*.py` | one-off | 一次性迁移脚本组（7 个，已执行完毕，保留备查）：analysis_runs、classification 列、collection_topics、discovery、intake_candidates、doc_type 回填、parse_status 同步。 |
 | `literature_dashboard.py` | legacy | 历史 HTML 台账生成器；SPA 已替代日常入口。 |
 
 ## 元数据模板与批量重抽

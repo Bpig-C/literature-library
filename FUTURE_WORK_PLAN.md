@@ -73,7 +73,7 @@
 1. **~~【第一步】字段模板可视化展示~~（UX-003）— ✅ 已完成**
    - 已从 MetadataReview 详情弹窗升级为**独立模板管理页面** `/templates`
    - 三大 Tab：元数据字段（可编辑）/ 分类词汇表（预留）/ Discovery协议（预留）
-   - 后端 API 6 个端点就绪（`api/routes/templates.py`），含自动备份和版本回滚
+   - 后端 API 7 个端点就绪（`api/routes/templates.py`），含自动备份和版本回滚
    - 归档位置：`docs/PROJECT_HISTORY.md` §六
 
 2. **~~【第二步】字段级重抽前端化~~（UX-004）— ✅ 已完成**
@@ -110,7 +110,7 @@
 | field_focus prompt 注入 | ✅ 代码 | `field_focus_instruction()` |
 | supersede 审计链 | ✅ 代码 | 新记录 + 旧记录标记 superseded_by |
 | LLM 调用链 | ✅ 代码 | llm_judge.chat() → opencode subprocess（无需额外 token） |
-| 模板管理后端 API | ✅ HTTP | `GET/POST /api/templates/*`（6 端点） |
+| 模板管理后端 API | ✅ HTTP | `GET/POST /api/templates/*`（7 端点） |
 | 模板管理前端页面 | ✅ 页面 | `/templates` → TemplateManage.vue |
 | 元数据字段在线编辑 | ✅ UI | 内联编辑 + 增删 + 导出 JSON/Prompt |
 | 字段级重抽 HTTP API | ✅ HTTP | `POST /api/metadata/{ext_id}/rerun-preview` / `rerun-apply`，`GET /rerun-prompt` |
@@ -196,7 +196,7 @@
 元数据抽取模板已作为独立维护资产落地：
 
 - **✅ 已完成**：独立模板管理页面 `/templates`（TemplateManage.vue），三大 Tab（元数据/分类/Discovery）
-- **✅ 已完成**：后端 6 个 API 端点（`api/routes/templates.py`），含自动备份和版本回滚
+- **✅ 已完成**：后端 7 个 API 端点（`api/routes/templates.py`），含自动备份和版本回滚
 - **✅ 已完成**：元数据字段在线查看 + 内联编辑 + 增删 + 导出 JSON/Prompt
 - **🔒 预留**：分类词汇表和 Discovery 协议编辑（后端已实现，前端按钮 disabled）
 
