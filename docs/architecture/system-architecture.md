@@ -15,7 +15,9 @@
 
 ## 系统总图
 
-![系统总图](diagrams/system-architecture.svg)
+> 2026-07-17 起，系统总图升级为 three.js 交互式 3D 架构图（含架构总览与流程 A/B 动画导览，节点可点击查看职责）：
+> **[scholar-os-architecture.html](scholar-os-architecture.html)**（浏览器直接打开即可，three.js 已本地化到 `vendor/`）。
+> 原 SVG 总图已归档至 `docs/_archive/architecture/diagrams-2026-06/system-architecture.svg`，仅作历史快照。
 
 ## 主流水线视角
 

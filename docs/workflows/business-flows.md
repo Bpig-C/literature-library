@@ -1,11 +1,10 @@
 # 业务流程图
 
-> 最后更新：2026-07-05
+> 最后更新：2026-07-17
 > 范围：用户浏览器操作、智能体 CLI 操作、API 自动化操作，以及跨 `web`、`api`、`collector`、`parser`、`scripts` 的协作。
+> ⚠️ 流程图已升级为 three.js 交互导览：**[scholar-os-architecture.html](../architecture/scholar-os-architecture.html)**（流程 A = 本地入库路径，流程 B = 发现检索路径，动画逐步播放，节点可点击查看职责）。原 7 张 SVG 流程图已归档至 `docs/_archive/architecture/diagrams-2026-06/`，仅作历史快照；本文保留流程的文字契约部分。
 
 ## 总览
-
-![业务流程总览](../architecture/diagrams/business-overview.svg)
 
 这张总览按代码事实区分两个层次：
 
@@ -16,25 +15,23 @@
 
 ## 流程一：采集候选到正式文献
 
-![采集候选到正式文献](../architecture/diagrams/flow-collector-promote.svg)
-
-> 边界：collector 不直接写 `works`；批准后的候选经 `ingest_bridge` 进入同一个 ingest 核心链路。
+> 图示：交互导览「流程 B」。边界：collector 不直接写 `works`；批准后的候选经 `ingest_bridge` 进入同一个 ingest 核心链路。
 
 ## 流程二：用户浏览器摄入新 PDF
 
-![用户浏览器摄入新 PDF](../architecture/diagrams/flow-inbox-ingest.svg)
+> 图示：交互导览「流程 A」。
 
 ## 流程三：标题重复治理
 
-![标题重复治理](../architecture/diagrams/flow-dedup.svg)
+> 图示：交互导览架构总览中 works → 去重治理 旁路。
 
 ## 流程四：解析触发与 content.md 生成
 
-![解析触发与 content.md 生成](../architecture/diagrams/flow-cli-parse.svg)
+> 图示：交互导览「解析 PARSE」分区。
 
 ## 流程五：元数据/分类抽取与审核
 
-![元数据/分类抽取与审核](../architecture/diagrams/flow-review.svg)
+> 图示：交互导览「AI 抽取 / 审核 REVIEW」分区。
 
 #### 5.1 元数据模板动态链路
 
@@ -50,9 +47,7 @@
 
 ## 流程六：主题驱动发现检索
 
-![主题驱动发现检索](../architecture/diagrams/flow-discovery.svg)
-
-> 边界：Discovery 是"检索计划与命中证据池"，不直接写 works/intake/ontology；accept 后经唯一桥梁函数进入 intake 候选池，再走标准闸门链路。
+> 图示：交互导览「流程 B」前半段。边界：Discovery 是"检索计划与命中证据池"，不直接写 works/intake/ontology；accept 后经唯一桥梁函数进入 intake 候选池，再走标准闸门链路。
 
 #### 6.1 三模块关系概要
 

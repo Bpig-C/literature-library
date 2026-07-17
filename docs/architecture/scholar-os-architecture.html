@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Scholar OS · 架构全景（three.js 交互图）</title>
+<style>
+  :root {
+    --bg: #101211;
+    --panel: rgba(20, 23, 21, .82);
+    --panel-border: rgba(255, 255, 255, .08);
+    --text: #e9eae7;
+    --text-dim: #8b8e89;
+    --accent: #35bd99;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); }
+  body {
+    font: 13px/1.55 ui-sans-serif, -apple-system, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+  }
+  #scene { position: fixed; inset: 0; display: block; }
+
+  /* ── 顶部栏 ─────────────────────────── */
+  #hud-top {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 18px;
+    background: linear-gradient(to bottom, rgba(16,18,17,.92), rgba(16,18,17,0));
+    pointer-events: none;
+  }
+  #hud-top > * { pointer-events: auto; }
+  .brand { display: flex; flex-direction: column; line-height: 1.25; }
+  .brand b { font-size: 15px; font-weight: 640; letter-spacing: -.01em; }
+  .brand i { font-style: normal; color: var(--text-dim); font-size: 10.5px; }
+  .modes { display: flex; gap: 6px; }
+  .modes button, .tourbar button {
+    appearance: none; border: 1px solid var(--panel-border);
+    background: var(--panel); color: var(--text-dim);
+    padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 12px;
+    cursor: pointer; transition: all .15s ease; backdrop-filter: blur(6px);
+  }
+  .modes button:hover, .tourbar button:hover { color: var(--text); border-color: rgba(255,255,255,.22); }
+  .modes button.on { color: #0d2b22; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .legend { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); font-size: 11px; }
+  .legend em { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+  /* ── 节点标签（3D 投影 overlay） ────── */
+  #labels { position: fixed; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+  .nlabel {
+    position: absolute; transform: translate(-50%, -100%);
+    text-align: center; white-space: nowrap; line-height: 1.3;
+    text-shadow: 0 1px 6px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9);
+  }
+  .nlabel b { display: block; font-size: 12.5px; font-weight: 620; color: #f2f3f0; }
+  .nlabel i { display: block; font-style: normal; font-size: 10px; color: #a9aca6; }
+  .zlabel {
+    position: absolute; transform: translate(-50%, 0);
+    font-size: 10px; letter-spacing: .18em; color: #6f726d;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8);
+  }
+  .blabel {
+    position: absolute; transform: translate(-50%, 0);
+    font-size: 10.5px; color: #7d817b;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8);
+  }
+
+  /* ── 信息面板（点击节点） ────────────── */
+  #info {
+    position: fixed; top: 64px; right: 16px; z-index: 12; width: 320px;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 16px 18px; backdrop-filter: blur(10px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    display: none;
+  }
+  #info.show { display: block; }
+  #info h2 { font-size: 15px; font-weight: 640; margin-bottom: 2px; }
+  #info .sub { color: var(--accent); font-size: 11px; margin-bottom: 10px; }
+  #info p { color: #c9ccc6; font-size: 12.5px; margin-bottom: 10px; }
+  #info dl { font-size: 12px; }
+  #info dt { color: var(--text-dim); font-size: 10.5px; letter-spacing: .08em; margin-top: 8px; }
+  #info dd { color: #c9ccc6; margin-top: 2px; }
+  #info .x {
+    position: absolute; top: 10px; right: 12px; border: 0; background: none;
+    color: var(--text-dim); font-size: 16px; cursor: pointer;
+  }
+  #info .x:hover { color: var(--text); }
+
+  /* ── 流程解说条 ─────────────────────── */
+  #tourbar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 12; width: min(760px, calc(100vw - 32px));
+    background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 14px; padding: 12px 16px; backdrop-filter: blur(10px);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    display: none;
+  }
+  #tourbar.show { display: block; }
+  #tourbar .row { display: flex; align-items: center; gap: 12px; }
+  #tourbar .step-no {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: rgba(53,189,153,.16); color: var(--accent);
+    font-weight: 700; font-size: 13px;
+  }
+  #tourbar .cap { flex: 1; min-width: 0; }
+  #tourbar .cap b { display: block; font-size: 13px; font-weight: 620; }
+  #tourbar .cap span { display: block; color: var(--text-dim); font-size: 12px; margin-top: 1px; }
+  #tourbar .dots { display: flex; gap: 5px; margin-top: 10px; flex-wrap: wrap; }
+  #tourbar .dots i {
+    width: 18px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12);
+    cursor: pointer; transition: background .15s;
+  }
+  #tourbar .dots i.on { background: var(--accent); }
+  #tourbar .dots i.done { background: rgba(53,189,153,.45); }
+
+  /* ── 底部提示 ───────────────────────── */
+  #hint {
+    position: fixed; left: 16px; bottom: 14px; z-index: 10;
+    color: #5f625d; font-size: 11px; line-height: 1.6;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8);
+  }
+  #fallback {
+    position: fixed; inset: 0; z-index: 50; display: none;
+    place-items: center; background: var(--bg); color: var(--text-dim);
+    text-align: center; padding: 40px;
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="labels"></div>
+
+<div id="hud-top">
+  <div class="brand">
+    <b>Scholar OS · 架构全景</b>
+    <i>博士文献管理系统 · three.js 交互图 · 2026-07-17 重绘（原 SVG 已归档至 docs/_archive/architecture/）</i>
+  </div>
+  <div class="modes">
+    <button data-mode="arch" class="on">架构总览</button>
+    <button data-mode="A">流程 A · 本地入库</button>
+    <button data-mode="B">流程 B · 发现检索</button>
+  </div>
+  <div class="legend">
+    <span><em style="background:#5ea8e8"></em>入口</span>
+    <span><em style="background:#ef8354"></em>闸门</span>
+    <span><em style="background:#35bd99"></em>核心</span>
+    <span><em style="background:#6fc3df"></em>解析</span>
+    <span><em style="background:#b794f6"></em>AI 抽取</span>
+    <span><em style="background:#ffd166"></em>审核</span>
+    <span><em style="background:#8a8f98"></em>治理</span>
+  </div>
+</div>
+
+<div id="info">
+  <button class="x" title="关闭">×</button>
+  <h2></h2>
+  <div class="sub"></div>
+  <p></p>
+  <dl>
+    <dt>契约 / 数据</dt><dd class="c"></dd>
+    <dt>约束</dt><dd class="r"></dd>
+  </dl>
+</div>
+
+<div id="tourbar">
+  <div class="row">
+    <div class="step-no">1</div>
+    <div class="cap"><b></b><span></span></div>
+    <button class="prev">上一步</button>
+    <button class="play">暂停</button>
+    <button class="next">下一步</button>
+  </div>
+  <div class="dots"></div>
+</div>
+
+<div id="hint">拖动旋转 · 滚轮缩放 · 点击节点查看职责<br/>流程模式下动画自动播放，可暂停或点步进条跳转</div>
+<div id="fallback"><div>当前浏览器不支持 WebGL，无法渲染 3D 架构图。<br/>请使用桌面版 Chrome / Edge 打开本文件。</div></div>
+
+<script src="./vendor/three.min.js"></script>
+<script>
+(function () {
+  if (!window.WebGLRenderingContext) {
+    document.getElementById('fallback').style.display = 'grid';
+    return;
+  }
+
+  /* ═══════════════ 数据：节点 ═══════════════ */
+  var KIND_COLOR = {
+    entry: 0x5ea8e8, gate: 0xef8354, core: 0x35bd99,
+    parse: 0x6fc3df, ai: 0xb794f6, review: 0xffd166, side: 0x8a8f98
+  };
+
+  var NODES = [
+    { id: 'topics',    label: '主题闸门',    sub: 'collection_topics',   kind: 'entry',  x: -11,   z: -3.2, shape: 'box',
+      desc: '维护研究主题与 query_def，是发现检索的结构化输入源。',
+      contract: 'collection_topics 表；map_status 只能前进（seedling → proposed → mapped）。',
+      rule: 'proposed_new 自定义标签必须人工转正后才能推进 mapped。' },
+    { id: 'discovery', label: '发现检索',    sub: 'Discovery',           kind: 'entry',  x: -11,   z: -1.05, shape: 'box',
+      desc: '受约束检索：topic / name / title / url / composite 五种输入模式。',
+      contract: 'discovery_runs + search_plan_json；agent 按协议回填。',
+      rule: 'agent 只读边界：只能回填 hits，不能 accept / promote / 写 works。' },
+    { id: 'collect',   label: '已知ID采集',  sub: 'Collect',             kind: 'entry',  x: -11,   z: 1.05, shape: 'box',
+      desc: '按 arXiv / DOI / GitHub 等已知 ID 精确采集。',
+      contract: 'POST /api/intake/collect 直达 intake 候选池。', rule: '与 Discovery 边界清晰，互不隐式触发。' },
+    { id: 'inbox',     label: '本地投放',    sub: '_inbox/',             kind: 'entry',  x: -11,   z: 3.2, shape: 'box',
+      desc: '手动把 PDF 放入 _inbox，在 IngestHub / InboxReview 确认摄入。',
+      contract: '_inbox/ 目录 + 摄入计划 preview。', rule: '可信源旁路：确认后直接写 works。' },
+    { id: 'hits',      label: '命中证据池',  sub: 'discovery_hits',      kind: 'gate',   x: -6.5,  z: -1.4, shape: 'oct',
+      desc: '检索命中在这里等待人工 accept / reject。',
+      contract: 'discovery_hits 表。', rule: 'title-only 命中不能批量接受。' },
+    { id: 'intake',    label: '采集闸门',    sub: 'intake_candidates',   kind: 'gate',   x: -6.5,  z: 1.4, shape: 'oct',
+      desc: 'light_gate（标题/ID 匹配）→ heavy_gate（SHA256）→ 人工审核。',
+      contract: 'intake_candidates；resolution 六态。', rule: '只有 new + approved 才能 promote。' },
+    { id: 'ingest',    label: '入库核心',    sub: 'ingest / bridge',     kind: 'core',   x: -2,    z: -1.1, shape: 'box',
+      desc: '两条入口在此汇合：inbox 直摄入 + intake 经 ingest_bridge.promote。',
+      contract: '写 works + source_files + parse_runs(pending)。', rule: 'SHA256 精确重复硬拦截，归档到 _duplicates/。' },
+    { id: 'works',     label: 'works 稳定层', sub: 'works 表 · 150 篇',   kind: 'core',   x: -2,    z: 1.3, shape: 'box', big: true,
+      desc: '文献主表，所有审核结果的最终沉淀点。',
+      contract: 'works 表；parse_status 是派生字段，不可直写。', rule: '物理+逻辑分离：PDF 在 works/{id}/source，关系全在 SQLite。' },
+    { id: 'parser',    label: '解析器',      sub: 'D13 二元路由',        kind: 'parse',  x: 2.5,   z: -1.1, shape: 'box',
+      desc: '有文本层走 PyMuPDF 本地直抽；扫描件/复杂版式走 MinerU Cloud VLM。',
+      contract: 'literature_parse_runs 为准（不是文件系统）。', rule: 'PyMuPDF 分支会丢图片（UX-002 待修）。' },
+    { id: 'contentmd', label: 'content.md',  sub: '全文产物',            kind: 'parse',  x: 2.5,   z: 1.3, shape: 'box',
+      desc: '解析产出的全文文本，一切后续抽取的唯一文本入口。',
+      contract: 'parse_runs.content_md_path 登记路径。', rule: '后续处理不重新解析 PDF。' },
+    { id: 'meta',      label: '元数据抽取',  sub: 'LLM · opencode→MiMo', kind: 'ai',     x: 7,     z: -1.6, shape: 'box',
+      desc: '从 content.md 抽取标题、作者、年份等字段。',
+      contract: 'metadata_extractions；字段事实源是 templates/templates.json。', rule: '抽取结果先入待审，绝不直写稳定层。' },
+    { id: 'cls',       label: '分类抽取',    sub: 'LLM · 标量+多值',     kind: 'ai',     x: 7,     z: 1.6, shape: 'box',
+      desc: '抽取标量分类字段与多值方法/风险标签。',
+      contract: 'classification_extractions；多值须过 classification_vocab 校验。', rule: '隐式前置：元数据须已 approved。' },
+    { id: 'metarev',   label: '元数据审核',  sub: '/metadata',           kind: 'review', x: 11,    z: -1.6, shape: 'oct',
+      desc: '人工 approve / needs_fix / rejected，支持字段级重抽。',
+      contract: 'approve 后 fill-empty 回填 works。', rule: 'approve 一条自动 supersede 同 work 兄弟记录。' },
+    { id: 'clsrev',    label: '分类审核',    sub: '/classification',     kind: 'review', x: 11,    z: 1.6, shape: 'oct',
+      desc: '人工确认分类结果与高模糊度个案。',
+      contract: 'approve 回填标量 + 写 work_classification_tags。', rule: '模糊度阈值 50/20 分档展示。' },
+    { id: 'dedup',     label: '去重治理',    sub: 'duplicates',          kind: 'side',   x: -2,    z: 4.6, shape: 'box',
+      desc: '标题 Jaccard 相似候选组，人工判 same_work / not_duplicate。',
+      contract: 'duplicate_groups + duplicate_candidates。', rule: '不阻塞入库；可元数据回填后迭代重扫。' },
+    { id: 'quar',      label: '隔离区',      sub: '_quarantine/',        kind: 'side',   x: -6.5,  z: 4.6, shape: 'box',
+      desc: '坏副本/问题文献隔离，不直接删除源文件。',
+      contract: 'works.read_status + source_files.status + 文件移动。', rule: '隔离是原子三更新。' },
+    { id: 'tpl',       label: '模板资产',    sub: 'templates.json',      kind: 'side',   x: 7,     z: -4.6, shape: 'box',
+      desc: '元数据字段 / 分类词汇 / Discovery 协议三大模板，/templates 页可维护。',
+      contract: 'templates/templates.json + api/metadata_template.py。', rule: '元数据可在线编辑；分类 Tab 暂只读（QA-004）。' },
+    { id: 'analysis',  label: '分析出口',    sub: 'analysis_runs',       kind: 'side',   x: 2.5,   z: 4.6, shape: 'box',
+      desc: 'digest 分析试点；引用导出与综述矩阵是下一步建设方向。',
+      contract: 'analysis_runs 表。', rule: '出口侧是当前优先级最高的待建能力。' }
+  ];
+
+  var ZONES = [
+    { label: '入口 ENTRY',   x: -11,  color: 0x5ea8e8 },
+    { label: '闸门 GATE',    x: -6.5, color: 0xef8354 },
+    { label: '入库 CORE',    x: -2,   color: 0x35bd99 },
+    { label: '解析 PARSE',   x: 2.5,  color: 0x6fc3df },
+    { label: 'AI 抽取',      x: 7,    color: 0xb794f6 },
+    { label: '审核 REVIEW',  x: 11,   color: 0xffd166 }
+  ];
+
+  /* ═══════════════ 数据：边与流程 ═══════════════ */
+  var EDGES = [
+    ['topics', 'discovery'], ['discovery', 'hits'], ['hits', 'intake'],
+    ['collect', 'intake'], ['inbox', 'ingest'], ['intake', 'ingest'],
+    ['ingest', 'works'], ['works', 'parser'], ['parser', 'contentmd'],
+    ['contentmd', 'meta'], ['contentmd', 'cls'],
+    ['meta', 'metarev'], ['cls', 'clsrev'],
+    ['metarev', 'works', 2.6], ['clsrev', 'works', 2.6],
+    ['works', 'dedup', 1.3], ['works', 'quar', 1.6],
+    ['tpl', 'meta', 1.2], ['tpl', 'cls', 1.2],
+    ['works', 'analysis', 1.3]
+  ];
+
+  var PATH_A = ['inbox', 'ingest', 'works', 'parser', 'contentmd', 'meta', 'metarev', 'works', 'cls', 'clsrev', 'works'];
+  var CAP_A = [
+    ['放入收件箱', '把 PDF 放进 _inbox/，在 IngestHub / InboxReview 确认摄入'],
+    ['技术入库', '写 works + source_files + parse_runs(pending)；SHA256 精确重复在此硬拦截'],
+    ['触发解析', 'D13 路由：有文本层走 PyMuPDF 本地直抽，否则走 MinerU Cloud VLM'],
+    ['产出全文', '生成 content.md / content.json，路径登记到 parse_runs.content_md_path'],
+    ['元数据抽取', '字段事实源是 templates.json，LLM 链 opencode → MiMo'],
+    ['等待人工审核', '抽取结果停在 pending，不直接写稳定层'],
+    ['回填 works', 'approve 后 fill-empty 回填；同 work 兄弟记录自动 supersede'],
+    ['启动分类抽取', '隐式前置：元数据必须已 approved'],
+    ['分类待审', '标量字段 + 多值标签，多值须过 vocab 校验'],
+    ['分类回填', 'approve 回填标量字段 + 写 work_classification_tags']
+  ];
+
+  var PATH_B = ['topics', 'discovery', 'hits', 'intake', 'ingest', 'works', 'parser', 'contentmd', 'meta', 'metarev', 'works', 'cls', 'clsrev', 'works'];
+  var CAP_B = [
+    ['主题驱动', '主题闸门维护 query_def，作为 Discovery 的结构化输入'],
+    ['生成检索方案', '按 topic / 组合信号生成 search_plan，交本地 agent 执行'],
+    ['回填证据池', 'agent 只能回填 discovery_hits——只读边界'],
+    ['人工接受', 'accept 后经唯一桥梁函数创建 intake_candidates'],
+    ['闸门审核', 'light_gate → heavy_gate → 人工审核；仅 new + approved 可 promote'],
+    ['汇合入库', 'ingest_bridge 复用 ingest 核心：works + source_files + parse_runs(pending)'],
+    ['触发解析', 'D13 路由：PyMuPDF 本地直抽 / MinerU Cloud VLM'],
+    ['产出全文', '生成 content.md，登记 parse_runs.content_md_path'],
+    ['元数据抽取', '字段事实源 templates.json，LLM 链 opencode → MiMo'],
+    ['等待人工审核', '抽取结果停在 pending'],
+    ['回填 works', 'approve 后 fill-empty 回填，旧记录 supersede'],
+    ['启动分类抽取', '隐式前置：元数据必须已 approved'],
+    ['分类回填', 'approve 回填标量 + work_classification_tags']
+  ];
+
+  var PATHS = { A: { nodes: PATH_A, caps: CAP_A }, B: { nodes: PATH_B, caps: CAP_B } };
+
+  /* ═══════════════ 场景基础 ═══════════════ */
+  var canvas = document.getElementById('scene');
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  } catch (e) {
+    document.getElementById('fallback').style.display = 'grid';
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x101211);
+  scene.fog = new THREE.Fog(0x101211, 34, 78);
+
+  var camera = new THREE.PerspectiveCamera(46, 1, 0.1, 200);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  dirLight.position.set(6, 14, 8);
+  scene.add(dirLight);
+  var fillLight = new THREE.DirectionalLight(0x9fd8c7, 0.25);
+  fillLight.position.set(-8, 6, -6);
+  scene.add(fillLight);
+
+  var grid = new THREE.GridHelper(44, 44, 0x2a2d2b, 0x1c1f1d);
+  grid.position.y = -1.5;
+  scene.add(grid);
+
+  // 底座：SQLite + 文件区
+  var base = new THREE.Mesh(
+    new THREE.BoxGeometry(29, 0.22, 10.5),
+    new THREE.MeshStandardMaterial({ color: 0x1b1e1c, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 0.85 })
+  );
+  base.position.set(0, -1.28, 0);
+  scene.add(base);
+
+  // 发光贴图（canvas 径向渐变）
+  function makeGlowTexture() {
+    var c = document.createElement('canvas');
+    c.width = c.height = 64;
+    var g = c.getContext('2d');
+    var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.35, 'rgba(255,255,255,.45)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  var glowTex = makeGlowTexture();
+
+  /* ═══════════════ 节点与分区 ═══════════════ */
+  var nodeById = {};
+  var nodeMeshes = [];
+  var labelLayer = document.getElementById('labels');
+
+  ZONES.forEach(function (z) {
+    var plate = new THREE.Mesh(
+      new THREE.BoxGeometry(3.9, 0.1, 8.8),
+      new THREE.MeshStandardMaterial({
+        color: z.color, transparent: true, opacity: 0.07, roughness: 0.8
+      })
+    );
+    plate.position.set(z.x, -0.5, 0);
+    scene.add(plate);
+    var rim = new THREE.LineSegments(
+      new THREE.EdgesGeometry(plate.geometry),
+      new THREE.LineBasicMaterial({ color: z.color, transparent: true, opacity: 0.28 })
+    );
+    rim.position.copy(plate.position);
+    scene.add(rim);
+
+    var zEl = document.createElement('div');
+    zEl.className = 'zlabel';
+    zEl.textContent = z.label;
+    labelLayer.appendChild(zEl);
+    z.el = zEl;
+    z.anchor = new THREE.Vector3(z.x, 0.62, -4.55);
+  });
+
+  NODES.forEach(function (n) {
+    var color = KIND_COLOR[n.kind];
+    var s = n.big ? 1.55 : 1.0;
+    var geo = n.shape === 'oct'
+      ? new THREE.OctahedronGeometry(0.62 * s)
+      : new THREE.BoxGeometry(1.15 * s, 0.75 * s, 1.15 * s);
+    var mat = new THREE.MeshStandardMaterial({
+      color: 0x151715, roughness: 0.45, metalness: 0.35,
+      emissive: color, emissiveIntensity: 0.55,
+      transparent: true, opacity: 1
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, 0, n.z);
+    mesh.userData.nodeId = n.id;
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+
+    var edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.9 })
+    );
+    mesh.add(edge);
+
+    var glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: color, transparent: true, opacity: 0.3,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    glow.scale.set(3.2 * s, 3.2 * s, 1);
+    glow.position.set(n.x, 0, n.z);
+    scene.add(glow);
+
+    var el = document.createElement('div');
+    el.className = 'nlabel';
+    el.innerHTML = '<b></b><i></i>';
+    el.querySelector('b').textContent = n.label;
+    el.querySelector('i').textContent = n.sub;
+    labelLayer.appendChild(el);
+
+    n.mesh = mesh;
+    n.glow = glow;
+    n.el = el;
+    n.yOff = 0.85 * s;
+    nodeById[n.id] = n;
+  });
+
+  // 底座说明标签
+  var baseEl = document.createElement('div');
+  baseEl.className = 'blabel';
+  baseEl.textContent = 'literature.sqlite · 逻辑中心（19 表）　×　文件区 works/ _archive/ _quarantine/ · 物理产物（物理+逻辑分离）';
+  labelLayer.appendChild(baseEl);
+  var baseAnchor = new THREE.Vector3(0, -1.05, 4.9);
+
+  /* ═══════════════ 边曲线 ═══════════════ */
+  var curveCache = {};
+  function getCurve(a, b, lift) {
+    var key = a + '>' + b;
+    if (curveCache[key]) return curveCache[key];
+    var pa = nodeById[a].mesh.position;
+    var pb = nodeById[b].mesh.position;
+    var l = lift || 1.0;
+    var mid = pa.clone().add(pb).multiplyScalar(0.5);
+    mid.y += l;
+    var curve = new THREE.QuadraticBezierCurve3(pa.clone(), mid, pb.clone());
+    curveCache[key] = curve;
+    return curve;
+  }
+
+  var edgeLines = [];
+  EDGES.forEach(function (e) {
+    var curve = getCurve(e[0], e[1], e[2]);
+    var pts = curve.getPoints(36);
+    var line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 })
+    );
+    scene.add(line);
+    edgeLines.push({ line: line, from: e[0], to: e[1], curve: curve });
+  });
+
+  /* ═══════════════ 流动粒子 ═══════════════ */
+  var particles = null;
+  function buildParticles(edgeList, colorHex) {
+    if (particles) {
+      scene.remove(particles);
+      particles.geometry.dispose();
+      particles.material.dispose();
+    }
+    var per = 4;
+    var count = edgeList.length * per;
+    var positions = new Float32Array(count * 3);
+    var colors = new Float32Array(count * 3);
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    var mat = new THREE.PointsMaterial({
+      size: 0.24, map: glowTex, transparent: true, opacity: 0.95,
+      vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false,
+      sizeAttenuation: true
+    });
+    particles = new THREE.Points(geo, mat);
+    particles.userData = { edges: edgeList, per: per, seeds: [] };
+    var c = new THREE.Color(colorHex || 0x9adfcf);
+    for (var i = 0; i < count; i++) {
+      particles.userData.seeds.push({ edge: Math.floor(i / per), off: (i % per) / per + Math.random() * 0.06, speed: 0.10 + Math.random() * 0.06 });
+      colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+    }
+    scene.add(particles);
+  }
+
+  /* ═══════════════ 导览 packet ═══════════════ */
+  var packet = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x7dffda })
+  );
+  var packetGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0x35bd99, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  packetGlow.scale.set(2.4, 2.4, 1);
+  packet.add(packetGlow);
+  packet.visible = false;
+  scene.add(packet);
+
+  /* ═══════════════ 自定义轨道控制 ═══════════════ */
+  var view = { t: -0.62, p: 0.98, r: 24 };        // 目标球坐标
+  var cur = { t: -0.62, p: 0.98, r: 24 };        // 当前（阻尼）
+  var target = new THREE.Vector3(0, 0.2, 0);
+  var dragging = false, moved = 0, px = 0, py = 0;
+  var lastInteract = 0;
+
+  function onDown(x, y) { dragging = true; moved = 0; px = x; py = y; lastInteract = performance.now(); }
+  function onMove(x, y) {
+    if (!dragging) return;
+    var dx = x - px, dy = y - py;
+    moved += Math.abs(dx) + Math.abs(dy);
+    px = x; py = y;
+    view.t -= dx * 0.0052;
+    view.p = Math.max(0.28, Math.min(1.45, view.p - dy * 0.004));
+    lastInteract = performance.now();
+  }
+  function onUp() { dragging = false; }
+  canvas.addEventListener('mousedown', function (e) { onDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', function (e) { onMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', function (e) { if (e.touches.length === 1) onDown(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  canvas.addEventListener('touchmove', function (e) { if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  canvas.addEventListener('touchend', onUp);
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    view.r = Math.max(9, Math.min(52, view.r * (1 + e.deltaY * 0.001)));
+    lastInteract = performance.now();
+  }, { passive: false });
+
+  /* ═══════════════ 点击信息面板 ═══════════════ */
+  var raycaster = new THREE.Raycaster();
+  var pointer = new THREE.Vector2();
+  var infoEl = document.getElementById('info');
+  canvas.addEventListener('click', function (e) {
+    if (moved > 6) return;
+    pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var hits = raycaster.intersectObjects(nodeMeshes);
+    if (!hits.length) { infoEl.classList.remove('show'); return; }
+    var n = nodeById[hits[0].object.userData.nodeId];
+    infoEl.querySelector('h2').textContent = n.label;
+    infoEl.querySelector('.sub').textContent = n.sub;
+    infoEl.querySelector('p').textContent = n.desc;
+    infoEl.querySelector('.c').textContent = n.contract;
+    infoEl.querySelector('.r').textContent = n.rule;
+    infoEl.classList.add('show');
+    // 点闪一下
+    n.mesh.material.emissiveIntensity = 1.6;
+  });
+  infoEl.querySelector('.x').addEventListener('click', function () { infoEl.classList.remove('show'); });
+
+  /* ═══════════════ 模式切换与导览 ═══════════════ */
+  var mode = 'arch';
+  var tour = { seg: 0, t: 0, playing: true };
+  var SEG_TIME = 2.4;
+  var tourbar = document.getElementById('tourbar');
+
+  function pathEdges(pathKey) {
+    var arr = PATHS[pathKey].nodes;
+    var list = [];
+    for (var i = 0; i < arr.length - 1; i++) {
+      list.push({ from: arr[i], to: arr[i + 1], curve: getCurve(arr[i], arr[i + 1], 1.4) });
+    }
+    return list;
+  }
+
+  function setDim(activeSet) {
+    NODES.forEach(function (n) {
+      var on = !activeSet || activeSet.nodes[n.id];
+      n.dimmed = !on;
+      n.el.dataset.dim = on ? '0' : '1';
+      n.mesh.material.opacity = on ? 1 : 0.1;
+      n.mesh.material.emissiveIntensity = on ? 0.55 : 0.08;
+      n.glow.material.opacity = on ? 0.3 : 0.03;
+    });
+    edgeLines.forEach(function (e) {
+      var on = !activeSet || activeSet.edges[e.from + '>' + e.to];
+      e.line.material.opacity = on ? 0.34 : 0.045;
+    });
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.modes button').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.mode === m);
+    });
+    tour.seg = 0; tour.t = 0; tour.playing = true;
+    packet.visible = m !== 'arch';
+    tourbar.classList.toggle('show', m !== 'arch');
+    document.querySelector('#tourbar .play').textContent = '暂停';
+
+    if (m === 'arch') {
+      setDim(null);
+      buildParticles(edgeLines, 0x9adfcf);
+    } else {
+      var pEdges = pathEdges(m);
+      var activeSet = { nodes: {}, edges: {} };
+      PATHS[m].nodes.forEach(function (id) { activeSet.nodes[id] = true; });
+      pEdges.forEach(function (e) { activeSet.edges[e.from + '>' + e.to] = true; });
+      // works 在路径中重复出现，保证亮起
+      setDim(activeSet);
+      buildParticles(pEdges, 0x35bd99);
+      buildDots(m);
+      updateCaption(m);
+    }
+  }
+
+  function buildDots(m) {
+    var dots = document.querySelector('#tourbar .dots');
+    dots.innerHTML = '';
+    PATHS[m].caps.forEach(function (_, i) {
+      var d = document.createElement('i');
+      d.addEventListener('click', function () {
+        tour.seg = i; tour.t = 0; updateCaption(m);
+      });
+      dots.appendChild(d);
+    });
+  }
+
+  function updateCaption(m) {
+    var caps = PATHS[m].caps;
+    var i = Math.min(tour.seg, caps.length - 1);
+    document.querySelector('#tourbar .step-no').textContent = i + 1;
+    document.querySelector('#tourbar .cap b').textContent = caps[i][0];
+    document.querySelector('#tourbar .cap span').textContent = caps[i][1];
+    document.querySelectorAll('#tourbar .dots i').forEach(function (d, j) {
+      d.className = j < tour.seg ? 'done' : (j === tour.seg ? 'on' : '');
+    });
+  }
+
+  document.querySelectorAll('.modes button').forEach(function (b) {
+    b.addEventListener('click', function () { setMode(b.dataset.mode); });
+  });
+  document.querySelector('#tourbar .play').addEventListener('click', function () {
+    tour.playing = !tour.playing;
+    this.textContent = tour.playing ? '暂停' : '播放';
+  });
+  document.querySelector('#tourbar .next').addEventListener('click', function () {
+    if (mode === 'arch') return;
+    tour.seg = Math.min(tour.seg + 1, PATHS[mode].caps.length - 1);
+    tour.t = 0; updateCaption(mode);
+  });
+  document.querySelector('#tourbar .prev').addEventListener('click', function () {
+    if (mode === 'arch') return;
+    tour.seg = Math.max(tour.seg - 1, 0);
+    tour.t = 0; updateCaption(mode);
+  });
+
+  /* ═══════════════ 标签投影 ═══════════════ */
+  var projV = new THREE.Vector3();
+  function placeLabel(el, pos, yOff) {
+    projV.copy(pos);
+    projV.y += yOff;
+    projV.project(camera);
+    if (projV.z > 1) { el.style.display = 'none'; return; }
+    if (el.dataset.dim !== '1') el.style.display = '';
+    var x = (projV.x * 0.5 + 0.5) * window.innerWidth;
+    var y = (-projV.y * 0.5 + 0.5) * window.innerHeight;
+    el.style.transform = 'translate(-50%,-100%) translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+  }
+  function placeFloorLabel(el, pos) {
+    projV.copy(pos);
+    projV.project(camera);
+    if (projV.z > 1) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    var x = (projV.x * 0.5 + 0.5) * window.innerWidth;
+    var y = (-projV.y * 0.5 + 0.5) * window.innerHeight;
+    el.style.transform = 'translate(-50%,0) translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+  }
+
+  /* ═══════════════ 主循环 ═══════════════ */
+  var clock = new THREE.Clock();
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    var time = clock.elapsedTime;
+
+    // 闲置自动旋转（仅架构总览）
+    if (mode === 'arch' && performance.now() - lastInteract > 4000) {
+      view.t += dt * 0.045;
+    }
+    cur.t += (view.t - cur.t) * 0.08;
+    cur.p += (view.p - cur.p) * 0.08;
+    cur.r += (view.r - cur.r) * 0.08;
+    camera.position.set(
+      target.x + cur.r * Math.sin(cur.p) * Math.sin(cur.t),
+      target.y + cur.r * Math.cos(cur.p),
+      target.z + cur.r * Math.sin(cur.p) * Math.cos(cur.t)
+    );
+    camera.lookAt(target);
+
+    // 节点呼吸（跳过流程模式下被压暗的节点）
+    NODES.forEach(function (n, i) {
+      if (n.dimmed) return;
+      if (n.mesh.material.emissiveIntensity > 1.2) {
+        // 点击后的高亮衰减
+        n.mesh.material.emissiveIntensity = Math.max(0.55, n.mesh.material.emissiveIntensity - dt * 1.5);
+      } else {
+        var want = 0.55 + Math.sin(time * 1.6 + i) * 0.1;
+        n.mesh.material.emissiveIntensity += (want - n.mesh.material.emissiveIntensity) * 0.06;
+      }
+    });
+
+    // 粒子流动
+    if (particles) {
+      var ud = particles.userData;
+      var pos = particles.geometry.attributes.position;
+      for (var i = 0; i < ud.seeds.length; i++) {
+        var s = ud.seeds[i];
+        var t = (s.off + time * s.speed) % 1;
+        var p = ud.edges[s.edge].curve.getPoint(t);
+        pos.setXYZ(i, p.x, p.y, p.z);
+      }
+      pos.needsUpdate = true;
+    }
+
+    // 导览 packet
+    if (mode !== 'arch' && packet.visible) {
+      var pEdges = pathEdges(mode);
+      if (tour.playing) {
+        tour.t += dt / SEG_TIME;
+        if (tour.t >= 1) {
+          tour.t = 0;
+          if (tour.seg < pEdges.length - 1) {
+            tour.seg++;
+            updateCaption(mode);
+          } else {
+            tour.playing = false;
+            document.querySelector('#tourbar .play').textContent = '重播';
+          }
+        }
+      }
+      var seg = Math.min(tour.seg, pEdges.length - 1);
+      var tt = tour.t < 0.5 ? 2 * tour.t * tour.t : 1 - Math.pow(-2 * tour.t + 2, 2) / 2; // easeInOut
+      var pp = pEdges[seg].curve.getPoint(tt);
+      packet.position.copy(pp);
+      packetGlow.material.opacity = 0.65 + Math.sin(time * 5) * 0.2;
+    }
+
+    // 标签
+    NODES.forEach(function (n) {
+      if (n.dimmed) { n.el.style.display = 'none'; return; }
+      placeLabel(n.el, n.mesh.position, n.yOff);
+    });
+    ZONES.forEach(function (z) { placeFloorLabel(z.el, z.anchor); });
+    placeFloorLabel(baseEl, baseAnchor);
+
+    renderer.render(scene, camera);
+  }
+
+  function resize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  // 支持 ?mode=A / ?mode=B 深链
+  var initialMode = new URLSearchParams(location.search).get('mode');
+  setMode(initialMode === 'A' || initialMode === 'B' ? initialMode : 'arch');
+  animate();
+})();
+</script>
+</body>
+</html>
