@@ -2,7 +2,7 @@
   <div class="dashboard">
     <section class="hero">
       <div class="hero-copy">
-        <div class="hero-kicker"><span></span> GPT‑5.6 协作设计的研究工作台</div>
+        <div class="hero-kicker"><span></span> Scholar OS · 个人文献研究工作台</div>
         <h2>从一个问题出发，<br><em>构建你的学术脉络。</em></h2>
         <p>发现相关研究、审阅关键信息，并将可靠证据沉淀为可持续维护的个人文献库。</p>
         <div class="hero-actions">

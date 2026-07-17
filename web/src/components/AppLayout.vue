@@ -10,7 +10,6 @@
         <span class="brand-mark"><AppIcon name="spark" /></span>
         <span class="brand-copy">
           <strong>Scholar OS</strong>
-          <small>GPT‑5.6 designed</small>
         </span>
       </router-link>
 
@@ -33,11 +32,11 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="model-card">
-          <span class="model-orb"><i></i></span>
-          <span><small>协作设计</small><strong>GPT‑5.6</strong></span>
-        </div>
         <p>探索、审核与归档始终由你掌控</p>
+        <p
+          class="credits"
+          title="早期整体设计：MiMo-2.5 Pro&#10;整体质量控制：GPT-5.5 · Claude Sonnet 4.6&#10;界面设计：含 GPT-5.6 贡献&#10;元数据/分类抽取：MiMo-2.5 Pro&#10;当前主力：Kimi 3（GPT-5.6 辅助审核）"
+        >模型贡献 · MiMo-2.5 Pro / GPT-5.5 / Claude 4.6 / GPT-5.6 / Kimi 3</p>
       </div>
     </aside>
 
@@ -261,13 +260,8 @@ a:hover { text-decoration: none; }
 .nav-item.active::before { content: ''; position: absolute; left: -10px; width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: #35bd99; }
 .ai-dot { width: 5px; height: 5px; margin-left: auto; border-radius: 50%; background: #4dd4ad; box-shadow: 0 0 9px #4dd4ad; }
 .sidebar-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,.06); }
-.model-card { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 11px; background: rgba(255,255,255,.045); }
-.model-card > span:last-child { display: flex; flex-direction: column; line-height: 1.2; }
-.model-card small { color: #777a76; font-size: 9px; letter-spacing: .06em; }
-.model-card strong { margin-top: 3px; color: #e9eae7; font-size: 12px; font-weight: 580; }
-.model-orb { position: relative; display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid rgba(94,224,188,.32); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #6ae0be, #117c62 58%, #0c3c32); box-shadow: 0 0 18px rgba(45,187,150,.17); }
-.model-orb i { width: 7px; height: 7px; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; }
 .sidebar-footer p { margin: 9px 4px 0; color: #656863; font-size: 9px; line-height: 1.5; }
+.sidebar-footer .credits { color: #545752; cursor: default; }
 .workspace { min-height: 100vh; margin-left: var(--sidebar-width); }
 .topbar {
   position: sticky;
