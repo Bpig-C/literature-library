@@ -2,7 +2,7 @@
   <div class="stage-card" :class="{ expanded: isExpanded, 'has-items': count > 0 }">
     <!-- 头部 -->
     <div class="stage-header" @click="toggleExpand">
-      <span class="stage-icon">{{ icon }}</span>
+      <span class="stage-icon"><AppIcon :name="iconName" /></span>
       <div class="stage-info">
         <h2 class="stage-title">{{ title }}</h2>
         <p class="stage-desc">{{ description }}</p>
@@ -62,7 +62,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   icon: { type: String, required: true },
@@ -84,6 +85,15 @@ const props = defineProps({
 defineEmits(['execute'])
 
 const isExpanded = ref(props.defaultExpanded)
+const iconName = computed(() => {
+  if (props.title.includes('发现')) return 'discovery'
+  if (props.title.includes('采集审核')) return 'review'
+  if (props.title.includes('收件箱') || props.title.includes('摄入')) return 'ingest'
+  if (props.title.includes('解析')) return 'pipeline'
+  if (props.title.includes('元数据')) return 'metadata'
+  if (props.title.includes('分类')) return 'classify'
+  return 'spark'
+})
 
 function toggleExpand() {
   isExpanded.value = !isExpanded.value
@@ -94,17 +104,18 @@ function toggleExpand() {
 .stage-card {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
   transition: all var(--transition-fast);
 }
 
 .stage-card:hover {
   border-color: var(--accent-mute);
+  box-shadow: var(--shadow-sm);
 }
 
 .stage-card.has-items {
-  border-left: 3px solid var(--accent);
+  border-left: 2px solid var(--accent);
 }
 
 .stage-header {
@@ -118,13 +129,21 @@ function toggleExpand() {
 }
 
 .stage-header:hover {
-  background: var(--bg-muted);
+  background: #fafaf8;
 }
 
 .stage-icon {
-  font-size: 28px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: var(--accent-ink);
+  border-radius: 11px;
+  background: var(--accent-subtle);
   flex-shrink: 0;
 }
+
+.stage-icon .app-icon { width: 18px; height: 18px; }
 
 .stage-info {
   flex: 1;
@@ -133,7 +152,8 @@ function toggleExpand() {
 
 .stage-title {
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 590;
+  letter-spacing: -.015em;
   color: var(--text-primary);
   margin: 0 0 var(--space-1);
 }
@@ -233,7 +253,7 @@ function toggleExpand() {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  background: var(--accent);
+  background: #242522;
   color: #fff;
   border: none;
   border-radius: var(--radius-md);

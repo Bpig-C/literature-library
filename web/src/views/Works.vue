@@ -1,6 +1,13 @@
 ﻿<template>
-  <div>
-    <h1>文献</h1>
+  <div class="works-page">
+    <div class="page-intro">
+      <div>
+        <span class="page-kicker">KNOWLEDGE LIBRARY</span>
+        <h1>文献库</h1>
+        <p>在一个稳定、可追溯的空间中检索与组织研究材料。</p>
+      </div>
+      <div class="library-count"><strong>{{ totalMatching }}</strong><span>当前结果</span></div>
+    </div>
     <div class="toolbar">
       <n-input v-model:value="search" type="text" placeholder="搜索标题、ID、arXiv..." clearable @input="debouncedLoad" style="width: 240px" />
       <n-select v-model:value="statusFilter" :options="STATUS_OPTIONS" style="width: 120px" @update:value="resetAndLoad" />
@@ -458,6 +465,15 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+.works-page { width: min(1380px, 100%); margin: 0 auto; }
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; }
+.page-kicker { display: block; margin-bottom: 6px; color: var(--accent); font-size: 9px; font-weight: 680; letter-spacing: .11em; }
+.page-intro h1 { margin: 0; font-size: 28px; font-weight: 610; letter-spacing: -.035em; }
+.page-intro p { margin-top: 6px; color: var(--text-secondary); font-size: 12px; }
+.library-count { display: flex; min-width: 86px; flex-direction: column; align-items: flex-end; padding-left: 20px; border-left: 1px solid var(--border); }
+.library-count strong { font-size: 24px; font-weight: 620; letter-spacing: -.04em; }
+.library-count span { color: var(--text-tertiary); font-size: 9px; letter-spacing: .05em; }
+
 .page-title {
   font-size: var(--text-2xl);
   font-weight: 600;
@@ -471,19 +487,24 @@ onMounted(loadData)
   flex-wrap: wrap;
   align-items: center;
   margin-bottom: var(--space-3);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(255,255,255,.82);
+  box-shadow: var(--shadow-sm);
 }
 
 .count {
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  margin-bottom: var(--space-2);
+  margin: 15px 2px 8px;
 }
 
 .advanced-filters {
-  background: var(--bg-muted);
+  background: rgba(255,255,255,.72);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
+  padding: 18px;
   margin-bottom: var(--space-3);
 }
 
@@ -543,8 +564,9 @@ onMounted(loadData)
 .table-wrap {
   background: var(--bg-surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 
 table {
@@ -554,14 +576,16 @@ table {
 
 th, td {
   border-bottom: 1px solid var(--border);
-  padding: var(--space-2) var(--space-3);
+  padding: 13px 14px;
   text-align: left;
   vertical-align: top;
 }
 
 th {
-  background: var(--bg-muted);
-  font-size: var(--text-sm);
+  background: #f5f5f2;
+  font-size: 10px;
+  font-weight: 620;
+  letter-spacing: .035em;
   color: var(--text-secondary);
   position: sticky;
   top: 0;
@@ -572,11 +596,11 @@ tr {
 }
 
 tr:hover td {
-  background: var(--accent-subtle);
+  background: #f2f8f5;
 }
 
 .title {
-  font-weight: 600;
+  font-weight: 570;
   max-width: 500px;
   color: var(--text-primary);
 }
@@ -595,5 +619,15 @@ tr:hover td {
   margin: 0 0 var(--space-4);
   font-size: var(--text-base);
   color: var(--text-secondary);
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 700px) {
+  .page-intro { align-items: flex-start; }
+  .library-count { display: none; }
+  .toolbar :deep(.n-input) { width: 100% !important; }
+  .table-wrap { overflow-x: auto; }
+  table { min-width: 850px; }
 }
 </style>

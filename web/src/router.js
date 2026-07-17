@@ -117,7 +117,7 @@ const router = createRouter({
 
 // 路由守卫: 设置页面标题 + 日志
 router.beforeEach((to, from) => {
-  const title = to.meta?.title ? `${to.meta.title} - 文献库` : '文献库'
+  const title = to.meta?.title ? `${to.meta.title} · Scholar OS` : 'Scholar OS'
   document.title = title
   if (import.meta.env.DEV) {
     console.log(`[Router] ${from.path} -> ${to.path}`)
