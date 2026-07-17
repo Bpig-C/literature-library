@@ -1,7 +1,7 @@
 # Superpowers 规格、计划与审核索引
 
 > 状态：当前索引
-> 更新时间：2026-07-05
+> 更新时间：2026-07-17
 
 本目录只保留仍需当前维护或最近一轮复核的 superpowers 文档。已完成阶段的规格、计划和审核证据集中归档到 `docs/_archive/superpowers/`，避免后续维护者把旧任务清单或旧 finding 当成当前事实。
 
@@ -17,8 +17,7 @@
 
 ## 当前有效审查
 
-- `reviews/2026-07-05-system-calibration.md`：系统定位与使用闭环校准。4 个独立子 agent 审计（文档/流程/数据模型/代码风险）+ 交叉复核，产出系统定位一页纸、日常流程图、字段状态字典、2 周路线图。
-- `reviews/2026-07-03-handover-audit.md`：对 2026-07-02/03 交接内容、代码变更和文档一致性的复核记录。
+- 暂无。`reviews/2026-07-05-system-calibration.md`（2 周路线图窗口已结束）与 `reviews/2026-07-03-handover-audit.md` 已于 2026-07-17 归档至 `docs/_archive/superpowers/reviews/`。
 
 ## 历史归档入口
 
