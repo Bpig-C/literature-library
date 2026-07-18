@@ -1,6 +1,6 @@
 # 业务流程图
 
-> 最后更新：2026-07-17
+> 最后更新：2026-07-18
 > 范围：用户浏览器操作、智能体 CLI 操作、API 自动化操作，以及跨 `web`、`api`、`collector`、`parser`、`scripts` 的协作。
 > ⚠️ 流程图已升级为 three.js 交互导览：**[scholar-os-architecture.html](../architecture/scholar-os-architecture.html)**（流程 A = 本地入库路径，流程 B = 发现检索路径，动画逐步播放，节点可点击查看职责）。原 7 张 SVG 流程图已归档至 `docs/_archive/architecture/diagrams-2026-06/`，仅作历史快照；本文保留流程的文字契约部分。
 
@@ -114,3 +114,9 @@ POST /api/intake/promote → ingest_bridge → works
 TopicsReview → POST /api/intake/collect → intake_candidates
 ```
 这条路径绕过 Discovery，直接进入 Intake 候选池。适用于已知精确 ID 的场景。
+
+## 流程七：已批准文献导出
+
+- 入口：Works 页（`/works`）工具栏「导出」弹窗，或直接调用 `GET /api/export/bibtex`、`GET /api/export/ris`、`GET /api/export/matrix.csv`。
+- 门禁：仅导出元数据已批准（approved）且未隔离的文献。
+- 综述矩阵 CSV 的「一句话定位」列取该文献已批准的 digest（无则留空）。

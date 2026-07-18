@@ -652,9 +652,15 @@ async function doBatchApprove() {
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
-      const res = await batchApproveLowRisk()
-      message.success(`已批准 ${res.approved} 条，回填 ${res.applied} 条`)
-      await loadList()
+      try {
+        const res = await batchApproveLowRisk()
+        message.success(`已批准 ${res.approved} 条，回填 ${res.applied} 条`)
+        // 批量操作会使当前详情陈旧（被批准或被 supersede），清空选中避免二次操作旧记录
+        selected.value = null
+        await loadList()
+      } catch (e) {
+        message.error(e?.message || '批量批准失败')
+      }
     },
   })
 }

@@ -1,6 +1,6 @@
 # 文献库技术说明
 
-> 更新时间：2026-07-17
+> 更新时间：2026-07-18
 > 适用版本：V1.3。collector / parser / inbox / review / discovery 链路已具备 CLI、API、UI 闭环；P1 发布阻断项已清零。
 > ⚠️ 注意：本次已按 2026-07-17 审计修正路由组/页面/端点/导航/抽取链路；其余细节仍以代码为准。
 > 数据根目录：`D:\02_academic\doctoral\literature_library`
@@ -62,7 +62,7 @@ literature_library/
 
 ### FastAPI 后端
 
-`api/main.py` 启动 FastAPI 应用，挂载 11 组路由：works、relations、duplicates、files、metadata、classification、intake、discovery、parse、ingest、templates。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
+`api/main.py` 启动 FastAPI 应用，挂载 12 组路由：works、relations、duplicates、files、metadata、classification、intake、discovery、parse、ingest、templates、export。生产模式下同时托管 Vue 构建产物。CORS 允许 `localhost:19528`。
 
 ### Vue 前端
 
@@ -351,7 +351,7 @@ Vue SPA 提供 15 个页面（含 NotFound 兜底页）：
 
 | 页面 | 路径 | 职责 |
 |---|---|---|
-| Dashboard | `/` | 统计总览、快捷入口 |
+| Dashboard | `/` | 待办驾驶舱：流程队列/积压补审/建议下一步 + 快捷入口 |
 | Works | `/works` | 文献列表，搜索/筛选/分页，隔离/恢复操作 |
 | WorkDetail | `/works/:id` | 文献详情，编辑元数据，查看 content.md，管理关系 |
 | PipelineView | `/pipeline` | 处理流程：收件箱→解析→元数据→分类四阶段流水线与批量触发 |
@@ -469,7 +469,7 @@ Vue SPA 提供 15 个页面（含 NotFound 兜底页）：
 | GET | `/api/ingest/plan` | 摄入 dry-run 预览 |
 | POST | `/api/ingest/execute` | 执行摄入 |
 | POST | `/api/ingest/upload` | 上传 PDF 到 `_inbox` |
-| GET | `/api/pipeline/stats` | 四阶段流水线统计 |
+| GET | `/api/pipeline/stats` | 四阶段 + intake/backlog 积压口径统计 |
 | GET | `/api/pipeline/pending-metadata` | 待元数据抽取队列 |
 | GET | `/api/pipeline/pending-classification` | 待分类抽取队列 |
 | GET | `/api/templates` | 模板资产总览 |
@@ -479,6 +479,9 @@ Vue SPA 提供 15 个页面（含 NotFound 兜底页）：
 | POST | `/api/templates/metadata/reset` | 重置元数据模板为默认 |
 | POST | `/api/templates/classification` | 保存分类模板（预留，不发布） |
 | POST | `/api/templates/discovery` | 保存 Discovery 模板（预留） |
+| GET | `/api/export/bibtex` | BibTeX 引用导出（门禁：approved 元数据 + 未隔离；Works 页导出弹窗入口） |
+| GET | `/api/export/ris` | RIS 引用导出（同上门禁） |
+| GET | `/api/export/matrix.csv` | 综述矩阵 CSV 导出（同上门禁） |
 
 ## 7. CLI 工具
 
@@ -523,8 +526,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 - 仍无"直接前端文件上传到 work"端点；新增文献经 `_inbox/` 摄入——现已有前端入口 `/inbox`(InboxReview，dry-run+确认，Phase B')，也可命令行或 `POST /api/ingest/*`。
 - 摄入后不自动触发解析，需手动触发：CLI `python scripts/literature_batch_parse.py --execute`、API `POST /api/parse/trigger`、或 WorkDetail 按钮（经 `parser/` 子项目二元路由：PyMuPDF 本地 / MinerU cloud vlm）。
 - `year` 暂不自动回填，因为模型容易误提取会议年份或修订日期。
-- 综述矩阵导出（`scripts/literature_matrix.py`）、分析 API（`GET /api/works/{id}/analyses`）、分析页面尚未实现。
-- 引用导出（BibTeX/RIS）尚未实现。
+- 综述矩阵经 `/api/export/matrix.csv` 已实现（阶段一）；独立分析页面与批量 digest 仍无。
 - `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。
 - 前端路由已改为惰性加载（`router.js`），构建产物按页面拆分 chunk，避免单 chunk 过大。
 - 隔离/恢复路径已收敛到共享 nucleus `api/quarantine.py`。新 quarantine 操作必须保持 `works.read_status`、`source_files.source_path`、`source_files.status` 一致；以 `healthcheck_library.py` 复核为准。
@@ -534,6 +536,9 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 
 | 日期 | 变更 |
 |---|---|
+| 2026-07-18 | 主线阶段二（驾驶舱与流程接力 + 积压口径澄清）：Dashboard 待办驾驶舱、useNextStep 接力提示、审核页自动下一条；`/api/pipeline/stats` 扩展 intake/backlog 口径（含 `*_all` 全量口径） |
+| 2026-07-18 | 主线阶段一（引用导出 + 综述矩阵）：新增 export 路由组（`/api/export/bibtex`、`/api/export/ris`、`/api/export/matrix.csv`）与 Works 页导出弹窗 |
+| 2026-07-17 | 文档审计修正：路由组/页面/端点/导航/抽取链路按代码事实对齐 |
 | 2026-06-14 | P1.1 AnalysisRun 基础设施：`analysis_runs` 表、`literature_analyze.py`（plan/submit/status/review）、`digest@v1` 模板、`test_analysis_runs.py`（16 tests）、healthcheck 扩展 6 项检查、5 篇 digest 试跑；测试隔离修复（LIBRARY_ROOT patch）；restore 清理空 quarantine 目录 |
 | 2026-06-14 | 分类积压清空（119 approved / 0 pending）；词汇表同步（1842 tags）；confidence 合并修复；去重系统增强；WorkDetail 重构；数据一致性修复 |
 | 2026-06-08 | 双模型支持（Ollama + Mimo 2.5 Pro）；覆盖式批准+supersede；模型 tab 过滤；works 新增 contributors/publication_date_json/分类字段；TECHNICAL_OVERVIEW 全面更新 |

@@ -231,6 +231,20 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal --
 | `GET` | `/api/classification/extractions/{ext_id}` | 分类抽取详情 |
 | `PATCH` | `/api/classification/extractions/{ext_id}/review` | 审核分类抽取结果 |
 
+引用导出与综述矩阵（门禁：仅含元数据已批准且未隔离的文献）：
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/export/bibtex` | BibTeX 引用导出 |
+| `GET` | `/api/export/ris` | RIS 引用导出 |
+| `GET` | `/api/export/matrix.csv` | 综述矩阵 CSV 导出 |
+
+```powershell
+curl "http://localhost:19527/api/export/bibtex"
+```
+
+（ris、matrix.csv 同理替换路径。）
+
 批量 agent 不需要从前端复制 prompt；直接读模板并调用 CLI/API。
 
 ## 本地脚本速查

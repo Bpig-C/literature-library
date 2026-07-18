@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="discovery-layout">
     <!-- Left: runs panel with tab switch -->
     <div class="runs-panel">
@@ -248,10 +248,12 @@ import {
   getIntakeTopics,
 } from '../api'
 import { showError } from '../error-handler'
+import { useNextStep } from '../composables/useNextStep'
 import StatusBadge from '../components/StatusBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 
 const route = useRoute()
+const { notifyNext } = useNextStep()
 
 const RUN_STATUSES = [
   { key: '', label: '全部' },
@@ -526,6 +528,8 @@ async function doAccept() {
     await acceptDiscoveryHit(selectedHit.value.id, reviewNote.value)
     selectedHit.value = { ...selectedHit.value, review_status: 'accepted' }
     await loadHits()
+    // 接力引导：accept 后进入 intake 候选池，提示去采集审核
+    notifyNext('已接受命中，候选已进入采集闸门', { label: '去采集审核', to: '/intake' })
   } catch (e) {
     showError(e)
   } finally {
@@ -547,11 +551,20 @@ async function doReject() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   const topicId = route.query.topic_id
   if (topicId) planInput.value = topicId
-  loadRuns()
+  await loadRuns()
   loadTopics()
+  // 支持 /discovery?run_id= 深链（如 Pipeline 迷你列表跳转）
+  const runId = route.query.run_id
+  if (runId) {
+    const run = runs.value.find(r => r.id === runId)
+    if (run) {
+      leftTab.value = 'runs'
+      await selectRun(run)
+    }
+  }
 })
 </script>
 

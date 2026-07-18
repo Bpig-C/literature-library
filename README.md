@@ -17,11 +17,13 @@ README 是项目首页和导航页，不再承载完整操作手册。具体流�
   -> 分类抽取
   -> 人工审核
   -> 回填稳定层
+  -> 引用导出/综述矩阵（已批准文献）
 ```
 
 核心状态：
 
 - V1 基础设施、V1.1 前端端到端主流程、V1.2 composite 发现检索、V1.3 知识闭环已完成。
+- 主线阶段一（引用导出/综述矩阵）与阶段二（驾驶舱）已于 2026-07-18 完成。
 - FastAPI 后端默认端口 `19527`，Vue 3 前端默认端口 `19528`。
 - 解析状态以 SQLite `literature_parse_runs` 表为唯一权威。
 - 元数据模板已接入真实抽取链路：`/templates` 编辑 `templates/templates.json`，CLI/API/字段级重抽/审核页共同读取 `api/metadata_template.py` loader。
@@ -117,7 +119,7 @@ D:\02_academic\doctoral\literature_library
 | `/topics` | 采集主题管理 |
 | `/discovery` | 审核 agent 回填的发现检索命中 |
 | `/intake` | 审核采集候选并 promote |
-| `/works` | 浏览正式文献库 |
+| `/works` | 浏览正式文献库，导出 BibTeX/RIS/综述矩阵 |
 | `/works/:id` | 单篇文献工作台 |
 | `/metadata` | 元数据抽取审核和字段级重抽 |
 | `/classification` | 分类抽取审核 |

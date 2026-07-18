@@ -12,13 +12,14 @@
 | 目录 | 当前用途 | 规则 |
 |---|---|---|
 | `specs/` | 新增且仍有效的设计规格和审核指导。 | 当前为空；历史规格在 `docs/_archive/superpowers/specs/`。 |
-| `plans/` | 新增且尚未完成的任务拆解和阶段实施计划。 | 当前为空；完成后归档到 `docs/_archive/superpowers/plans/`。 |
+| `plans/` | 新增且尚未完成的任务拆解和阶段实施计划。 | 当前为空；2026-07-18 两份阶段方案（`2026-07-18-export-minimal-loop.md`、`2026-07-18-cockpit-relay.md`）已完成并归档至 `docs/_archive/superpowers/plans/`。 |
 | `reviews/` | 最近一轮仍需参考的审核、整改或交接复核。 | 只保留当前最新审核；旧审核在 `docs/_archive/superpowers/reviews/`。 |
 
 ## 当前有效审查
 
 - `reviews/2026-07-18-export-review.md`：主线阶段一（引用导出+综述矩阵）两轮模型独立审核记录，finding 全部修复。
 - `reviews/2026-07-18-cockpit-review.md`：主线阶段二（驾驶舱与流程接力）两轮模型独立审核记录，finding 修复完毕。
+- `reviews/2026-07-18-stage2-full-review.md`：阶段一/二收尾全范围审查（4 独立 agent + 交叉复核，首次执行）；高危 I-1 SPA 深链、I-2 message 挂载等已修，遗留决策项登记于 USER_ISSUES REV-001~006。
 
 历史提示：`reviews/2026-07-05-system-calibration.md` 与 `reviews/2026-07-03-handover-audit.md` 已于 2026-07-17 归档至 `docs/_archive/superpowers/reviews/`。
 

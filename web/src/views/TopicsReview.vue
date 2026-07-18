@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <div class="topics-layout">
       <div class="list-panel">
         <h2 class="page-title">主题闸门 <span class="muted tiny">collector 成熟度</span></h2>
@@ -557,6 +557,7 @@ async function doCreateTopic() {
     await createTopic(payload)
     showCreateForm.value = false
     createForm.value = { name: '', description: '', explicit_ids_str: '', seed_paper_ids_str: '', axis_hint: '', tags: [], keywords: '', authors: '', institutions: '', known_names: '', known_titles: '', known_urls: '', preferred_domains: '', exclude_terms: '' }
+    window.__naive_message?.success(`主题「${payload.name}」已创建`)
     await reload()
   } catch (e) {
     showError(e)

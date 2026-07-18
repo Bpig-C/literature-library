@@ -2,7 +2,7 @@
 
 > **用途**：帮助新接手者快速了解项目全貌，以便和用户一起决定下一步做什么。
 > **不指定具体任务**——本文档只负责"让你看得懂"，决策权在用户。
-> **更新时间**：2026-07-17
+> **更新时间**：2026-07-18
 
 ---
 
@@ -38,12 +38,12 @@
 
 | 文档/目录 | 内容 |
 |-----------|------|
-| `api/routes/*.py` | 后端 API 全部路由（11 个文件） |
+| `api/routes/*.py` | 后端 API 全部路由（12 个文件） |
 | `web/src/router.js` | 前端全部页面路由与导航结构 |
 | `web/src/api.js` | 前端所有后端调用封装 |
 | `web/src/views/*.vue` | 当前 15 个页面组件（含 TemplateManage.vue 与 NotFound.vue） |
 | `web/src/components/*.vue` | 通用 UI 组件（12 个） |
-| `web/src/composables/use*.js` | 可复用逻辑封装（6 个） |
+| `web/src/composables/use*.js` | 可复用逻辑封装（7 个） |
 
 ### 第三步：了解关键设计决策
 
@@ -164,6 +164,8 @@
 | **元数据模板使用文档同步** (2026-07-05) | 用户手册、CLI 手册和 scripts README 明确 UI、CLI/API、agent 批量处理边界 | `docs/manuals/user-manual.md`、`docs/manuals/cli-manual.md`、`scripts/README.md` |
 | **使用手册角色拆分** (2026-07-05) | 新增用户手册、CLI/自动化手册、Agent 协作手册，README 改为总入口 | `docs/README.md` |
 | **分类规范与审核模板 V1.1** (2026-07-05) | 分类方法规范 v0.2.2 与后端 VOCAB 对齐，补充变更流程、审核语义和字段实现状态 | `docs/methodology/classification-methodology.md` |
+| **主线阶段一·引用导出与综述矩阵** (2026-07-18) | `/api/export/bibtex`、`/api/export/ris`、`/api/export/matrix.csv` 三端点（approved 元数据 + 未隔离门禁）+ Works 页导出弹窗 | `docs/superpowers/reviews/2026-07-18-export-review.md` |
+| **主线阶段二·驾驶舱与流程接力** (2026-07-18) | Dashboard 待办驾驶舱（流程待办/积压补审/建议下一步）+ useNextStep 接力 + 审核页自动下一条；`/api/pipeline/stats` 扩展 intake/backlog 口径 | `docs/superpowers/reviews/2026-07-18-cockpit-review.md` |
 
 ### 待做项（详见 `FUTURE_WORK_PLAN.md`）
 
@@ -194,11 +196,11 @@
 | #3 | 分类规范与审核模板 V1.1 | 高 | ✅ 已完成（方法论文档 v0.2.2 与 VOCAB 对齐） |
 | #4 | 分类标签事务式保存 | 中 | 📋 待处理 |
 | #5 | Parse status 多源语义 | 低 | 📋 待处理 |
-| #6 | Dashboard 队列压力面板 | 中 | 📋 待处理 |
+| #6 | Dashboard 队列压力面板 | 中 | ✅ 已完成（主线阶段二，见 `docs/PROJECT_HISTORY.md` 2026-07-18 条目） |
 | #7 | 审核日志语义统一 | 低 | 📋 待处理 |
 | #8 | needs_better_copy 替换源文件链路 | 低 | 📋 待处理 |
 | #9 | 文档治理自动化 | 低 | ◐ 部分完成（`scripts/check_docs.py` 已有；CI 接入待做） |
-| #10 | 引用导出与综述矩阵 | 中 | 📋 待处理 |
+| #10 | 引用导出与综述矩阵 | 中 | ✅ 已完成（主线阶段一，见 `docs/PROJECT_HISTORY.md` 2026-07-18 条目） |
 | #11 | proposed_new 标签转正路径 | 中 | 📋 待处理 |
 
 **暂不做**：移动端适配、大规模自动采集、无约束自动入库。

@@ -1,6 +1,6 @@
 """Export API routes: BibTeX / RIS / 综述矩阵 CSV。
 
-阶段一出口侧最小闭环（docs/superpowers/plans/2026-07-18-export-minimal-loop.md）。
+阶段一出口侧最小闭环（docs/_archive/superpowers/plans/2026-07-18-export-minimal-loop.md）。
 统一过滤规则：read_status != 'quarantined' 且存在 approved 的 metadata_extractions。
 """
 
@@ -101,12 +101,14 @@ def _download(body: str, ext: str, media_type: str) -> Response:
     )
 
 
-def _gather(search, doc_type, tag, work_ids):
+def _gather(search, doc_type, tag, work_ids, include_digests: bool = False):
     conn = get_conn()
     try:
         works = [dict(r) for r in _select_works(conn, search, doc_type, tag, work_ids)]
         ids = [w["id"] for w in works]
-        return works, _load_tags(conn, ids), _load_digests(conn, ids)
+        # digest 只有矩阵 CSV 用得到，BibTeX/RIS 不多打这条查询
+        digests = _load_digests(conn, ids) if include_digests else {}
+        return works, _load_tags(conn, ids), digests
     finally:
         conn.close()
 
@@ -142,7 +144,7 @@ def export_matrix(
     tag: str | None = Query(default=None),
     work_ids: str | None = Query(default=None),
 ):
-    works, tags, digests = _gather(search, doc_type, tag, work_ids)
+    works, tags, digests = _gather(search, doc_type, tag, work_ids, include_digests=True)
     rows = []
     for w in works:
         rows.append({

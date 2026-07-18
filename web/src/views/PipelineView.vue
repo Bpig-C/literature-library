@@ -19,9 +19,6 @@
       :action-disabled="false"
       @execute="$router.push('/discovery')"
     >
-      <template #extra>
-        <router-link to="/discovery" class="goto-link">查看全部检索记录 →</router-link>
-      </template>
       <template #default>
         <div v-if="stages.discovery.recentRuns.length" class="review-mini-list">
           <div
@@ -55,12 +52,6 @@
       :action-disabled="false"
       @execute="$router.push('/intake')"
     >
-      <template #extra>
-        <div class="intake-extra">
-          <span>已拒绝: {{ stages.intakeReview.rejectedCount }}</span>
-          <router-link to="/intake" class="goto-link">查看全部 →</router-link>
-        </div>
-      </template>
       <template #default>
         <div v-if="stages.intakeReview.recentCandidates.length" class="review-mini-list">
           <div
@@ -84,7 +75,7 @@
     <StageCard
       icon="📥"
       title="收件箱摄入"
-      description="摄入 _inbox/ 中的文件到文献库（上传请前往「文献入库」页面）"
+      description="摄入 _inbox/ 中的文件到文献库（PDF 放入 _inbox 后可在此或收件箱页扫描）"
       :count="stages.ingest.count"
       stat-label="待摄入"
       action-label="摄入选中"
@@ -93,8 +84,8 @@
       @execute="batchIngest"
     >
       <template #filters>
-        <router-link to="/ingest" class="goto-upload" target="_blank">
-          前往 文献入库 页面上传 PDF →
+        <router-link to="/inbox" class="goto-upload" target="_blank">
+          前往 收件箱 页面（扫描 / 确认摄入）→
         </router-link>
         <input
           v-model="stages.ingest.filter"

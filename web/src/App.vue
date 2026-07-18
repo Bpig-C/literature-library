@@ -1,5 +1,6 @@
 <script setup>
 import AppLayout from './components/AppLayout.vue'
+import MessageApiMount from './components/MessageApiMount.vue'
 import { NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui'
 
 const themeOverrides = {
@@ -44,6 +45,7 @@ const themeOverrides = {
 <template>
   <NConfigProvider :theme-overrides="themeOverrides">
     <NMessageProvider>
+      <MessageApiMount />
       <NDialogProvider>
         <AppLayout>
           <router-view />

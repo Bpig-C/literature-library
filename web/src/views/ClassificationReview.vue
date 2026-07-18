@@ -703,9 +703,15 @@ async function saveDraft() {
 }
 
 async function doBatchApprove() {
-  const res = await batchApproveLowAmbiguity()
-  message.success(`已批准 ${res.approved} 条低模糊度记录`)
-  await loadList()
+  try {
+    const res = await batchApproveLowAmbiguity()
+    message.success(`已批准 ${res.approved} 条低模糊度记录`)
+    // 批量操作会使当前详情陈旧（被批准或被 supersede），清空选中避免二次操作旧记录
+    selected.value = null
+    await loadList()
+  } catch (e) {
+    message.error(e?.message || '批量批准失败')
+  }
 }
 
 function openQuarantineModal() {

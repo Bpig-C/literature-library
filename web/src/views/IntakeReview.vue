@@ -205,6 +205,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { getIntakeCandidates, getIntakeStats, reviewCandidate, promoteCandidates, resolveIntake, uploadCandidatePdf, getDiscoveryRun, getIntakeTopics } from '../api'
 import { showError } from '../error-handler'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -482,9 +483,24 @@ function onApprove() {
   showConfirmDialog.value = true
 }
 
-onMounted(() => {
-  reload()
+const route = useRoute()
+
+onMounted(async () => {
+  await reload()
   loadTopics()
+  // 支持 /intake?selected=IC-xxx 深链（如 Pipeline 迷你列表跳转）
+  const sel = route.query.selected
+  if (sel) {
+    let hit = candidates.value.find(c => c.id === sel)
+    if (!hit && reviewFilter.value) {
+      // 目标可能不在当前筛选内，清空筛选后再找
+      reviewFilter.value = ''
+      page.value = 1
+      await reload()
+      hit = candidates.value.find(c => c.id === sel)
+    }
+    if (hit) selected.value = hit
+  }
 })
 </script>
 

@@ -67,6 +67,54 @@
   - `/classification` 审核页中，关键字段和选项不只显示 raw key；需要 raw key 时也能保留查看。
   - 不修改 `classification_vocab.py` 的词汇发布机制，不开放分类词汇保存。
 
+### REV-001: classification_extractions 缺 superseded_by 列（schema 不对称）
+- **发现日期**：2026-07-18（全范围审查 Agent B）
+- **页面/模块**：数据层
+- **问题描述**：metadata_extractions 与 analysis_runs 都有 superseded_by 审计链，classification_extractions 没有，分类重跑/替代无链可追。
+- **期望行为**：评估是否补列对齐（schema 变更，需用户确认并补迁移/回滚/fixture 测试）。
+- **优先级**：🟡 中
+- **状态**：📋 待处理（待用户决策）
+
+### REV-002: 两条隔离路径对 pending extractions 的语义分叉
+- **发现日期**：2026-07-18（全范围审查 Agent B）
+- **页面/模块**：works 页隔离 vs 元数据审核页隔离
+- **问题描述**：works 页隔离只移源文件+改状态，pending extractions 原样保留（现存 10 条，可经"显示已隔离"找回，解除隔离后回到待审）；审核页隔离则把 pending 打 rejected。两条路径语义不一致。
+- **期望行为**：用户选定一种为预期行为并写入文档；若保留"可找回"语义，建议在隔离操作时提示 pending 记录去向。
+- **优先级**：🟡 中
+- **状态**：📋 待处理（待用户决策）
+
+### REV-003: intake promote 后 review_status 未同步 ingested
+- **发现日期**：2026-07-18（全范围审查 Agent B）
+- **页面/模块**：collector/ingest_bridge promote
+- **问题描述**：现存 1 行 status=ingested 但 review_status=approved 的交叉行，导致 /api/intake/stats 的 approved 桶虚高。
+- **期望行为**：promote 成功后同步 review_status='ingested'；订正历史交叉行。
+- **优先级**：🟢 低
+- **状态**：📋 待处理（待用户确认数据订正）
+
+### REV-004: works.parse_status 派生字段漂移 29 行
+- **发现日期**：2026-07-18（全范围审查 Agent C）
+- **页面/模块**：api/quarantine.py + 真实库
+- **问题描述**：28 篇隔离 work 的 parse_status 停留 succeeded（隔离/恢复均不重算派生值，目前靠"两边都不改"巧合正确）；另有 1 篇活跃 work（W-sha-a8a170a6a268）active 源无 parse run 但状态 succeeded——需用户判断是换副本预期态还是漏解析。
+- **期望行为**：quarantine/restore 调用 sync_work_parse_status；对历史漂移跑一次同步；确认该活跃 work 的处理方式。
+- **优先级**：🟡 中
+- **状态**：📋 待处理（待用户决策）
+
+### REV-005: conftest 与真实 schema 漂移掩盖真实约束
+- **发现日期**：2026-07-18（全范围审查 Agent C）
+- **页面/模块**：tests/conftest.py
+- **问题描述**：缺 intake_candidates UNIQUE(source_type,url_canonical) 与 NOT NULL、缺 discovery_runs/discovery_hits/inventory_meta 等表、works.parse_status fixture 词表与真实词表不符；新测试在宽松 schema 下能通过但真实库会违约。
+- **期望行为**：conftest 对齐真实 schema（至少补 UNIQUE/NOT NULL 与 discovery 两表）。
+- **优先级**：🟡 中
+- **状态**：📋 待处理
+
+### REV-006: parse_runs/metadata_extractions 的 work_id 无索引
+- **发现日期**：2026-07-18（全范围审查 Agent C）
+- **页面/模块**：数据层（stats/export 查询）
+- **问题描述**：backlog/导出的相关子查询全表扫描；当前 150 篇约 15ms 健康，千级后会变慢且 Pipeline 每次刷新调两次 stats。
+- **期望行为**：补 literature_parse_runs(work_id,status)、metadata_extractions(work_id,review_status) 索引（schema 变更，需用户确认；建议趁库小就做）。
+- **优先级**：🟢 低（当前性能健康）
+- **状态**：📋 待处理（待用户确认）
+
 ### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表
 - **发现日期**：2026-07-02
 - **页面/模块**：解析流程（parser/core/mineru/router.py 路由策略）

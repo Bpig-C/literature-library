@@ -1,7 +1,8 @@
 # 阶段二实施方案：驾驶舱与流程接力
 
+> 状态：历史记录（2026-07-18 阶段完成）
 > 所属主线：`FUTURE_WORK_PLAN.md`「当前主线」阶段二（#6 + 流程断点引导）。
-> 方案位置：按治理存于 `docs/superpowers/plans/2026-07-18-cockpit-relay.md`（执行时创建）。
+> 方案位置：按治理归档于 `docs/_archive/superpowers/plans/2026-07-18-cockpit-relay.md`。
 
 ## 目标与非目标
 

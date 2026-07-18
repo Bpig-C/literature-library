@@ -43,7 +43,7 @@
             <button
               class="btn-primary"
               :disabled="selectedCount === 0 || loading || actionDisabled"
-              :title="actionDisabled ? '当前为审核模式，请切换到「待抽取」标签后操作' : ''"
+              :title="actionDisabled ? '当前状态下不可执行（请检查筛选/状态选择）' : ''"
               @click="$emit('execute')"
             >
               <span v-if="loading" class="loading-spinner"></span>

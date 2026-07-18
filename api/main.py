@@ -35,5 +35,23 @@ app.include_router(export.router, prefix="/api")
 
 # Serve Vue build in production
 DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
+
+
+@app.exception_handler(404)
+async def spa_fallback(request, exc):
+    """SPA fallback：前端路由（如 /inbox、/metadata）刷新/深链时回退到 index.html。
+
+    API 路径保持 JSON 404；仅当 dist 存在时启用（开发模式走 vite）。
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+
+    if request.url.path.startswith("/api"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    index = DIST / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
 if DIST.exists():
     app.mount("/", StaticFiles(directory=str(DIST), html=True), name="static")
