@@ -36,11 +36,25 @@ def client(sample_db, monkeypatch):
     return TestClient(app)
 
 
-def test_backlog_metrics_baseline(client):
+def test_backlog_metrics_baseline(client, sample_db):
     stats = client.get("/api/pipeline/stats").json()
     assert stats["backlog"]["metadata_unapproved"] == 1       # 仅 W-sample-001
     assert stats["backlog"]["classification_unapproved"] == 1  # 仅 W-sample-001
     assert stats["intake"]["pending"] == 0
+    # 全量口径与测试当时 DB 直查一致（sample_db 为 session 共享，其他测试可能改变批准状态，
+    # 故不断言固定数值而断言端点与库一致）
+    conn = sqlite3.connect(str(sample_db))
+    try:
+        meta_all = conn.execute(
+            "SELECT COUNT(*) FROM works w WHERE NOT EXISTS (SELECT 1 FROM metadata_extractions m WHERE m.work_id = w.id AND m.review_status = 'approved')"
+        ).fetchone()[0]
+        cls_all = conn.execute(
+            "SELECT COUNT(*) FROM works w WHERE NOT EXISTS (SELECT 1 FROM classification_extractions c WHERE c.work_id = w.id AND c.review_status = 'approved')"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert stats["backlog"]["metadata_unapproved_all"] == meta_all
+    assert stats["backlog"]["classification_unapproved_all"] == cls_all
 
 
 def test_existing_fields_not_regressed(client):

@@ -60,6 +60,7 @@
             </router-link>
           </div>
           <p class="backlog-note">补审通过后才可用于引用导出与综述矩阵</p>
+          <p class="backlog-note" v-if="backlogExcluded > 0">另有 {{ backlogExcluded }} 篇已隔离/未解析不在此列（全量未批准口径共 {{ backlogAll }} 篇）</p>
         </div>
       </section>
 
@@ -100,7 +101,7 @@ const stats = ref({ total: 0, unread: 0, quarantined: 0, relations: 0, docTypes:
 const queue = ref({
   inbox: 0, parse: 0, metaExtract: 0, metaReview: 0,
   classExtract: 0, classReview: 0, intake: 0, duplicates: 0,
-  metaUnapproved: 0, classUnapproved: 0,
+  metaUnapproved: 0, classUnapproved: 0, metaUnapprovedAll: 0, classUnapprovedAll: 0,
 })
 
 // 流程待办：按流水线顺序排列；count 为 0 的行保留但视觉弱化
@@ -120,6 +121,10 @@ const backlogItems = computed(() => [
   { to: '/works', icon: 'metadata', title: '未批准元数据', description: '已解析但元数据尚未批准的文献', count: queue.value.metaUnapproved },
   { to: '/works', icon: 'classify', title: '未批准分类', description: '已解析但分类尚未批准的文献', count: queue.value.classUnapproved },
 ])
+
+// 口径说明：全量（含隔离/未解析）与面板可操作口径的差值
+const backlogAll = computed(() => Math.max(queue.value.metaUnapprovedAll, queue.value.classUnapprovedAll))
+const backlogExcluded = computed(() => Math.max(backlogAll.value - Math.max(queue.value.metaUnapproved, queue.value.classUnapproved), 0))
 
 const nextStep = computed(() => flowItems.value.find(item => item.count > 0) || null)
 
@@ -149,6 +154,8 @@ async function loadQueue() {
       queue.value.intake = s.intake?.pending || 0
       queue.value.metaUnapproved = s.backlog?.metadata_unapproved || 0
       queue.value.classUnapproved = s.backlog?.classification_unapproved || 0
+      queue.value.metaUnapprovedAll = s.backlog?.metadata_unapproved_all || 0
+      queue.value.classUnapprovedAll = s.backlog?.classification_unapproved_all || 0
     }
     if (dupRes.status === 'fulfilled') queue.value.duplicates = dupRes.value.total_groups || 0
   } catch (e) { console.error('Failed to load queue:', e) }

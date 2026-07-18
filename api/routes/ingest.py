@@ -41,7 +41,9 @@ def pipeline_stats():
       （approved 未晋升的不计入，属 IntakeReview 页面自身待办）
     - backlog.metadata_unapproved / classification_unapproved =
       非隔离 work 中，存在 succeeded parse run 且 NOT EXISTS 对应 approved extraction
-      （含从未抽取、pending、needs_fix、rejected-only 的 work，即"补审积压"口径）
+      （含从未抽取、pending、needs_fix、rejected-only 的 work，即"补审积压"可操作口径）
+    - backlog.*_all = 无任何过滤的全量口径（含隔离/未解析），仅用于面板说明
+      "另有 N 篇不在此列"，避免两种口径数字被误读为数据变化
     """
     conn = get_conn()
     try:
@@ -118,6 +120,20 @@ def pipeline_stats():
               AND w.read_status != 'quarantined'
         """).fetchone()[0]
 
+        # 7. 全量口径：无任何过滤的"无 approved" work 数（含隔离/未解析），
+        #    用于面板展示"另有 N 篇不在此列"，避免与上面可操作口径混淆
+        backlog_metadata_unapproved_all = conn.execute("""
+            SELECT COUNT(*) FROM works w
+            WHERE NOT EXISTS (SELECT 1 FROM metadata_extractions me
+                              WHERE me.work_id = w.id AND me.review_status = 'approved')
+        """).fetchone()[0]
+
+        backlog_classification_unapproved_all = conn.execute("""
+            SELECT COUNT(*) FROM works w
+            WHERE NOT EXISTS (SELECT 1 FROM classification_extractions ce
+                              WHERE ce.work_id = w.id AND ce.review_status = 'approved')
+        """).fetchone()[0]
+
         return {
             "inbox": {"count": inbox_count},
             "parse": {
@@ -137,6 +153,8 @@ def pipeline_stats():
             "backlog": {
                 "metadata_unapproved": backlog_metadata_unapproved,
                 "classification_unapproved": backlog_classification_unapproved,
+                "metadata_unapproved_all": backlog_metadata_unapproved_all,
+                "classification_unapproved_all": backlog_classification_unapproved_all,
             },
         }
     finally:
