@@ -35,12 +35,19 @@ def pipeline_stats():
     区分两种状态：
     - "待抽取" = 已解析成功但还没有 extraction 记录的 work
     - "待审核" = 已有 extraction 记录且 review_status='pending'
+
+    扩展指标（2026-07-18 阶段二）：
+    - intake.pending = intake_candidates 中 review_status='pending' 且未 ingested
+      （approved 未晋升的不计入，属 IntakeReview 页面自身待办）
+    - backlog.metadata_unapproved / classification_unapproved =
+      非隔离 work 中，存在 succeeded parse run 且 NOT EXISTS 对应 approved extraction
+      （含从未抽取、pending、needs_fix、rejected-only 的 work，即"补审积压"口径）
     """
     conn = get_conn()
     try:
-        # 1. 收件箱摄入：_inbox/ 中的 PDF 数
+        # 1. 收件箱摄入：_inbox/ 中的 PDF 数（递归，与 scripts/literature_ingest.py 的扫描口径一致）
         inbox_dir = LIBRARY_ROOT / '_inbox'
-        inbox_count = len(list(inbox_dir.glob('*.pdf'))) if inbox_dir.exists() else 0
+        inbox_count = len([p for p in inbox_dir.rglob('*.pdf') if p.is_file()]) if inbox_dir.exists() else 0
 
         # 2. 文档解析：parse_run 状态
         parse_row = conn.execute("""
@@ -86,6 +93,31 @@ def pipeline_stats():
               AND w.read_status != 'quarantined'
         """).fetchone()[0]
 
+        # 5. 采集候选待审：等待人工审核的 intake 候选（approved 未晋升的不计入）
+        intake_pending = conn.execute("""
+            SELECT COUNT(*) FROM intake_candidates
+            WHERE review_status = 'pending' AND status != 'ingested'
+        """).fetchone()[0]
+
+        # 6. 积压补审：已解析成功但无 approved 元数据/分类的非隔离 work
+        backlog_metadata_unapproved = conn.execute("""
+            SELECT COUNT(*) FROM works w
+            WHERE EXISTS (SELECT 1 FROM literature_parse_runs pr
+                         WHERE pr.work_id = w.id AND pr.status = 'succeeded')
+              AND NOT EXISTS (SELECT 1 FROM metadata_extractions me
+                              WHERE me.work_id = w.id AND me.review_status = 'approved')
+              AND w.read_status != 'quarantined'
+        """).fetchone()[0]
+
+        backlog_classification_unapproved = conn.execute("""
+            SELECT COUNT(*) FROM works w
+            WHERE EXISTS (SELECT 1 FROM literature_parse_runs pr
+                         WHERE pr.work_id = w.id AND pr.status = 'succeeded')
+              AND NOT EXISTS (SELECT 1 FROM classification_extractions ce
+                              WHERE ce.work_id = w.id AND ce.review_status = 'approved')
+              AND w.read_status != 'quarantined'
+        """).fetchone()[0]
+
         return {
             "inbox": {"count": inbox_count},
             "parse": {
@@ -100,6 +132,11 @@ def pipeline_stats():
             "classification": {
                 "pending_extract": class_pending_extract,
                 "pending_review": class_pending_review,
+            },
+            "intake": {"pending": intake_pending},
+            "backlog": {
+                "metadata_unapproved": backlog_metadata_unapproved,
+                "classification_unapproved": backlog_classification_unapproved,
             },
         }
     finally:

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="work-layout" :style="layoutStyle">
     <!-- Left: list panel -->
     <div class="list-panel" :class="{ collapsed: listCollapsed }">
@@ -78,7 +78,7 @@
           <span class="step-icon">4</span>
           <span class="step-label">分类</span>
           <span class="step-status">{{ classificationStatus }}</span>
-          <n-button v-if="canTriggerClassification" size="tiny" quaternary :loading="classificationLoading" @click="triggerClassification">抽取</n-button>
+          <n-button v-if="canTriggerClassification" size="tiny" quaternary :loading="classificationLoading" :title="work?.metadata_extraction?.review_status === 'approved' ? '' : '（建议先完成元数据审核）'" @click="triggerClassification">抽取</n-button>
           <router-link v-if="classificationReviewLink" :to="classificationReviewLink" class="step-link">去审核</router-link>
         </div>
       </div>
@@ -365,6 +365,7 @@ import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag, parseTrigger, triggerMetadataExtraction, triggerClassificationExtraction } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, label } from '../labels'
+import { useNextStep } from '../composables/useNextStep'
 import ResizeHandle from '../components/ResizeHandle.vue'
 import EmptyState from '../components/EmptyState.vue'
 
@@ -373,6 +374,7 @@ const PdfPreviewDrawer = defineAsyncComponent(() => import('../components/PdfPre
 const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const { notifyNext } = useNextStep()
 
 const props = defineProps(['id'])
 
@@ -901,7 +903,12 @@ async function triggerParse() {
   try {
     const res = await parseTrigger({ work_ids: [props.id] })
     const r = (res.results || [])[0] || {}
-    message.success(`解析：${r.status || '?'}${r.backend ? ' (' + r.backend + ')' : ''}`)
+    // 解析成功后的下一步（元数据抽取）在本页工作流条上操作，接力提示不跳转
+    if (r.status === 'succeeded') {
+      notifyNext(`解析完成${r.backend ? ' (' + r.backend + ')' : ''}，可以继续元数据抽取`, { label: '继续元数据抽取' })
+    } else {
+      message.success(`解析：${r.status || '?'}${r.backend ? ' (' + r.backend + ')' : ''}`)
+    }
     await loadWork()  // 刷新 parse_status 徽标 + content.md 预览
   } catch (e) {
     message.error('触发解析失败：' + e.message)
@@ -915,7 +922,7 @@ async function triggerMetadata() {
   try {
     const res = await triggerMetadataExtraction({ work_ids: [props.id], force: true })
     if (res.created > 0) {
-      message.success(`元数据抽取已创建：${res.created} 条`)
+      notifyNext(`元数据抽取已创建：${res.created} 条`, { label: '去元数据审核', to: `/metadata?search=${encodeURIComponent(props.id)}` })
     } else if (res.skipped > 0) {
       message.warning(`跳过：${res.skipped} 条`)
     } else {
@@ -934,7 +941,7 @@ async function triggerClassification() {
   try {
     const res = await triggerClassificationExtraction({ work_ids: [props.id], force: true })
     if (res.created > 0) {
-      message.success(`分类抽取已创建：${res.created} 条`)
+      notifyNext(`分类抽取已创建：${res.created} 条`, { label: '去分类审核', to: `/classification?search=${encodeURIComponent(props.id)}` })
     } else if (res.skipped > 0) {
       message.warning(`跳过：${res.skipped} 条`)
     } else {

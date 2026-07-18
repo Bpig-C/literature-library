@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="review-layout" :style="layoutStyle">
     <!-- Left: list panel -->
     <div class="list-panel" :class="{ collapsed: listCollapsed }">
@@ -659,6 +659,9 @@ async function saveEditWork() {
 
 async function doReview(status) {
   if (!selected.value) return
+  // 记住当前条位置，审完后自动跳下一条 pending
+  const reviewedId = selected.value.id
+  const prevIdx = extractions.value.findIndex(e => e.id === reviewedId)
   const data = {
     review_status: status,
     review_note: reviewNote.value,
@@ -666,7 +669,21 @@ async function doReview(status) {
   }
   await reviewClassificationExtraction(selected.value.id, data)
   await loadList()
-  selected.value = null
+  selectNextPending(reviewedId, prevIdx)
+}
+
+// 审核完成后自动选中下一条 pending：优先原位置之后，没有则取第一条 pending；无 pending 则清空选中
+function selectNextPending(reviewedId, prevIdx) {
+  const list = extractions.value
+  // 若原位置仍是被审条（如"全部"筛选下未移出列表），从其后一位开始找
+  const startIdx = list[prevIdx]?.id === reviewedId ? prevIdx + 1 : prevIdx
+  let next = null
+  for (let i = Math.max(startIdx, 0); i < list.length; i++) {
+    if (list[i].review_status === 'pending') { next = list[i]; break }
+  }
+  if (!next) next = list.find(e => e.review_status === 'pending') || null
+  if (next) selectExtraction(next)
+  else selected.value = null
 }
 
 async function saveDraft() {

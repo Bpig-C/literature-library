@@ -1,5 +1,7 @@
 <template>
   <div class="stage-card" :class="{ expanded: isExpanded, 'has-items': count > 0 }">
+    <!-- 卡头提示条（如分类前置条件提醒） -->
+    <slot name="notice" />
     <!-- 头部 -->
     <div class="stage-header" @click="toggleExpand">
       <span class="stage-icon"><AppIcon :name="iconName" /></span>

@@ -273,6 +273,12 @@
       :action-disabled="stages.classify.statusFilter !== 'extract'"
       @execute="batchClassify"
     >
+      <!-- 分类前置条件提示（告知，非阻断）：有已解析未批准元数据积压时提醒 -->
+      <template #notice>
+        <div v-if="stages.classify.metaUnapproved > 0" class="stage-notice">
+          ⚠ 建议先完成元数据审核（还有 {{ stages.classify.metaUnapproved }} 篇已解析未批准元数据）
+        </div>
+      </template>
       <template #filters>
         <div class="filter-tags">
           <button
@@ -435,6 +441,7 @@ import { showError } from '../error-handler'
 import { formatSize, formatDate } from '../composables/useFormatUtils'
 import { usePdfDrawer } from '../composables/usePdfDrawer'
 import { useQuarantine } from '../composables/useQuarantine'
+import { useNextStep } from '../composables/useNextStep'
 import StageCard from '../components/StageCard.vue'
 import SelectableFileList from '../components/SelectableFileList.vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -519,6 +526,7 @@ const stages = ref({
   classify: {
     count: 0,
     pendingReview: 0,
+    metaUnapproved: 0,
     loading: false,
     items: [],
     selectedIds: new Set(),
@@ -530,6 +538,9 @@ const stages = ref({
 })
 
 const confirm = ref({ show: false, title: '', message: '', action: null })
+
+// 流程接力提示（阶段完成 → 下一步引导）
+const { notifyNext } = useNextStep()
 
 // PDF 预览抽屉
 const { showPdfDrawer, activePdfWorkId, pdfPreviewKey, openPdf, closePdf } = usePdfDrawer()
@@ -739,6 +750,8 @@ async function loadClassify() {
     const stats = await getPipelineStats()
     stages.value.classify.count = stats.classification?.pending_extract || 0
     stages.value.classify.pendingReview = stats.classification?.pending_review || 0
+    // 分类前置条件提示用：已解析但未批准元数据的积压数
+    stages.value.classify.metaUnapproved = stats.backlog?.metadata_unapproved || 0
 
     if (stages.value.classify.statusFilter === 'extract') {
       // 待抽取：元数据已批准但无 classification_extraction 记录
@@ -782,6 +795,8 @@ async function batchIngest() {
       await executeIngest({ file_ids: ids })
       clearAllSelections()
       await loadAll()
+      // 下一步（文档解析）就在本页下一阶段，接力提示不跳转
+      notifyNext(`摄入完成：${ids.length} 个文件已入库，可以继续文档解析`, { label: '继续文档解析' })
     } catch (e) {
       showError(e)
     } finally {
@@ -800,6 +815,8 @@ async function batchParse() {
       await parseTrigger({ work_ids: ids })
       clearAllSelections()
       await loadAll()
+      // 下一步（元数据抽取）就在本页下一阶段，接力提示不跳转
+      notifyNext('解析已触发，完成后可继续元数据抽取', { label: '继续元数据抽取' })
     } catch (e) {
       showError(e)
     } finally {
@@ -819,6 +836,7 @@ async function batchMetadata() {
       await triggerMetadataExtraction({ work_ids: ids })
       clearAllSelections()
       await loadAll()
+      notifyNext('元数据抽取已触发，完成后请前往审核', { label: '去元数据审核', to: '/metadata' })
     } catch (e) {
       showError(e)
     } finally {
@@ -837,6 +855,7 @@ async function batchClassify() {
       await triggerClassificationExtraction({ work_ids: ids })
       clearAllSelections()
       await loadAll()
+      notifyNext('分类抽取已触发，完成后请前往审核', { label: '去分类审核', to: '/classification' })
     } catch (e) {
       showError(e)
     } finally {
@@ -897,6 +916,15 @@ onMounted(loadAll)
   font-size: 20px;
   color: var(--text-tertiary);
   padding: var(--space-3) 0;
+}
+
+/* 阶段卡头提示条（warn 色系，告知非阻断） */
+.stage-notice {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-xs);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-bottom: 1px solid var(--warn);
 }
 
 /* 筛选组件 */

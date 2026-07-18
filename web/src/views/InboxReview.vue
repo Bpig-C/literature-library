@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <div class="inbox-layout">
       <div class="list-panel">
         <h2 class="page-title">收件箱摄入 <span class="muted tiny">inbox manual ingest</span></h2>
@@ -90,6 +90,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { getIngestPlan, executeIngest } from '../api'
 import { showError } from '../error-handler'
+import { useNextStep } from '../composables/useNextStep'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -98,6 +99,7 @@ const plan = ref(null)
 const selectedIdx = ref(0)
 const busy = ref(false)
 const leaveInbox = ref(false)
+const { notifyNext } = useNextStep()
 
 // ConfirmDialog state
 const showConfirmDialog = ref(false)
@@ -162,7 +164,7 @@ async function doExecute() {
       }
     }
 
-    window.__naive_message?.success(msg)
+    notifyNext(msg, { label: '前往解析', to: '/pipeline' })
     await reload()
   } catch (e) {
     showError(e)
