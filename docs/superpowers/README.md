@@ -17,7 +17,9 @@
 
 ## 当前有效审查
 
-- 暂无。`reviews/2026-07-05-system-calibration.md`（2 周路线图窗口已结束）与 `reviews/2026-07-03-handover-audit.md` 已于 2026-07-17 归档至 `docs/_archive/superpowers/reviews/`。
+- `reviews/2026-07-18-export-review.md`：主线阶段一（引用导出+综述矩阵）两轮模型独立审核记录，finding 全部修复。
+
+历史提示：`reviews/2026-07-05-system-calibration.md` 与 `reviews/2026-07-03-handover-audit.md` 已于 2026-07-17 归档至 `docs/_archive/superpowers/reviews/`。
 
 ## 历史归档入口
 

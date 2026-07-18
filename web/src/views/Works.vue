@@ -20,6 +20,7 @@
       <n-button quaternary :type="showAdvanced ? 'primary' : 'default'" @click="showAdvanced = !showAdvanced">
         {{ showAdvanced ? '收起筛选' : '高级筛选' }}
       </n-button>
+      <n-button quaternary @click="showExportModal = true" title="导出 BibTeX / RIS / 综述矩阵">导出</n-button>
     </div>
 
     <div class="advanced-filters" v-if="showAdvanced">
@@ -119,6 +120,30 @@
         <n-button type="error" :loading="quarantineLoading" @click="confirmQuarantine">确认隔离</n-button>
       </template>
     </n-modal>
+
+    <!-- Export Modal -->
+    <n-modal v-model:show="showExportModal" preset="card" title="导出文献" style="width: 440px">
+      <p class="modal-desc">仅包含「元数据已批准且未隔离」的文献。</p>
+      <div class="export-group">
+        <label>格式</label>
+        <n-radio-group v-model:value="exportFormat">
+          <n-radio-button value="bibtex">BibTeX</n-radio-button>
+          <n-radio-button value="ris">RIS</n-radio-button>
+          <n-radio-button value="matrix.csv">综述矩阵 CSV</n-radio-button>
+        </n-radio-group>
+      </div>
+      <div class="export-group">
+        <label>范围</label>
+        <n-radio-group v-model:value="exportScope">
+          <n-radio-button value="filtered">当前搜索与类型筛选</n-radio-button>
+          <n-radio-button value="all">全部已批准文献</n-radio-button>
+        </n-radio-group>
+      </div>
+      <template #action>
+        <n-button @click="showExportModal = false">取消</n-button>
+        <n-button type="primary" @click="doExport">下载</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -127,7 +152,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { usePagination } from '../composables/usePagination'
-import { getWorks, quarantineWork, restoreWork } from '../api'
+import { getWorks, quarantineWork, restoreWork, buildExportUrl } from '../api'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, LANGUAGE_LABELS, PARSE_STATUS_LABELS, READ_STATUS_LABELS, INGESTION_STATE_LABELS, label } from '../labels'
 import EmptyState from '../components/EmptyState.vue'
 
@@ -328,6 +353,23 @@ const sortOptions = [
 ]
 
 const showQuarantineModal = ref(false)
+
+// --- Export ---
+const showExportModal = ref(false)
+const exportFormat = ref('bibtex')
+const exportScope = ref('all')
+
+function doExport() {
+  const params = {}
+  if (exportScope.value === 'filtered') {
+    if (search.value) params.search = search.value
+    if (primaryDocTypeFilter.value) params.doc_type = primaryDocTypeFilter.value
+    else if (typeFilter.value !== 'all') params.doc_type = typeFilter.value
+  }
+  window.open(buildExportUrl(exportFormat.value, params), '_blank')
+  showExportModal.value = false
+  message.success('已开始下载导出文件')
+}
 const quarantineReason = ref('')
 const quarantineLoading = ref(false)
 const quarantineTarget = ref(null)
@@ -614,6 +656,9 @@ tr:hover td {
 .status-failed { color: var(--bad); }
 
 .actions { white-space: nowrap; }
+
+.export-group { margin-top: 14px; }
+.export-group label { display: block; margin-bottom: 6px; color: var(--text-secondary); font-size: var(--text-sm); }
 
 .modal-desc {
   margin: 0 0 var(--space-4);

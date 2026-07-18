@@ -487,3 +487,17 @@ export function rejectDiscoveryHit(hitId, review_note = '') {
 export function batchAcceptDiscoveryHits(hitIds) {
   return request('/discovery/hits/batch-accept', { method: 'POST', body: JSON.stringify({ hit_ids: hitIds }) })
 }
+
+/**
+ * 构造导出下载 URL（阶段一：引用导出 + 综述矩阵）
+ * @param {'bibtex'|'ris'|'matrix.csv'} format
+ * @param {object} params - 可选筛选：search / doc_type / tag / work_ids
+ */
+export function buildExportUrl(format, params = {}) {
+  const q = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') q.append(k, v)
+  })
+  const qs = q.toString()
+  return `${BASE}/export/${format}${qs ? '?' + qs : ''}`
+}

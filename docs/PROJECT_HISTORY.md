@@ -327,6 +327,7 @@
 - 2026-07-04 元数据模板 runtime 接入：`templates/templates.json` + `api/metadata_template.py` 统一驱动 metadata extract CLI/API/rerun。
 - 2026-07-05 文档结构按协作角色拆分：`docs/README.md` 作为文档总目录，`docs/manuals/` 下维护用户、CLI自动化、agent 三类当前使用手册；`scripts/check_docs.py` 提供轻量文档门禁。
 - 2026-07-05 分类规范与审核模板 V1.1：`docs/methodology/classification-methodology.md` v0.2.2 与后端 VOCAB 对齐，补充分类规范变更流程、审核操作语义和字段实现状态；QA-004 分类词汇发布流程仍暂缓。
+- 2026-07-18 主线阶段一·出口侧最小闭环：新增 BibTeX/RIS 引用导出与综述矩阵 CSV（`api/export_format.py` + `api/routes/export.py` 三端点，Works 页导出弹窗）；数据源严格限定"元数据已批准且未隔离"；两轮模型独立审核（`docs/superpowers/reviews/2026-07-18-export-review.md`），8+2 项 finding 全部修复；方案见 `docs/superpowers/plans/2026-07-18-export-minimal-loop.md`。
 - 旧的 document-parser / 自部署 MinerU 方案与 `parse_ledger.json` 迁移记录。
 - 早期关于 collections、analysis_runs、综述矩阵、引用导出的初始设想。
 
