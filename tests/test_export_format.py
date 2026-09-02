@@ -66,6 +66,7 @@ def test_bibtex_type_mapping():
     assert work_to_bibtex(_work(primary_doc_type="survey_review")).startswith("@article{")
     assert work_to_bibtex(_work(primary_doc_type="webpage_blog")).startswith("@misc{")
     assert work_to_bibtex(_work(primary_doc_type=None, doc_type=None)).startswith("@misc{")
+    assert work_to_bibtex(_work(primary_doc_type="preprint")).startswith("@article{")
 
 
 def test_bibtex_inproceedings_uses_booktitle():
@@ -109,6 +110,23 @@ def test_bibtex_title_fallback_title_zh():
     assert "覆盖率研究" in out
 
 
+def test_bibtex_volume_issue_pages():
+    out = work_to_bibtex(_work(volume="31", issue="10", pages="1966-1980"))
+    assert "volume = {31}" in out
+    assert "number = {10}" in out
+    assert "pages = {1966--1980}" in out
+    # en-dash 区间同样归一为 BibTeX 双连字符
+    out2 = work_to_bibtex(_work(volume="29", issue="3", pages="394–403"))
+    assert "pages = {394--403}" in out2
+
+
+def test_bibtex_volume_issue_pages_omitted_when_empty():
+    out = work_to_bibtex(_work(volume=None, issue=None, pages=None))
+    assert "volume = {" not in out
+    assert "number = {" not in out
+    assert "pages = {" not in out
+
+
 # ---------- RIS ----------
 
 def test_ris_basic():
@@ -144,6 +162,19 @@ def test_ris_missing_fields_omitted():
     assert "DO  - " not in out
     assert "UR  - " not in out
     assert "AB  - " not in out
+
+
+def test_ris_volume_issue_pages():
+    out = work_to_ris(_work(volume="29", issue="3", pages="394–403"))
+    lines = out.splitlines()
+    assert "VL  - 29" in lines
+    assert "IS  - 3" in lines
+    assert "SP  - 394" in lines
+    assert "EP  - 403" in lines
+    # 单页无区间：只出 SP
+    out2 = work_to_ris(_work(pages="15"))
+    assert "SP  - 15" in out2.splitlines()
+    assert "EP  - 15" not in out2.splitlines()
 
 
 # ---------- 综述矩阵 CSV ----------

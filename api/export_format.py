@@ -9,12 +9,14 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 
 # primary_doc_type（含旧 doc_type 回退）→ BibTeX entry 类型
 _BIBTEX_TYPE = {
     "research_article": "article",
     "survey_review": "article",
     "paper": "article",  # 旧 doc_type 回退
+    "preprint": "article",  # arXiv 等预印本：惯用 @article + eprint
     "benchmark_dataset_paper": "inproceedings",
     "evaluation_report": "techreport",
     "institutional_report": "techreport",
@@ -121,6 +123,16 @@ def work_to_bibtex(work: dict) -> str:
         venue_field = _VENUE_FIELD.get(etype, "howpublished")
         fields.append((venue_field, _escape_bibtex(venue)))
 
+    # 卷/期/页（2026-09 结构化列；页码区间统一为 BibTeX 双连字符）
+    if (work.get("volume") or "").strip():
+        fields.append(("volume", _escape_bibtex(work["volume"].strip())))
+    if (work.get("issue") or "").strip():
+        fields.append(("number", _escape_bibtex(work["issue"].strip())))
+    pages = (work.get("pages") or "").strip()
+    if pages:
+        pages_bib = re.sub(r"(?<=[0-9])\s*[-–—]\s*(?=[0-9])", "--", pages)
+        fields.append(("pages", _escape_bibtex(pages_bib)))
+
     if (work.get("doi") or "").strip():
         fields.append(("doi", work["doi"].strip()))
     if (work.get("arxiv_id") or "").strip():
@@ -150,6 +162,19 @@ def work_to_ris(work: dict, tags: dict[str, list[str]] | None = None) -> str:
     venue = (work.get("venue") or "").strip()
     if venue:
         lines.append(f"JO  - {venue}")
+    # 卷/期/页（RIS 惯例：SP 起始页、EP 结束页）
+    if (work.get("volume") or "").strip():
+        lines.append(f"VL  - {work['volume'].strip()}")
+    if (work.get("issue") or "").strip():
+        lines.append(f"IS  - {work['issue'].strip()}")
+    pages = (work.get("pages") or "").strip()
+    if pages:
+        m = re.match(r"^([0-9]+)\s*[-–—]+\s*([0-9]+)$", pages)
+        if m:
+            lines.append(f"SP  - {m.group(1)}")
+            lines.append(f"EP  - {m.group(2)}")
+        else:
+            lines.append(f"SP  - {pages}")
     if (work.get("doi") or "").strip():
         lines.append(f"DO  - {work['doi'].strip()}")
     if (work.get("arxiv_id") or "").strip():
@@ -166,7 +191,7 @@ def work_to_ris(work: dict, tags: dict[str, list[str]] | None = None) -> str:
 
 
 MATRIX_COLUMNS = [
-    "work_id", "标题", "中文标题", "作者", "年份", "venue", "DOI", "arXiv", "URL",
+    "work_id", "标题", "中文标题", "作者", "年份", "venue", "卷", "期", "页", "DOI", "arXiv", "URL",
     "类型", "语言", "方法标签", "风险域", "artifact_focus", "优先级", "核心文献", "一句话定位",
 ]
 
