@@ -1,0 +1,9 @@
+{
+ "date": "2026-09-02",
+ "item": "64条清单 #1 International AI Safety Report 2026",
+ "canonical_work": "W-arxiv-2602.21012",
+ "retired_work": "W-sha-e2a35f439caf（隔离：同文档重复捕获，单EN文件、无arXiv号，duplicate_candidates DG-title-manual-5f439caf 已人工裁决）",
+ "evidence": "两份解析稿 824,972 字符完全一致（前缀一致率99.9%），非预印本/定稿差异",
+ "authorship": "authors=[Yoshua Bengio]（主席署名惯例，四源考证：文档Contributors页/arXiv著录92人/官方站点/2025版先例）",
+ "citation": "Bengio, Y. (Chair). (2026). International AI Safety Report 2026 (DSIT 2026/001). arXiv:2602.21012"
+}
