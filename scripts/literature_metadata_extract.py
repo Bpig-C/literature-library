@@ -596,8 +596,8 @@ def run_extraction(args: argparse.Namespace) -> None:
             if missing:
                 print(f"  缺失：{', '.join(missing)}")
             if validation_warnings:
-                for w in validation_warnings:
-                    print(f"  校验：{w}")
+                for warn_msg in validation_warnings:
+                    print(f"  校验：{warn_msg}")
 
             # Save to DB
             if not args.no_write:

@@ -1,0 +1,72 @@
+[
+  {
+    "work_id": "W-arxiv-2503.01986",
+    "status": "ok",
+    "title": "Adaptively profiling models with task elicitation",
+    "year": 2025,
+    "publication_date": {
+      "year": 2025,
+      "month": 9,
+      "day": 25,
+      "raw": "25 Sep 2025",
+      "kind": "exact"
+    },
+    "authors": [
+      "Davis Brown",
+      "Prithvi Balehannina",
+      "Helen Jin",
+      "Shreya Havaldar",
+      "Hamed Hassani"
+    ],
+    "all_authors": null,
+    "contributors": [
+      {
+        "name": "University of Pennsylvania",
+        "type": "university",
+        "role": "author"
+      }
+    ],
+    "doi": null,
+    "arxiv_id": "2503.01986v3",
+    "venue": "arXiv preprint",
+    "url": "https://arxiv.org/abs/2503.01986v3",
+    "abstract": "Language model evaluations often fail to characterize consequential failure modes, forcing experts to inspect outputs and build new benchmarks. We introduce task elicitation, a method that automatically builds new evaluations to profile model behavior. Task elicitation finds hundreds of natural-language tasks—an order of magnitude more than prior work—where frontier models exhibit systematic failures, in domains ranging from forecasting to online harassment. For example, we find that Sonnet 3.5 over-associates quantum computing and AGI and that o3-mini is prone to hallucination when fabrications are repeated in-context.",
+    "title_zh": null,
+    "evidence": {
+      "title": "Adaptively profiling models with task elicitation",
+      "title_zh": null,
+      "publication_date": "arXiv:2503.01986v3  [cs.CL]  25 Sep 2025",
+      "authors": "Davis Brown, Prithvi Balehannina, Helen Jin, Shreya Havaldar\nHamed Hassani, Eric Wong",
+      "contributors": "University of Pennsylvania",
+      "doi": null,
+      "arxiv_id": "arXiv:2503.01986v3  [cs.CL]  25 Sep 2025",
+      "venue": "arXiv:2503.01986v3  [cs.CL]  25 Sep 2025",
+      "url": "https://github.com/davisrbr/adaptive_evals",
+      "abstract": "Language model evaluations often fail to characterize consequential failure modes, forcing experts to inspect outputs and build new benchmarks. We introduce task elicitation, a method that automatically builds new evaluations to profile model behavior.",
+      "open_source_status": "We release our datasets on HuggingFace and our code https://github.com/davisrbr/adaptive_evals",
+      "open_source_components": "We release our datasets on HuggingFace and our code https://github.com/davisrbr/adaptive_evals"
+    },
+    "confidence": {
+      "title": "high",
+      "title_zh": "low",
+      "publication_date": "high",
+      "authors": "high",
+      "contributors": "high",
+      "doi": "high",
+      "arxiv_id": "high",
+      "venue": "high",
+      "url": "high",
+      "abstract": "high",
+      "open_source_status": "high",
+      "open_source_components": "high"
+    },
+    "missing": [
+      "doi",
+      "title_zh"
+    ],
+    "validation_warnings": [],
+    "content_md_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2503.01986\\parsed\\mineru\\SF-090cb47ae7c6-00171\\content.md",
+    "input_chars": 8000,
+    "input_tokens_est": 2976
+  }
+]
