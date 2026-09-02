@@ -1,0 +1,702 @@
+% ============================================================================
+% 文献库交接题录 · 64 条（来源：literature_library / literature.sqlite）
+% 生成日期：2026-09-02   生成方式：api/export_format.work_to_bibtex + 导出门禁过滤
+% 门禁：metadata_extractions.review_status='approved' 且未隔离（与 /api/export/bibtex 一致）
+% 引用键：ref01-ref64，对应《64 篇文献清单》序号；每条上方注释含库内 work_id 可回溯
+% 约定：arXiv 预印本 = @article + journal={arXiv preprint} + eprint；报告/标准无卷期页属正常
+% 特殊条目：ref25 期号实为 12（57(12):7893-7906，清单原 57(1) 有误）；
+%           ref42 pages=e39116 为 PLOS 文章号；ref44 现题 VESTA（原 ForesightSafety-SAGE 改名）；
+%           ref01 以未隔离 arXiv 副本（2602.21012）为准，署名 Bengio（主席），机构 DSIT
+% ============================================================================
+
+% [01] International AI Safety Report 2026
+%     library: W-arxiv-2602.21012
+@techreport{ref01,
+  title = {{International AI Safety Report 2026}},
+  author = {Yoshua Bengio},
+  year = {2026},
+  institution = {Department for Science, Innovation and Technology (DSIT)},
+  eprint = {2602.21012},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2602.21012},
+  abstract = {Synthesis of existing research on capabilities and risks of advanced AI. Covers general-purpose AI, current capabilities, capabilities by 2030, risks, and governance. Research series number: DSIT 2026/001.}
+}
+% [02] Alignment Faking in Large Language Models
+%     library: W-sha-f448dfe38f21
+@article{ref02,
+  title = {{Alignment Faking in Large Language Models}},
+  author = {Ryan Greenblatt and Carson Denison and Benjamin Wright and Fabien Roger and Monte MacDiarmid and Sam Marks and Johannes Treutlein and Evan Hubinger},
+  year = {2024},
+  journal = {arXiv preprint},
+  eprint = {2412.14093},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2412.14093},
+  abstract = {We present a demonstration of a large language model engaging in alignment faking: selectively complying with its training objective in training to prevent modification of its behavior out of training. We give Claude 3 Opus a system prompt stating it is being trained to answer all queries, even harmful ones. We find the model complies with harmful queries from free users 14\% of the time, versus almost never for paid users.}
+}
+% [03] PropensityBench: Evaluating Latent Safety Risks in Large Language Mode
+%     library: W-sha-a2c6b17bc301
+@inproceedings{ref03,
+  title = {{PropensityBench: Evaluating Latent Safety Risks in Large Language Models via an Agentic Approach}},
+  author = {Udari Madhushani Sehwag and Shayan Shabihi and Alex McAvoy and Vikash Sehwag and Yuancheng Xu and Furong Huang},
+  year = {2025},
+  booktitle = {arXiv preprint},
+  abstract = {Current safety evaluations primarily test for what a model can do without assessing what it would do if endowed with high-risk capabilities. We introduce PropensityBench, a benchmark framework that assesses the proclivity of models to engage in risky behaviors when equipped with simulated dangerous capabilities using proxy tools. Our framework includes 5,874 scenarios with 6,648 tools spanning four high-risk domains: cybersecurity, self-proliferation, biosecurity, and chemical security.}
+}
+% [04] Evaluating and Understanding Scheming Propensity in LLM Agents
+%     library: W-arxiv-2603.01608
+@misc{ref04,
+  title = {{Evaluating and Understanding Scheming Propensity in LLM Agents}},
+  author = {Mia Hopman and Jannes Elstner and Maria Avramidou and Amritanshu Prasad and David Lindner},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2603.01608v2},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2603.01608}
+}
+% [05] DeceptionBench: A Comprehensive Benchmark for AI Deception Behaviors i
+%     library: W-sha-6bb2ad8fb52a
+@inproceedings{ref05,
+  title = {{DeceptionBench: A Comprehensive Benchmark for AI Deception Behaviors in Real-world Scenarios}},
+  author = {Yao Huang and Yitong Sun and Yichi Zhang and Ruochen Zhang and Yinpeng Dong and Xingxing Wei},
+  year = {2025},
+  booktitle = {NeurIPS 2025 Datasets and Benchmarks Track},
+  eprint = {2510.15501},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2510.15501},
+  abstract = {Despite remarkable advances of LLMs, rapid enhancement of capabilities introduces emergent deception behaviors that may induce severe risks in high-stakes deployments. We establish DeceptionBench, the first benchmark that systematically evaluates how deceptive tendencies manifest across different societal domains. The benchmark encompasses 150 scenarios in five domains with over 1,000 samples. Extensive experiments reveal critical vulnerabilities, particularly amplified deception under reinforcement dynamics.}
+}
+% [06] AI Sandbagging: Language Models Can Strategically Underperform on Eval
+%     library: W-sha-9b9793d6c035
+@article{ref06,
+  title = {{AI Sandbagging: Language Models Can Strategically Underperform on Evaluations}},
+  author = {Teun van der Weij and Felix Hofstatter and Oliver Jaffe and Samuel F. Brown and Francis Rhys Ward},
+  year = {2025},
+  journal = {ICLR 2025},
+  eprint = {2406.07358},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2406.07358},
+  abstract = {Trustworthy capability evaluations are crucial for ensuring AI safety. However, developers or the AI system itself may have incentives for evaluations to understate actual capability. We define sandbagging as strategic underperformance on an evaluation. We assess sandbagging capabilities in contemporary language models, finding that frontier LMs can selectively underperform on dangerous capability evaluations while maintaining performance on general evaluations. Models can also be fine-tuned to hide specific capabilities unless given a password.}
+}
+% [07] Decomposing and Measuring Evaluation Awareness
+%     library: W-sha-38f4501d027e
+@misc{ref07,
+  title = {{Decomposing and Measuring Evaluation Awareness}},
+  author = {Changling Li and Terry Jingchen Zhang and Jie Zhang and Zhijing Jin and Sahar Abdelnabi and Maksym Andriushchenko},
+  year = {2026},
+  howpublished = {arXiv preprint}
+}
+% [08] Instrumental Choices: Measuring the Propensity of LLM Agents to Pursue
+%     library: W-arxiv-2605.06490
+@article{ref08,
+  title = {{Instrumental Choices: Measuring the Propensity of LLM Agents to Pursue Instrumental Behaviors}},
+  author = {Jonas Wiedermann-Möller and Leonard Dung and Maksym Andriushchenko},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2605.06490},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2605.06490}
+}
+% [09] OpenSkillRisk: Benchmarking Agent Safety When Using Real-World Risky T
+%     library: W-arxiv-2607.20121
+@misc{ref09,
+  title = {{OpenSkillRisk: Benchmarking Agent Safety When Using Real-World Risky Third-Party Skills}},
+  author = {Qiyuan Liu and Tingfeng Hui and Kun Zhan and Kaike Zhang and Ning Miao},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2607.20121v2},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2607.20121}
+}
+% [10] An Argument-Based Approach to Validation
+%     library: W-sha-52fd69bfb01d
+@article{ref10,
+  title = {{An Argument-Based Approach to Validation}},
+  author = {Michael T. Kane},
+  year = {1990},
+  journal = {ACT Research Report ACT-RR-90-13}
+}
+% [11] Introducing the AI Safety Institute
+%     library: W-sha-522eeac8e157
+@article{ref11,
+  title = {{Introducing the AI Safety Institute}},
+  author = {Department for Science, Innovation and Technology (DSIT)},
+  year = {2023},
+  journal = {Command Paper CP 960}
+}
+% [12] 人工智能安全治理框架 2.0
+%     library: W-sha-50735b9ca01b
+@misc{ref12,
+  title = {{人工智能安全治理框架 2.0}},
+  author = {全国网络安全标准化技术委员会（TC260） and 国家计算机网络应急技术处理协调中心（CNCERT/CC）},
+  year = {2025},
+  howpublished = {全国网络安全标准化技术委员会（TC260）}
+}
+% [13] Meaningful Human Control over Autonomous Systems: A Philosophical Acco
+%     library: W-sha-74561ba48ca5
+@article{ref13,
+  title = {{Meaningful Human Control over Autonomous Systems: A Philosophical Account}},
+  author = {Filippo Santoni de Sio},
+  year = {2018},
+  journal = {Frontiers in Robotics and AI},
+  volume = {5},
+  pages = {15},
+  doi = {10.3389/frobt.2018.00015}
+}
+% [14] The Off-Switch Game
+%     library: W-sha-75f235bb2331
+@article{ref14,
+  title = {{The Off-Switch Game}},
+  author = {Dylan Hadfield-Menell and Anca Dragan and Pieter Abbeel and Stuart Russell},
+  year = {2017},
+  journal = {IJCAI 2017},
+  pages = {220--227},
+  doi = {10.24963/ijcai.2017/32}
+}
+% [15] Validity of Psychological Assessment: Validation of Inferences from Pe
+%     library: W-sha-abbf50892706
+@misc{ref15,
+  title = {{Validity of Psychological Assessment: Validation of Inferences from Persons' Responses and Performancesas Scientific Inquiry into Score Meaning.}},
+  author = {Messick and Samuel},
+  year = {1994},
+  howpublished = {ETS Research Report RR-94-45}
+}
+% [16] On the Structure of Educational Assessments
+%     library: W-sha-240d509ab76e
+@article{ref16,
+  title = {{On the Structure of Educational Assessments}},
+  author = {Robert J. Mislevy and Linda S. Steinberg and Russell G. Almond},
+  year = {2003},
+  journal = {Measurement},
+  volume = {1},
+  number = {1},
+  pages = {3--62},
+  doi = {10.1207/S15366359MEA0101_02}
+}
+% [17] 测验模式效应：来源、检测与应用
+%     library: W-sha-4d235aaf17f0
+@article{ref17,
+  title = {{测验模式效应：来源、检测与应用}},
+  author = {陈平 and 代艺 and 黄颖诗},
+  year = {2023},
+  journal = {心理科学进展},
+  volume = {31},
+  number = {10},
+  pages = {1966--1980},
+  doi = {10.3724/SP.J.1042.2023.01966}
+}
+% [18] 基于游戏的心理测评
+%     library: W-sha-29ffcf0b387a
+@article{ref18,
+  title = {{基于游戏的心理测评}},
+  author = {徐俊怡 and 李中权},
+  year = {2021},
+  journal = {心理科学进展},
+  volume = {29},
+  number = {3},
+  pages = {394--403},
+  doi = {10.3724/SP.J.1042.2021.00394}
+}
+% [19] Coefficients and Indices in Generalizability Theory
+%     library: W-sha-b16c4c35fa2c
+@article{ref19,
+  title = {{Coefficients and Indices in Generalizability Theory}},
+  author = {Robert Brennan},
+  year = {2003},
+  journal = {CASMA Research Report No. 1}
+}
+% [20] ECBD: Evidence-Centered Benchmark Design for NLP
+%     library: W-sha-a10e06a26ab6
+@article{ref20,
+  title = {{ECBD: Evidence-Centered Benchmark Design for NLP}},
+  author = {Yu Lu Liu and Su Lin Blodgett and Jackie Chi Kit Cheung and Q. Vera Liao and Alexandra Olteanu and Ziang Xiao},
+  year = {2024},
+  journal = {ACL 2024},
+  pages = {16349--16365}
+}
+% [21] Measurement and Fairness
+%     library: W-sha-b3c5518c5744
+@article{ref21,
+  title = {{Measurement and Fairness}},
+  author = {Abigail Z. Jacobs and Hanna Wallach},
+  year = {2021},
+  journal = {FAccT 2021},
+  pages = {375--385},
+  doi = {10.1145/3442188.3445901}
+}
+% [22] Beyond Accuracy: Behavioral Testing of NLP Models with CheckList
+%     library: W-sha-98d15d259acf
+@article{ref22,
+  title = {{Beyond Accuracy: Behavioral Testing of NLP Models with CheckList}},
+  author = {Marco Tulio Ribeiro and Tongshuang Wu and Carlos Guestrin and Sameer Singh},
+  year = {2020},
+  journal = {ACL 2020},
+  pages = {4906--4918},
+  doi = {10.18653/v1/2020.acl-main.442}
+}
+% [23] On the Limits of Minimal Pairs in Contrastive Evaluation
+%     library: W-sha-342ed9e75f4a
+@article{ref23,
+  title = {{On the Limits of Minimal Pairs in Contrastive Evaluation}},
+  author = {Jannis Vamvas and Rico Sennrich},
+  year = {2021},
+  journal = {arXiv preprint}
+}
+% [24] Active sequential hypothesis testing
+%     library: W-sha-37bdc95d47fe
+@article{ref24,
+  title = {{Active sequential hypothesis testing}},
+  author = {Mohammad Naghshvar and Tara Javidi},
+  year = {2013},
+  journal = {Annals of Statistics},
+  volume = {41},
+  number = {6},
+  doi = {10.1214/13-AOS1144},
+  eprint = {1203.4626},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/1203.4626}
+}
+% [25] The Geometry of Generalized Binary Search
+%     library: W-sha-0672782e1bbe
+@article{ref25,
+  title = {{The Geometry of Generalized Binary Search}},
+  author = {Robert D. Nowak},
+  year = {2011},
+  journal = {IEEE Transactions on Information Theory},
+  volume = {57},
+  number = {1},
+  pages = {7893--7906},
+  doi = {10.1109/TIT.2011.2169298}
+}
+% [26] Bayesian Experimental Design: A Review
+%     library: W-sha-d563761b1598
+@article{ref26,
+  title = {{Bayesian Experimental Design: A Review}},
+  author = {Kathryn Chaloner and Isabella Verdinelli},
+  year = {1995},
+  journal = {Statistical Science},
+  volume = {10},
+  number = {3},
+  pages = {273--304}
+}
+% [27] Adaptively profiling models with task elicitation
+%     library: W-arxiv-2503.01986
+@article{ref27,
+  title = {{Adaptively profiling models with task elicitation}},
+  author = {Davis Brown and Prithvi Balehannina and Helen Jin and Shreya Havaldar and Hamed Hassani and Eric Wong},
+  year = {2025},
+  journal = {arXiv preprint},
+  eprint = {2503.01986},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2503.01986}
+}
+% [28] Gram: Assessing sabotage propensities via automated alignment auditing
+%     library: W-arxiv-2605.30322
+@article{ref28,
+  title = {{Gram: Assessing sabotage propensities via automated alignment auditing}},
+  author = {David Lindner and Victoria Krakovna and Sebastian Farquhar},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2605.30322},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2605.30322}
+}
+% [29] 认知诊断计算机化自适应测验的选题策略
+%     library: W-sha-163b484b3b05
+@article{ref29,
+  title = {{认知诊断计算机化自适应测验的选题策略}},
+  author = {唐倩 and 毛秀珍 and 何明霜 and 何洁},
+  year = {2020},
+  journal = {心理科学进展},
+  volume = {28},
+  number = {12},
+  pages = {2160--2168},
+  doi = {10.3724/SP.J.1042.2020.02160}
+}
+% [30] 面向大语言模型驱动的智能体的计划复用机制
+%     library: W-sha-54daf161ef68
+@article{ref30,
+  title = {{面向大语言模型驱动的智能体的计划复用机制}},
+  author = {李国鹏 and 吴瑞骐 and 谈海生 and 陈国良},
+  year = {2024},
+  journal = {计算机研究与发展},
+  volume = {61},
+  number = {11},
+  doi = {10.7544/issn1000-1239.202440380}
+}
+% [31] The MASK Benchmark: Disentangling Honesty From Accuracy in AI Systems
+%     library: W-sha-38afe4bbff08
+@inproceedings{ref31,
+  title = {{The MASK Benchmark: Disentangling Honesty From Accuracy in AI Systems}},
+  author = {Richard Ren and Arunim Agarwal and Mantas Mazeika and Cristina Menghini and Dan Hendrycks},
+  year = {2026},
+  booktitle = {arXiv preprint},
+  eprint = {2503.03750},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2503.03750},
+  abstract = {We introduce MASK, a benchmark for measuring lies of commission in LLMs. We develop a novel evaluation pipeline that directly measures when models lie by eliciting their underlying beliefs and testing whether models will contradict those beliefs when pressured to lie. We evaluate 30 widely-used frontier LLMs and find that while larger models obtain higher accuracy, they do not become more honest. Most frontier LLMs obtain high scores on truthfulness benchmarks yet exhibit a substantial propensity to lie under pressure.}
+}
+% [32] Janus: A Benchmark for Goal-Conditioned Information Distortion in LLMs
+%     library: W-arxiv-2606.10852
+@misc{ref32,
+  title = {{Janus: A Benchmark for Goal-Conditioned Information Distortion in LLMs}},
+  author = {Polydoros Giannouris and Mohsinul Kabir and Sophia Ananiadou},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2606.10852v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2606.10852}
+}
+% [33] The Politician, the Liar, and the Obedient Worker: Emerging Behavior o
+%     library: W-arxiv-2608.09574
+@article{ref33,
+  title = {{The Politician, the Liar, and the Obedient Worker: Emerging Behavior of LLM Agents in Hierarchical Games}},
+  author = {Fatemeh Seyedin and Adrian Weller and Jinhyuk Yun and Mahmoudreza Babaei},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2608.09574v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.09574}
+}
+% [34] Auditing Games for Sandbagging
+%     library: W-sha-77e64bcd8875
+@techreport{ref34,
+  title = {{Auditing Games for Sandbagging}},
+  author = {Jordan Taylor and Sid Black and Dillon Bowen and Thomas Read and Satvik Golechha and Joseph Bloom},
+  year = {2025},
+  institution = {arXiv preprint},
+  eprint = {2512.07810},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2512.07810},
+  abstract = {Future AI systems could conceal their capabilities during evaluations. We stress-tested sandbagging detection techniques using an auditing game. We found that the blue team could not reliably discriminate sandbaggers from benign models. Training-based elicitation consistently elicited full performance from sandbagging models using only a single correct demonstration.}
+}
+% [35] Realistic honeypot evaluations for scheming propensity
+%     library: W-arxiv-2605.29729
+@misc{ref35,
+  title = {{Realistic honeypot evaluations for scheming propensity}},
+  author = {Victoria Krakovna and David Lindner and Lewis Ho and Sebastian Farquhar and Rohin Shah},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2605.29729v2},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2605.29729}
+}
+% [36] JADE-DB：基于靶向变异的大语言模型安全通用基准测试集
+%     library: W-sha-e0dd6416bc58
+@article{ref36,
+  title = {{JADE-DB：基于靶向变异的大语言模型安全通用基准测试集}},
+  author = {张谧 and 潘旭东 and 杨珉},
+  year = {2024},
+  journal = {计算机研究与发展},
+  volume = {61},
+  number = {5},
+  doi = {10.7544/issn1000-1239.202330959}
+}
+% [37] Evaluation Awareness in Language Models Has Limited Effect on Behaviou
+%     library: W-arxiv-2605.05835
+@misc{ref37,
+  title = {{Evaluation Awareness in Language Models Has Limited Effect on Behaviour}},
+  author = {Amelie Knecht and Lucas Florin and Thilo Hagendorff},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2605.05835v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2605.05835}
+}
+% [38] The Hawthorne Effect in Reasoning Models: Evaluating and Steering Test
+%     library: W-sha-cc02be84aef7
+@misc{ref38,
+  title = {{The Hawthorne Effect in Reasoning Models: Evaluating and Steering Test Awareness}},
+  author = {Sahar Abdelnabi and Ahmed Salem},
+  year = {2025},
+  howpublished = {NeurIPS 2025},
+  eprint = {2505.14617},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2505.14617}
+}
+% [39] Evaluation Awareness Is Not One Capability: Evidence from Open Languag
+%     library: W-arxiv-2606.23583
+@misc{ref39,
+  title = {{Evaluation Awareness Is Not One Capability: Evidence from Open Language Models}},
+  author = {Nilesh Nayan and Aishwarya Sampath Kumar and Rishiraj Girmal and Shivani Anilkumar and Sankaran Vaidyanathan and David A. Nader Palacio and Reshmi Ghosh and Soundararajan Srinivasan},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2606.23583v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2606.23583}
+}
+% [40] Is Evaluation Awareness Just Format Sensitivity? Limitations of Probe-
+%     library: W-sha-095a5a7c2516
+@misc{ref40,
+  title = {{Is Evaluation Awareness Just Format Sensitivity? Limitations of Probe-Based Evidence under Controlled Prompt Structure}},
+  author = {Viliana Devbunova},
+  year = {2026},
+  howpublished = {ICLR 2026 Workshop},
+  eprint = {2603.19426},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2603.19426}
+}
+% [41] On the Social Psychology of the Psychological Experiment: With Particu
+%     library: W-sha-3e6cd95a4af7
+@article{ref41,
+  title = {{On the Social Psychology of the Psychological Experiment: With Particular Reference to Demand Characteristics and Their Implications}},
+  author = {Martin T. Orne},
+  year = {1962},
+  journal = {American Psychologist},
+  volume = {17},
+  number = {11},
+  pages = {776--783},
+  doi = {10.1037/h0043424}
+}
+% [42] The Effects of Demand Characteristics on Research Participant Behaviou
+%     library: W-sha-af2c9c70330d
+@article{ref42,
+  title = {{The Effects of Demand Characteristics on Research Participant Behaviours in Non-Laboratory Settings: A Systematic Review}},
+  author = {Jim McCambridge and Marijn de Bruin and John Witton},
+  year = {2012},
+  journal = {PLOS ONE},
+  volume = {7},
+  number = {6},
+  pages = {e39116},
+  doi = {10.1371/journal.pone.0039116}
+}
+% [43] Is Machine Psychology here? On Requirements for Using Human Psychologi
+%     library: W-sha-17c16b8de89c
+@article{ref43,
+  title = {{Is Machine Psychology here? On Requirements for Using Human Psychological Tests on Large Language Models}},
+  author = {Lea Löhn and Niklas Kiehne and Alexander Ljapunov and Wolf-Tilo Balke},
+  year = {2024},
+  journal = {INLG 2024},
+  pages = {230--242}
+}
+% [44] VESTA: A Fully Automated Scenario Generation and Safety Evaluation Fra
+%     library: W-arxiv-2606.08531
+@misc{ref44,
+  title = {{VESTA: A Fully Automated Scenario Generation and Safety Evaluation Framework for LLM Agents}},
+  author = {Lu Jia and Haibo Tong and Feifei Zhao and Jindong Li and Dongqi Liang and Ping Wu and Qian Zhang and Yi Zeng},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2606.08531},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2606.08531}
+}
+% [45] Safety Testing LLM Agents at Scale: From Risk Discovery to Evidence-Gr
+%     library: W-arxiv-2607.01793
+@article{ref45,
+  title = {{Safety Testing LLM Agents at Scale: From Risk Discovery to Evidence-Grounded Verification}},
+  author = {Yunhao Feng and Ruixiao Lin and Ming Wen and Qinqin He and Yanming Guo and Yifan Ding and Yutao Wu and Jialuo Chen and Zhuoer Xu and Xiaohu Du and Jianan Ma and Zixing Chen and Xingjun Ma and Yunhao Chen and Xinhao Deng},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2607.01793},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2607.01793}
+}
+% [46] STAF: Leveraging LLMs for Automated Attack Tree-Based Security Test Ge
+%     library: W-arxiv-2509.20190
+@article{ref46,
+  title = {{STAF: Leveraging LLMs for Automated Attack Tree-Based Security Test Generation}},
+  author = {Tanmay Khule and Stefan Marksteiner and Jose Alguindigue and Hannes Fuchs and Sebastian Fischmeister and Apurva Narayan},
+  year = {2025},
+  journal = {arXiv preprint},
+  eprint = {2509.20190},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2509.20190}
+}
+% [47] Guided Reasoning in LLM-Driven Penetration Testing Using Structured At
+%     library: W-arxiv-2509.07939
+@article{ref47,
+  title = {{Guided Reasoning in LLM-Driven Penetration Testing Using Structured Attack Trees}},
+  author = {Katsuaki Nakano and Reza Fayyazi and Shanchieh Jay Yang and Michael Zuzak},
+  year = {2025},
+  journal = {arXiv preprint},
+  eprint = {2509.07939v2},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2509.07939}
+}
+% [48] AgentS4D: Benchmarking Runtime Risks across the Execution Lifecycle of
+%     library: W-arxiv-2607.27294
+@misc{ref48,
+  title = {{AgentS4D: Benchmarking Runtime Risks across the Execution Lifecycle of LLM-Based Workspace Agents}},
+  author = {Jiajun Zhou and Zhaoxuan Ke and Jihang Ye and Xuanze Chen and Shanqing Yu and Qi Xuan},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2607.27294v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2607.27294}
+}
+% [49] HarnessSafe: Evaluating Safety Across Persistent Carriers in Agent Har
+%     library: W-arxiv-2608.06984
+@misc{ref49,
+  title = {{HarnessSafe: Evaluating Safety Across Persistent Carriers in Agent Harnesses}},
+  author = {Xiao Zhang and Yusheng Wang and Yuhao Fei and Dongyuan Li and Zian Liang and Liuyu Xiang and Hongxun Gu and Zhaofeng He},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2608.06984v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.06984}
+}
+% [50] REDAgentBench: Executable Red Teaming and Faithful Measurement of LLM 
+%     library: W-arxiv-2608.10669
+@article{ref50,
+  title = {{REDAgentBench: Executable Red Teaming and Faithful Measurement of LLM Agent Systems}},
+  author = {Zixing Chen and Xingyuan Liu and Jie Zhu and Huaixia Dou and Shuo Jiang and Junhui Li and Lifan Guo and Feng Chen and Chi Zhang},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2608.10669v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.10669}
+}
+% [51] ATOBench: Tracing How Autonomous Penetration-Testing Agents Verify Vul
+%     library: W-arxiv-2608.12996
+@article{ref51,
+  title = {{ATOBench: Tracing How Autonomous Penetration-Testing Agents Verify Vulnerabilities When Target Evidence Lies}},
+  author = {Qiyang Chen and Yixi Li and Fengwei Zhang and Junlin Liu},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2608.12996v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.12996}
+}
+% [52] ActBench: Self-Evolving Benchmark of Behavioral Safety in Cowork Agent
+%     library: W-arxiv-2608.09476
+@misc{ref52,
+  title = {{ActBench: Self-Evolving Benchmark of Behavioral Safety in Cowork Agents}},
+  author = {Hongwei Yao and Yiming Liu and Meihui Chen and Jieling Chen and Zikun Chen and Yiling He and Wangze Ni and Cong Wang and Kui Ren},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2608.09476v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.09476}
+}
+% [53] SkillSentry: Adaptive Honey Worlds for Dynamic Safety Testing of Agent
+%     library: W-arxiv-2608.03485
+@article{ref53,
+  title = {{SkillSentry: Adaptive Honey Worlds for Dynamic Safety Testing of Agent Skills}},
+  author = {Nizhang Li and Zonghao Ying and Xiangfan Wu and Zonglei Jing and Xixun Lin and Hao Zhang and Wenxin Zhang and Jiaye Lin and Quanchen Zou and Xiangzheng Zhang},
+  year = {2026},
+  journal = {arXiv preprint},
+  eprint = {2608.03485v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.03485}
+}
+% [54] When Is an Agent Evaluation Over? Outcome Finality and Cross-Unit Sepa
+%     library: W-arxiv-2608.14940
+@misc{ref54,
+  title = {{When Is an Agent Evaluation Over? Outcome Finality and Cross-Unit Separation}},
+  author = {Avyay M. Casheekar},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2608.14940v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.14940}
+}
+% [55] Can Agent Benchmarks Support Their Scores? Evidence-Supported Bounds f
+%     library: W-arxiv-2605.10448
+@misc{ref55,
+  title = {{Can Agent Benchmarks Support Their Scores? Evidence-Supported Bounds for Interactive-Agent Evaluation}},
+  author = {Shanshan Gao and Liyi Zhou},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2605.10448},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2605.10448}
+}
+% [56] GPT 系列大语言模型在自然语言处理任务中的鲁棒性
+%     library: W-sha-d15d79a2b2dc
+@article{ref56,
+  title = {{GPT 系列大语言模型在自然语言处理任务中的鲁棒性}},
+  author = {陈炫婷 and 叶俊杰 and 祖璨 and 许诺 and 桂韬 and 张奇},
+  year = {2024},
+  journal = {计算机研究与发展},
+  volume = {61},
+  number = {5},
+  doi = {10.7544/issn1000-1239.202330801}
+}
+% [57] 面向大语言模型安全部署的可信评估体系
+%     library: W-sha-6d92785328da
+@misc{ref57,
+  title = {{面向大语言模型安全部署的可信评估体系}},
+  author = {叶文涛 and 胡家齐 and 王皓波 and 陈刚 and 赵俊博},
+  year = {2025},
+  howpublished = {计算机研究与发展},
+  volume = {62},
+  number = {7},
+  doi = {10.7544/issn1000-1239.202440566}
+}
+% [58] Can You Trust LLM Judgments? Reliability of LLM-as-a-Judge
+%     library: W-sha-34a4a0872964
+@article{ref58,
+  title = {{Can You Trust LLM Judgments? Reliability of LLM-as-a-Judge}},
+  author = {Kayla Schroeder and Zach Wood-Doughty},
+  year = {2025},
+  journal = {arXiv preprint}
+}
+% [59] SkillTV-Bench: Benchmarking How Well Judges Perform on Skill-Augmented
+%     library: W-arxiv-2608.05573
+@misc{ref59,
+  title = {{SkillTV-Bench: Benchmarking How Well Judges Perform on Skill-Augmented Agentic Execution}},
+  author = {Zhi Han and Chenxi Zeng and Liuhaichen Yang and Zihan Guo and Ming Zhou and Yang Li},
+  year = {2026},
+  howpublished = {arXiv preprint},
+  eprint = {2608.05573v1},
+  archiveprefix = {arXiv},
+  url = {https://arxiv.org/abs/2608.05573}
+}
+% [60] Non-Determinism of “Deterministic” LLM System Settings in Hosted Envir
+%     library: W-sha-d94638d0e14f
+@article{ref60,
+  title = {{Non-Determinism of “Deterministic” LLM System Settings in Hosted Environments}},
+  author = {Berk Atil and Sarp Aykent and Alexa Chittams and Lisheng Fu and Rebecca J. Passonneau and Evan Radcliffe and Guru Rajan Rajagopal and Adam Sloan and Tomasz Tudrej and Ferhan Ture and Zhe Wu and Lixinyu Xu and Breck Baldwin},
+  year = {2025},
+  journal = {Proceedings of the 5th Workshop on Evaluation and Comparison of NLP Systems (Eval4NLP)},
+  pages = {135--148}
+}
+% [61] Expanding the AI Evaluation Toolbox with Statistical Models
+%     library: W-sha-3cc743c7aad8
+@misc{ref61,
+  title = {{Expanding the AI Evaluation Toolbox with Statistical Models}},
+  author = {Keller AJ},
+  year = {2026},
+  howpublished = {NIST AI 800-3},
+  doi = {10.6028/NIST.AI.800-3}
+}
+% [62] Matching Methods for Causal Inference: A Review and a Look Forward
+%     library: W-arxiv-1010.5586
+@article{ref62,
+  title = {{Matching Methods for Causal Inference: A Review and a Look Forward}},
+  author = {Elizabeth A. Stuart},
+  year = {2010},
+  journal = {Statistical Science},
+  volume = {25},
+  number = {1},
+  pages = {1--21},
+  doi = {10.1214/09-STS313},
+  eprint = {1010.5586},
+  archiveprefix = {arXiv},
+  url = {https://doi.org/10.1214/09-STS313},
+  abstract = {When estimating causal effects using observational data, it is desirable to replicate a randomized experiment as closely as possible by obtaining treated and control groups with similar covariate distributions. This goal can often be achieved by choosing well-matched samples of the original treated and control groups, thereby reducing bias due to the covariates. Since the 1970s, work on matching methods has examined how to best choose treated and control subjects for comparison. Matching methods are gaining popularity in fields such as economics, epidemiology, medicine and political science. However, until now the literature and related advice has been scattered across disciplines. Researchers who are interested in using matching methods—or developing methods related to matching—do not have a single place to turn to learn about past and current research. This paper provides a structure for thinking about matching methods and guidance on their use, coalescing the existing research (both old and new) and providing a summary of where the literature on matching methods is now and where it should be headed.}
+}
+% [63] The Estimation of Causal Effects by Difference-in-Difference Methods
+%     library: W-sha-21ee4797733a
+@article{ref63,
+  title = {{The Estimation of Causal Effects by Difference-in-Difference Methods}},
+  author = {Michael Lechner},
+  year = {2011},
+  journal = {Foundations and Trends in Econometrics},
+  volume = {4},
+  number = {3},
+  pages = {165--224},
+  doi = {10.1561/0800000014},
+  url = {https://doi.org/10.1561/0800000014}
+}
+% [64] The Effect of Forced Choice on Choice
+%     library: W-sha-55305ebf74c9
+@article{ref64,
+  title = {{The Effect of Forced Choice on Choice}},
+  author = {Ravi Dhar and Itamar Simonson},
+  year = {2003},
+  journal = {Journal of Marketing Research},
+  volume = {40},
+  number = {2},
+  pages = {146--160},
+  doi = {10.1509/jmkr.40.2.146.19229}
+}
