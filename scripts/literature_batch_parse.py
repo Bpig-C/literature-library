@@ -1,15 +1,18 @@
 """Batch parse pending PDFs via 二元路由（P3.5 Phase E）。
 
-路由策略（pipeline 弃用）：
-- **文本层 PDF（born-digital）** → `parser/core/mineru/pymupdf_client.py` 本地直抽
-  （精准公式/免费/快）；轻量质检不合格则回退 cloud。
-- **扫描型 PDF（无文本层）** → `parser/core/mineru/cloud_client.py` 走 MinerU 官网精准 API（vlm）。
+路由策略（2026-08-31 起，双路合并为默认）：
+- **auto（默认）** → cloud vlm 优先；成功即生成合并旁路资产（detail.json +
+  content.merged.md = MinerU 结构主体 + PyMuPDF 字形样式）。vlm 失败回退
+  `parser/core/mineru/pymupdf_client.py` 本地直抽（带质检）。
+- **强制 pymupdf / vlm**：`--backend` 显式指定，不回退。
   token 从根目录 .env 的 MinerU_API_KEY 读取。max_workers=1 串行。
 
 Usage:
     python scripts/literature_batch_parse.py              # dry-run: list pending
     python scripts/literature_batch_parse.py --execute    # parse all pending
     python scripts/literature_batch_parse.py --execute --limit 2  # parse first 2
+    python scripts/literature_batch_parse.py --execute --work-ids W-sha-xxx --force --backend vlm
+        # 强制重解析指定 work（不限 pending），并指定后端（vlm/pymupdf/auto）
 
 切回自部署 MinerU：设置环境变量 MINERU_BACKEND=selfdeploy（并配置 MINERU_SERVER_URL），
 parser/core/mineru/mineru_op 会改用 WebClient/LocalClient。
@@ -63,18 +66,39 @@ def load_env_file() -> None:
             os.environ[key] = value
 
 
-def get_pending_db(limit: int | None = None) -> list[dict]:
-    """从 literature_parse_runs 读 status='pending' 的待解析任务（DB 唯一源）。"""
+def get_pending_db(limit: int | None = None, work_ids: list[str] | None = None,
+                   force: bool = False, source_file_ids: list[str] | None = None) -> list[dict]:
+    """从 literature_parse_runs 读待解析任务（DB 唯一源）。
+
+    默认只取 status='pending'；force=True 时取指定 work_ids 的 run（不限状态），
+    供强制重解析。work_ids 非 force 时为可选过滤。
+    source_file_ids：可选，按 source_file_id 过滤（多源 work 精准指定某一副本）。
+    """
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     try:
+        where, params = [], []
+        if force:
+            if not work_ids:
+                raise ValueError("force 重解析需要 work_ids")
+            where.append(f"pr.work_id IN ({','.join('?' * len(work_ids))})")
+            params.extend(work_ids)
+        else:
+            where.append("pr.status = 'pending'")
+            if work_ids:
+                where.append(f"pr.work_id IN ({','.join('?' * len(work_ids))})")
+                params.extend(work_ids)
+        if source_file_ids:
+            where.append(f"pr.source_file_id IN ({','.join('?' * len(source_file_ids))})")
+            params.extend(source_file_ids)
         rows = conn.execute(
             """SELECT pr.source_file_id, pr.work_id, pr.source_path, pr.output_dir,
                       w.language AS language
                FROM literature_parse_runs pr
                LEFT JOIN works w ON w.id = pr.work_id
-               WHERE pr.status = 'pending'
-               ORDER BY pr.id"""
+               WHERE {}
+               ORDER BY pr.id""".format(" AND ".join(where)),
+            params,
         ).fetchall()
     finally:
         conn.close()
@@ -129,23 +153,32 @@ def _update_run_db(conn, sf_id, status, task_id, now, error="", content_md_path=
         )
 
 
-def run_pending(execute: bool, limit: int | None = None) -> int:
-    """解析所有 status='pending' 的 parse_run。DB 唯一状态源。
+def run_pending(execute: bool, limit: int | None = None, backend: str = "auto",
+                work_ids: list[str] | None = None, force: bool = False,
+                source_file_ids: list[str] | None = None) -> int:
+    """解析待处理 parse_run。DB 唯一状态源。
 
     execute=False → dry-run 仅列出；execute=True → 串行 route_and_parse，
     逐条 UPDATE parse_runs + sync_work_parse_status。
+    backend: auto（默认双路合并：vlm 优先+合并，失败回退 pymupdf）/ pymupdf / vlm
+    （强制后端，显式 pymupdf 不回退）。
+    force=True：解析指定 work_ids 的 run（不限状态），用于重解析。
+    source_file_ids：多源 work 时精准指定某一副本。
     """
     load_env_file()
     from core.mineru.cloud_client import CloudClient  # noqa: PLC0415
     from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415
 
-    pending = get_pending_db(limit=limit)
+    pending = get_pending_db(limit=limit, work_ids=work_ids, force=force,
+                             source_file_ids=source_file_ids)
     if not pending:
         print("No pending parse tasks.")
         return 0
 
+    route_hint = ("auto(文本层→PyMuPDF/扫描型→cloud vlm)" if backend == "auto"
+                  else f"forced {backend}")
     print(f"{'[DRY-RUN] ' if not execute else ''}Pending: {len(pending)} files "
-          f"(route: 文本层→PyMuPDF / 扫描型→cloud vlm)")
+          f"(route: {route_hint}{' [force reparse]' if force else ''})")
     for p in pending:
         print(f"  {p['source_file_id']}: {p['source_path']}")
 
@@ -154,8 +187,11 @@ def run_pending(execute: bool, limit: int | None = None) -> int:
 
     token_present = bool(os.getenv("MinerU_API_KEY") or os.getenv("MINERU_API_TOKEN"))
     if not token_present:
-        print("ERROR: MinerU_API_KEY 未在环境/根目录 .env 中找到，无法执行 cloud 解析。")
-        return 2
+        if backend == "vlm":
+            print("ERROR: MinerU_API_KEY 未在环境/根目录 .env 中找到，无法执行 cloud vlm 解析。")
+            return 2
+        if backend == "auto":
+            print("WARN: MinerU_API_KEY 未配置，auto 路由将回退本地 PyMuPDF（无合并视图）。")
 
     client = CloudClient()
     pymupdf_client = PyMuPDFClient()
@@ -164,12 +200,14 @@ def run_pending(execute: bool, limit: int | None = None) -> int:
         source_path = p["source_path"]
         output_dir = Path(p["output_dir"])
         language = p.get("language") or work_language(p.get("work_id", ""))
-        print(f"\n[{p['source_file_id']}] route+parse: {Path(source_path).name} (lang={language})")
+        print(f"\n[{p['source_file_id']}] route+parse: {Path(source_path).name} "
+              f"(lang={language}, backend={backend})")
         conn = _open_conn()
         try:
             try:
                 ok, msg, backend_used = route_and_parse(
-                    client, pymupdf_client, source_path, output_dir, language
+                    client, pymupdf_client, source_path, output_dir, language,
+                    backend=backend,
                 )
                 now = utc_now()
                 if ok:
@@ -219,8 +257,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Batch parse pending PDFs via MinerU cloud API.")
     parser.add_argument("--execute", action="store_true", help="Actually parse. Default is dry-run.")
     parser.add_argument("--limit", type=int, default=None, help="Max number of files to parse.")
+    parser.add_argument("--backend", choices=["auto", "pymupdf", "vlm"], default="auto",
+                        help="后端选择：auto=D13 二元路由（默认）；pymupdf/vlm=强制指定（显式 pymupdf 质检不合格不回退）。")
+    parser.add_argument("--work-ids", default=None,
+                        help="逗号分隔的 work_id 列表，仅解析这些 work。")
+    parser.add_argument("--force", action="store_true",
+                        help="强制重解析指定 work 的 parse_run（不限 pending 状态；需 --work-ids）。")
+    parser.add_argument("--source-file-ids", default=None,
+                        help="逗号分隔的 source_file_id 列表，多源 work 时精准指定某一副本。")
     args = parser.parse_args()
-    return run_pending(execute=args.execute, limit=args.limit)
+    work_ids = [w.strip() for w in args.work_ids.split(",") if w.strip()] if args.work_ids else None
+    sf_ids = [x.strip() for x in args.source_file_ids.split(",") if x.strip()] if args.source_file_ids else None
+    if args.force and not work_ids:
+        parser.error("--force 需要 --work-ids")
+    return run_pending(execute=args.execute, limit=args.limit, backend=args.backend,
+                       work_ids=work_ids, force=args.force, source_file_ids=sf_ids)
 
 
 # ---- LEGACY: 自部署 MinerU :18200 /tasks 异步 API（降级参考，cloud 模式不使用）----

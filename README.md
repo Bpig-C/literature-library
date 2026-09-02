@@ -26,6 +26,8 @@ README 是项目首页和导航页，不再承载完整操作手册。具体流�
 - 主线阶段一（引用导出/综述矩阵）与阶段二（驾驶舱）已于 2026-07-18 完成。
 - FastAPI 后端默认端口 `19527`，Vue 3 前端默认端口 `19528`。
 - 解析状态以 SQLite `literature_parse_runs` 表为唯一权威。
+- 解析默认双路合并（2026-08-31 起）：云 VLM 优先并自动生成合并视图（MinerU 结构 + PyMuPDF 样式 + 版面图表），云不可用回退 PyMuPDF 本地（栅格图）；`/works/:id` 内容预览三态切换，支持「重新解析」指定后端。
+- 云 VLM 解析成功后自动生成合并旁路资产：`detail.json`（MinerU 结构主体 + PyMuPDF 字形样式的合并诊断）+ `content.merged.md`（合并版阅读视图），原始 content.md 等产物一律保留；前端内容预览三态切换（合并版/原版/原文）。
 - 元数据模板已接入真实抽取链路：`/templates` 编辑 `templates/templates.json`，CLI/API/字段级重抽/审核页共同读取 `api/metadata_template.py` loader。
 - AI 抽取和发现检索都必须经过人工审核门禁，不直接污染 `works` 稳定层。
 

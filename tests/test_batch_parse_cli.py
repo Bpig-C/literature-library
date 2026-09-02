@@ -95,7 +95,7 @@ def test_run_one_writes_db_and_syncs_work_status(cli_module, monkeypatch, tmp_pa
         conn.close()
 
     # 桩 route_and_parse：写一个假 content.md，返回成功
-    def fake_route_and_parse(client, pymupdf_client, source_path, output_dir, language):
+    def fake_route_and_parse(client, pymupdf_client, source_path, output_dir, language, backend="auto"):
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         (out / "content.md").write_text("# ok", encoding="utf-8")
@@ -152,7 +152,7 @@ def test_sync_failure_does_not_rollback_parse_runs(cli_module, monkeypatch, tmp_
         conn.close()
 
     # 桩 route_and_parse：写一个假 content.md，返回成功
-    def fake_route_and_parse(client, pymupdf_client, source_path, output_dir, language):
+    def fake_route_and_parse(client, pymupdf_client, source_path, output_dir, language, backend="auto"):
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         (out / "content.md").write_text("# ok", encoding="utf-8")

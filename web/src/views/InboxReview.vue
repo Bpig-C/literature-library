@@ -16,6 +16,11 @@
             <input type="checkbox" v-model="leaveInbox" />
             摄入后保留 _inbox 原文件（默认移至 _archive/ingested_inbox/）
           </label>
+          <input ref="uploadInput" type="file" accept=".pdf,application/pdf" multiple style="display:none" @change="onUploadFiles" />
+          <button class="btn-upload" @click="uploadInput?.click()" :disabled="busy || uploadBusy"
+                  title="选择本机 PDF 上传：存入 _inbox 并自动摄入（含收件箱中其他待摄文件）">
+            {{ uploadBusy ? '上传中…' : '上传 PDF' }}
+          </button>
           <button @click="reload" :disabled="busy">重新扫描</button>
           <button class="btn-execute" @click="showExecuteConfirm"
                   :disabled="busy || !plan || plan.summary.ingests === 0">
@@ -37,7 +42,7 @@
               </span>
             </div>
           </div>
-          <EmptyState v-if="!ingests.length" icon="inbox" title="无可摄入 PDF" description="把 PDF 放入 <library_root>/_inbox/ 后点「重新扫描」。" />
+          <EmptyState v-if="!ingests.length" icon="inbox" title="无可摄入 PDF" description="点「上传 PDF」选择本机文件，或把 PDF 放入 <library_root>/_inbox/ 后点「重新扫描」。" />
         </div>
       </div>
 
@@ -88,7 +93,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getIngestPlan, executeIngest } from '../api'
+import { getIngestPlan, executeIngest, uploadFiles } from '../api'
 import { showError } from '../error-handler'
 import { useNextStep } from '../composables/useNextStep'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -99,6 +104,8 @@ const plan = ref(null)
 const selectedIdx = ref(0)
 const busy = ref(false)
 const leaveInbox = ref(false)
+const uploadInput = ref(null)
+const uploadBusy = ref(false)
 const { notifyNext } = useNextStep()
 
 // ConfirmDialog state
@@ -127,6 +134,33 @@ async function reload() {
     showError(e)
   } finally {
     busy.value = false
+  }
+}
+
+// 网页上传 PDF：存入 _inbox 并由后端自动摄入（含收件箱中其他待摄文件）。
+// 客户端只做扩展名过滤；大小限制/同名覆盖防护见 USER_ISSUES QA-003（后端待补）。
+async function onUploadFiles(e) {
+  const picked = Array.from(e.target?.files || [])
+  e.target.value = ''
+  if (!picked.length || uploadBusy.value) return
+  const pdfs = picked.filter(f => /\.pdf$/i.test(f.name))
+  const nonPdf = picked.length - pdfs.length
+  if (!pdfs.length) {
+    showError(new Error('所选文件中没有 PDF，仅支持 PDF'))
+    return
+  }
+  uploadBusy.value = true
+  try {
+    const res = await uploadFiles(pdfs)
+    let msg = `上传 ${res.uploaded ?? pdfs.length} 个 PDF，摄入 ${res.ingested ?? 0} 个新文献`
+    if (res.skipped?.length) msg += `，跳过 ${res.skipped.length} 个`
+    if (nonPdf) msg += `（另有 ${nonPdf} 个非 PDF 未上传）`
+    notifyNext(msg, { label: '前往解析', to: '/pipeline' })
+    await reload()
+  } catch (err) {
+    showError(err)
+  } finally {
+    uploadBusy.value = false
   }
 }
 

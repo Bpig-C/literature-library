@@ -3,7 +3,10 @@ PyMuPDF 文本层直抽客户端（P3.5 Phase E 路由：文本层 PDF 走本地
 
 对**有文本层**的 born-digital PDF，直接用 PyMuPDF 抽取嵌入文本，产出 content.md/content.json：
 - 精准：公式/符号按嵌入字形，无 pipeline 间距伪影；
-- 本地/免费/快：不耗 cloud 额度。
+- 本地/免费/快：不耗 cloud 额度；
+- 同步抽取页面实际绘制的栅格图片到 images/，并在 content.md 按页追加 `![](images/...)`
+  引用（与 cloud vlm 产物契约一致）。矢量图表不在此路径覆盖，需要时可用
+  backend=vlm 强制重解析（见 router.route_and_parse 的 backend 参数）。
 代价：丢版面结构（双栏阅读顺序可能错乱、表格变平文本）——故路由层在抽取后做轻量质检，
 不合格则回退 cloud vlm。
 
@@ -35,6 +38,13 @@ _GARBLE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f�]")
 _COLUMN_SWITCH_LIMIT = 6
 # 双栏页中“顺序乱”页占比超过此值 → 整篇视为阅读顺序不可接受
 _BAD_2COL_PAGE_RATIO = 0.5
+
+# 图片抽取阈值：短于该像素边长的图视为图标/装饰（跳过）
+_IMAGE_MIN_PIXEL = 64
+# 图片放置 bbox 短边小于该 pt 值视为不可见细线（跳过）
+_IMAGE_MIN_BBOX_PT = 8.0
+# extract_image 的 jpeg 扩展名归一为 jpg（浏览器/一致性）
+_JPEG_EXT = "jpg"
 
 
 def column_switch_count(blocks: list[tuple], width: float) -> int:
@@ -123,6 +133,88 @@ def has_text_layer(pdf_path: Path, threshold: float = TEXT_LAYER_AVG_CHARS_PER_P
     return avg >= threshold
 
 
+def page_image_xrefs(page: Any) -> list[int]:
+    """一页**实际绘制**的栅格图 xref 列表（页内去重 + 过滤图标/细线）。
+
+    优先 get_image_info(xrefs=True)：基于显示列表，能覆盖 Form XObject 内嵌图，
+    并带放置 bbox（可滤掉不可见细线）；不可用/失败回落 get_images(full=True)
+    （仅资源字典，无 bbox，只按像素尺寸过滤）。
+    """
+    try:
+        infos = page.get_image_info(xrefs=True)
+    except Exception:  # noqa: BLE001 — 老版本/异常页兜底
+        try:
+            return sorted(
+                {
+                    int(img[0])
+                    for img in page.get_images(full=True)
+                    if max(int(img[2] or 0), int(img[3] or 0)) >= _IMAGE_MIN_PIXEL
+                }
+            )
+        except Exception:  # noqa: BLE001
+            return []
+    seen: set[int] = set()
+    out: list[int] = []
+    for info in infos:
+        try:
+            xref = int(info.get("xref") or 0)
+        except (TypeError, ValueError):
+            continue
+        if xref <= 0 or xref in seen:
+            continue
+        try:
+            w = int(info.get("width") or 0)
+            h = int(info.get("height") or 0)
+            bbox = info.get("bbox") or (0, 0, 0, 0)
+            bw = abs(float(bbox[2]) - float(bbox[0]))
+            bh = abs(float(bbox[3]) - float(bbox[1]))
+        except (TypeError, ValueError):
+            continue
+        if max(w, h) < _IMAGE_MIN_PIXEL:
+            continue  # 图标/装饰
+        if min(bw, bh) < _IMAGE_MIN_BBOX_PT:
+            continue  # 不可见细线
+        seen.add(xref)
+        out.append(xref)
+    return out
+
+
+def extract_image_data(doc: Any, xref: int) -> tuple[bytes, str]:
+    """按 xref 提取图片，返回 (字节, 扩展名)。
+
+    带 SMask（透明通道）的图合成 alpha 后转 PNG；其余保留原始编码字节
+    （无损、体积小）。CMYK 等异常编码走 Pixmap 兜底转 RGB PNG。
+    """
+    import fitz  # noqa: PLC0415（惰性，与模块约定一致）
+
+    info = doc.extract_image(xref)
+    smask = int(info.get("smask") or 0)
+    if smask > 0:
+        base = fitz.Pixmap(doc, xref)
+        mask = fitz.Pixmap(doc, smask)
+        pix = fitz.Pixmap(base, mask)  # 合成透明通道
+        try:
+            return pix.tobytes("png"), "png"
+        finally:
+            pix = None
+    ext = (info.get("ext") or "png").lower()
+    ext = _JPEG_EXT if ext in ("jpeg", "jpg") else ext
+    return info["image"], ext
+
+
+def _extract_image_fallback(doc: Any, xref: int) -> tuple[bytes, str]:
+    """extract_image 失败时的 Pixmap 兜底（CMYK→RGB，统一 PNG）。"""
+    import fitz  # noqa: PLC0415
+
+    pix = fitz.Pixmap(doc, xref)
+    try:
+        if pix.n - pix.alpha > 3:
+            pix = fitz.Pixmap(fitz.csRGB, pix)
+        return pix.tobytes("png"), "png"
+    finally:
+        pix = None
+
+
 class PyMuPDFClient(PdfParseClient):
     """文本层 PDF 本地直抽。仅适用于有文本层的 PDF；扫描型由路由层转交 cloud vlm。"""
 
@@ -145,20 +237,49 @@ class PyMuPDFClient(PdfParseClient):
             return False, f"PyMuPDF 未安装: {exc}"
 
         doc = fitz.open(str(req.pdf_path))
+        page_texts: list[tuple[int, str]] = []
+        pages_blocks: list[tuple[list, float]] = []
+        page_images: dict[int, list[str]] = {}  # 页码(0基) -> 图片文件名列表
+        images_dir = output_dir / "images"
+        images_saved = 0
+        images_failed = 0
+        seen_xrefs: set[int] = set()  # 跨页去重：同一图只在首次出现的页面落盘
         try:
-            page_texts: list[tuple[int, str]] = []
-            pages_blocks: list[tuple[list, float]] = []
             for i, page in enumerate(doc):
                 page_texts.append((i + 1, page.get_text() or ""))
                 width = page.rect.width
                 raw_blocks = [tuple(b) for b in page.get_text("blocks") if b[6] == 0]
                 pages_blocks.append((raw_blocks, width))
+                names: list[str] = []
+                for xref in page_image_xrefs(page):
+                    if xref in seen_xrefs:
+                        continue
+                    seen_xrefs.add(xref)
+                    try:
+                        try:
+                            data, ext = extract_image_data(doc, xref)
+                        except Exception:  # noqa: BLE001 — 单图失败不中断整篇
+                            data, ext = _extract_image_fallback(doc, xref)
+                    except Exception:  # noqa: BLE001
+                        images_failed += 1
+                        continue
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    name = f"p{i + 1:03d}-x{xref}.{ext}"
+                    (images_dir / name).write_bytes(data)
+                    names.append(name)
+                    images_saved += 1
+                if names:
+                    page_images[i] = names
         finally:
             doc.close()
 
-        full_text = ""
-        for _pg, txt in page_texts:
-            full_text += txt.rstrip() + "\n\n"
+        parts: list[str] = []
+        for pg, txt in page_texts:
+            chunk = txt.rstrip()
+            for name in page_images.get(pg - 1, []):
+                chunk += f"\n\n![{name}](images/{name})"
+            parts.append(chunk)
+        full_text = "\n\n".join(parts) + ("\n" if parts else "")
 
         total_chars = len(full_text)
         garble = len(_GARBLE_RE.findall(full_text))
@@ -178,6 +299,8 @@ class PyMuPDFClient(PdfParseClient):
             "two_col_pages": order_info["two_col_pages"],
             "two_col_bad_pages": order_info["bad_pages"],
             "max_column_switches": order_info["max_switches"],
+            "images": images_saved,
+            "images_failed": images_failed,
         }
         self.last_metrics = metrics
 
@@ -188,7 +311,8 @@ class PyMuPDFClient(PdfParseClient):
             encoding="utf-8",
         )
 
-        msg = f"✅ PyMuPDF 文本层抽取完成：{pages} 页 / {total_chars} 字符 / garble={garble_ratio:.3f}"
+        msg = (f"✅ PyMuPDF 文本层抽取完成：{pages} 页 / {total_chars} 字符 / "
+               f"imgs={images_saved} / garble={garble_ratio:.3f}")
         logger.info(msg)
         return True, msg
 

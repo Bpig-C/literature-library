@@ -176,8 +176,23 @@ export function contentUrl(workId) {
   return `${BASE}/files/${encodeURIComponent(workId)}/content`
 }
 
+// 合并版 markdown（旁路资产 content.merged.md，仅云 VLM 解析有）
+export function mergedContentUrl(workId) {
+  return `${BASE}/files/${encodeURIComponent(workId)}/merged`
+}
+
+// 合并诊断 JSON（旁路资产 detail.json，溯源用）
+export function workDetailJsonUrl(workId) {
+  return `${BASE}/files/${encodeURIComponent(workId)}/detail`
+}
+
 export function pdfUrl(workId) {
   return `${BASE}/files/${encodeURIComponent(workId)}/pdf`
+}
+
+// 解析产物图片（content.md 里 images/xxx 相对引用 → 后端静态端点）
+export function workImageUrl(workId, imageName) {
+  return `${BASE}/files/${encodeURIComponent(workId)}/images/${encodeURIComponent(imageName)}`
 }
 
 export function getMetadataExtractions(params = {}) {

@@ -66,6 +66,22 @@ def list_pending_runs(conn, work_ids: list[str] | None = None) -> list[dict]:
     return [_row_to_pending(dict(r)) for r in rows]
 
 
+def list_runs_for_reparse(conn, work_ids: list[str]) -> list[dict]:
+    """force 重解析：取指定 work 的 parse_run（**不限状态**），供强制重解析。"""
+    if not work_ids:
+        return []
+    rows = conn.execute(
+        """SELECT pr.id, pr.work_id, pr.source_file_id, pr.source_path, pr.output_dir,
+                  w.language AS language
+           FROM literature_parse_runs pr
+           LEFT JOIN works w ON w.id = pr.work_id
+           WHERE pr.work_id IN ({})
+           ORDER BY pr.id""".format(",".join("?" * len(work_ids))),
+        work_ids,
+    ).fetchall()
+    return [_row_to_pending(dict(r)) for r in rows]
+
+
 @router.get("/parse/status")
 def parse_status(work_id: str | None = None):
     conn = get_conn()
@@ -98,7 +114,11 @@ def parse_status(work_id: str | None = None):
 class TriggerBody(BaseModel):
     work_ids: list[str] | None = None
     all_pending: bool = False
-    backend: str | None = None  # 可选覆盖；v1 不接线（YAGNI），route_and_parse 已做 D13 自动路由
+    backend: str | None = None  # auto/pymupdf/vlm；None=默认双路合并（vlm优先+合并，失败回退pymupdf）
+    force: bool = False  # True=对指定 work 的已 succeeded/failed run 强制重解析（需 work_ids）
+
+
+_BACKEND_CHOICES = {"auto", "pymupdf", "vlm"}
 
 
 def _load_env_file() -> None:
@@ -116,12 +136,14 @@ def _load_env_file() -> None:
             os.environ[k] = v
 
 
-def _run_parse(source_path: str, output_dir, language: str) -> tuple[bool, str, str, str]:
+def _run_parse(source_path: str, output_dir, language: str,
+               backend: str | None = None) -> tuple[bool, str, str, str]:
     """单点委托 nucleus：惰性构造 client + 调 route_and_parse。
 
     生产路径：.env 已载入 → CloudClient/PyMuPDFClient 真构造（此处才触达 fitz/网络）。
     测试通过 patch api.routes.parse._run_parse 替换整段，永不触达 fitz/网络。
 
+    backend: None/"auto" → D13 自动路由；"pymupdf"/"vlm" → 强制后端（不回退）。
     返回 (ok, msg, backend_used, task_id)：task_id 取 cloud 的 last_batch_id
     （cloud vlm 路径有 MinerU batch_id 用于溯源；PyMuPDF 本地路径为空）。
     """
@@ -130,7 +152,8 @@ def _run_parse(source_path: str, output_dir, language: str) -> tuple[bool, str, 
     from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415（惰性）
     cloud = CloudClient()
     pymupdf = PyMuPDFClient()
-    ok, msg, backend_used = route_and_parse(cloud, pymupdf, source_path, Path(output_dir), language)
+    ok, msg, backend_used = route_and_parse(cloud, pymupdf, source_path, Path(output_dir),
+                                            language, backend=backend)
     task_id = getattr(cloud, "last_batch_id", "") or ""
     return ok, msg, backend_used, task_id
 
@@ -152,16 +175,24 @@ def _update_run(conn, run: dict, status: str, *, content_md_path: str = "",
 def parse_trigger(body: TriggerBody):
     if not body.work_ids and not body.all_pending:
         raise HTTPException(400, "provide work_ids or set all_pending=true")
+    if body.backend and body.backend not in _BACKEND_CHOICES:
+        raise HTTPException(400, f"backend must be one of {sorted(_BACKEND_CHOICES)}")
+    if body.force and not body.work_ids:
+        raise HTTPException(400, "force re-parse requires explicit work_ids")
     conn = get_conn()
     try:
-        pending = list_pending_runs(conn, body.work_ids if body.work_ids else None)
+        if body.force:
+            pending = list_runs_for_reparse(conn, body.work_ids or [])
+        else:
+            pending = list_pending_runs(conn, body.work_ids if body.work_ids else None)
         if not pending:
-            raise HTTPException(400, "no pending parse runs for the given selector")
+            raise HTTPException(400, "no parse runs for the given selector")
         results, succ, fail = [], 0, 0
         for run in pending:  # 同步串行（与 CLI nucleus 一致）
             try:
                 ok, msg, backend_used, task_id = _run_parse(
-                    run["source_path"], run["output_dir"], run["language"]
+                    run["source_path"], run["output_dir"], run["language"],
+                    backend=body.backend or None,
                 )
                 content_md = str(Path(run["output_dir"]) / "content.md")
                 if ok:

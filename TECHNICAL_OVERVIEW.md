@@ -22,7 +22,7 @@
 | 数据库 | SQLite (WAL 模式) | — |
 | 后端 | FastAPI (Python) | 19527 |
 | 前端 | Vue 3 + Vite | 19528 |
-| PDF 解析 | 二元路由：PyMuPDF 本地（文本层，默认/免费）↔ MinerU 官网 cloud vlm（扫描型/降级） | 经 parser/ 子项目 |
+| PDF 解析 | 默认双路合并（2026-08-31 起）：MinerU 官网 cloud vlm 优先（成功即旁路生成 detail.json + content.merged.md 合并资产，原始产物保留），失败回退 PyMuPDF 本地（文本层+栅格图）；可显式强制 pymupdf/vlm（不回退） | 经 parser/ 子项目 |
 | 文献采集 | collector 子项目（topics 成熟度闸门 / collect·resolve / intake 审核 / ingest_bridge） | CLI·API·UI 三链 |
 | 发现检索 | discovery 子项目（topic/name/title/url/composite 五种模式 + agent 回填协议 + web-access 约束） | CLI·API·UI·Agent |
 | 元数据抽取 | llm_judge → opencode → MiMo-v2.5-pro（当前链路）；Ollama (qwen3:4b，端口 11435) 已弃用，仅历史记录 | — |
@@ -524,7 +524,7 @@ uv run python scripts/literature_analyze.py review AR-xxx --mark approved --note
 ## 10. 当前限制
 
 - 仍无"直接前端文件上传到 work"端点；新增文献经 `_inbox/` 摄入——现已有前端入口 `/inbox`(InboxReview，dry-run+确认，Phase B')，也可命令行或 `POST /api/ingest/*`。
-- 摄入后不自动触发解析，需手动触发：CLI `python scripts/literature_batch_parse.py --execute`、API `POST /api/parse/trigger`、或 WorkDetail 按钮（经 `parser/` 子项目二元路由：PyMuPDF 本地 / MinerU cloud vlm）。
+- 摄入后不自动触发解析，需手动触发：CLI `python scripts/literature_batch_parse.py --execute`、API `POST /api/parse/trigger`、或 WorkDetail 按钮（经 `parser/` 子项目二元路由：PyMuPDF 本地 / MinerU cloud vlm）。`POST /api/parse/trigger` 支持 `backend`（auto/pymupdf/vlm）与 `force: true`（配合 `work_ids` 重解析已 succeeded 的 run）；CLI 对应 `--backend/--force/--work-ids`。重解析前自动清理已知解析产物。
 - `year` 暂不自动回填，因为模型容易误提取会议年份或修订日期。
 - 综述矩阵经 `/api/export/matrix.csv` 已实现（阶段一）；独立分析页面与批量 digest 仍无。
 - `index.json` 是历史产物、`parse_ledger.json` 已废弃归档（解析状态以 `literature_parse_runs` 表为准，Phase D），新功能应优先查询 SQLite。

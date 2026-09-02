@@ -8,9 +8,10 @@
 
 ## 解析路由（`scripts/literature_batch_parse.py`，P3.5 Phase E）
 
-- **文本层 PDF（born-digital）** → `core/mineru/pymupdf_client.py` 本地直抽（精准公式/免费/快）；
-  三层质检（乱码率 / 字符率 / 双栏阅读顺序）任一不合格 → 回退 cloud vlm。
-- **扫描型 PDF（无文本层）** → `core/mineru/cloud_client.py` 走 MinerU 官网精准 API（`model_version=vlm`），
+- **auto（默认，双路合并）** → `core/mineru/cloud_client.py` 云 VLM 优先（成功即由
+  `core/document/detail_result/merged_md.py` 生成合并旁路资产）；失败回退
+  `core/mineru/pymupdf_client.py` 本地直抽（三层质检：乱码率/字符率/双栏阅读顺序）。
+- **扫描型 PDF（无文本层）** 在任何路径下都依赖 cloud vlm（`model_version=vlm`），
   预签名上传→轮询→下载 zip→解压，`full.md`→`content.md`、`content_list.json`→`content.json`。
   **token 从根目录 `.env` 的 `MinerU_API_KEY` 读取**（`Bearer`，勿入 VCS）。`pipeline` 后端已弃用（公式间距伪影）。
 - **selfdeploy（降级）**：设 `MINERU_BACKEND=selfdeploy` + `MINERU_SERVER_URL`，回退到 `WebClient`/`LocalClient`

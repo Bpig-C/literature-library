@@ -87,6 +87,20 @@ python scripts\literature_ingest.py --execute
 python scripts\literature_batch_parse.py --execute
 ```
 
+强制重解析指定文献（不限 pending 状态），并可指定后端：
+
+```powershell
+# 强制云 VLM（保留版面图表，耗时分钟级、耗官网额度）
+python scripts\literature_batch_parse.py --execute --work-ids W-sha-xxxx --force --backend vlm
+# 强制 PyMuPDF 本地直抽（秒级，提取文本层栅格图）
+python scripts\literature_batch_parse.py --execute --work-ids W-sha-xxxx --force --backend pymupdf
+```
+
+`--backend` 取值：`auto`（默认，双路合并：云 VLM 优先+生成合并视图，失败回退
+PyMuPDF 本地）/ `pymupdf` / `vlm`（强制后端，显式指定不回退）。`--force` 必须配合
+`--work-ids`；多源 work（同一文献多个 PDF 副本）可用 `--source-file-ids` 精准指定
+某一副本。重解析前会自动清理该文献解析输出目录中的已知产物。
+
 解析状态以 SQLite 的 `literature_parse_runs` 为准，不再使用历史 `parse_ledger.json`。
 
 查看当前库状态：
@@ -165,6 +179,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal --
 | `POST` | `/api/works/{id}/quarantine` | 隔离文献 |
 | `POST` | `/api/works/{id}/restore` | 恢复隔离文献 |
 | `GET` | `/api/files/{work_id}/content` | 获取解析后的 `content.md` |
+| `GET` | `/api/files/{work_id}/images/{name}` | 获取解析产物图片（content.md 中 `images/` 引用） |
 | `GET` | `/api/files/{work_id}/pdf` | 获取 PDF 文件 |
 | `GET` | `/api/relations` | 文献关系列表 |
 | `POST` | `/api/relations` | 新增关系 |
@@ -177,7 +192,7 @@ python scripts\literature_metadata_rerun.py --ext-id ME-xxxx --fields journal --
 | `GET` | `/api/ingest/plan` | 摄入 dry-run 预览 |
 | `POST` | `/api/ingest/execute` | 执行摄入 |
 | `GET` | `/api/parse/status` | 查询解析状态 |
-| `POST` | `/api/parse/trigger` | 触发解析 |
+| `POST` | `/api/parse/trigger` | 触发解析；可选 `backend`（auto/pymupdf/vlm）与 `force: true`（配合 `work_ids` 强制重解析） |
 
 发现检索和采集候选：
 

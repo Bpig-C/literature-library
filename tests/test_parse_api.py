@@ -120,7 +120,7 @@ def test_list_pending_runs_returns_seeded_rows():
 def test_trigger_success_updates_run_and_status(monkeypatch):
     import api.routes.parse as parse
     seen = {}
-    def fake_run(source_path, output_dir, language):
+    def fake_run(source_path, output_dir, language, backend=None):
         seen.update(source_path=source_path, language=language)
         out = Path(output_dir); out.mkdir(parents=True, exist_ok=True)
         (out / "content.md").write_text("# stub md", encoding="utf-8")
@@ -157,7 +157,7 @@ def test_trigger_success_updates_run_and_status(monkeypatch):
 def test_trigger_failure_does_not_abort_batch(monkeypatch):
     import api.routes.parse as parse
     calls = {"n": 0}
-    def fake_run(source_path, output_dir, language):
+    def fake_run(source_path, output_dir, language, backend=None):
         calls["n"] += 1
         return (False, "boom", "vlm", "BATCH-fail") if calls["n"] == 1 else (True, "ok", "pymupdf", "BATCH-ok")
     monkeypatch.setattr(parse, "_run_parse", fake_run)

@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-08-12T09:12:05+00:00",
+  "library_root": "D:\\02_academic\\doctoral\\literature_library",
+  "inbox_dir": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-S-BANK-001-20260812",
+  "dry_run": true,
+  "ingests": [
+    {
+      "inbox_path": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-S-BANK-001-20260812\\CyberMetric_arXiv2402.07688v2.pdf",
+      "library_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-arxiv-2402.07688\\source\\CyberMetric_arXiv2402.07688v2.pdf",
+      "archive_path": "D:\\02_academic\\doctoral\\literature_library\\_archive\\ingested_inbox\\20260812T091205Z\\CyberMetric_arXiv2402.07688v2.pdf",
+      "content_sha256": "52e9216679095b536e1fc65474a55b025919af4f668a9d23dc9c6dd7e059a01d",
+      "source_file_id": "SF-52e921667909-00185",
+      "work_id": "W-arxiv-2402.07688",
+      "existing_work": false,
+      "original_name": "CyberMetric_arXiv2402.07688v2.pdf",
+      "file_size": 741374,
+      "metadata": {
+        "title": "CyberMetric",
+        "authors": [],
+        "year": null,
+        "arxiv_id": "2402.07688v2",
+        "doi": "",
+        "doc_type": "preprint",
+        "language": "en",
+        "metadata_status": "auto"
+      },
+      "title_duplicate_candidates": []
+    },
+    {
+      "inbox_path": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-S-BANK-001-20260812\\MMLU-CF_ACL2025.pdf",
+      "library_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-sha-f9183e85f380\\source\\MMLU-CF_ACL2025.pdf",
+      "archive_path": "D:\\02_academic\\doctoral\\literature_library\\_archive\\ingested_inbox\\20260812T091205Z\\MMLU-CF_ACL2025.pdf",
+      "content_sha256": "f9183e85f38046729f3f2bd1b343b956fa4220a0221d93f1a0c7f7e52c697185",
+      "source_file_id": "SF-f9183e85f380-00186",
+      "work_id": "W-sha-f9183e85f380",
+      "existing_work": false,
+      "original_name": "MMLU-CF_ACL2025.pdf",
+      "file_size": 1091271,
+      "metadata": {
+        "title": "MMLU - CF ACL2025",
+        "authors": [],
+        "year": null,
+        "arxiv_id": "",
+        "doi": "",
+        "doc_type": "paper",
+        "language": "en",
+        "metadata_status": "missing"
+      },
+      "title_duplicate_candidates": []
+    }
+  ],
+  "exact_duplicates": [],
+  "skipped": [],
+  "warnings": [],
+  "ingest_version": "literature_phase1_ingest_v1",
+  "summary": {
+    "ingests": 2,
+    "exact_duplicates": 0,
+    "skipped": 0,
+    "title_duplicate_candidates": 0,
+    "warnings": 0
+  }
+}

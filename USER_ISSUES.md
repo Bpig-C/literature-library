@@ -115,26 +115,6 @@
 - **优先级**：🟢 低（当前性能健康）
 - **状态**：📋 待处理（待用户确认）
 
-### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表
-- **发现日期**：2026-07-02
-- **页面/模块**：解析流程（parser/core/mineru/router.py 路由策略）
-- **问题描述**：
-  - 当前解析路由策略（D13 二元路由）：有文本层的 born-digital PDF 会优先走 PyMuPDF 本地抽取
-  - PyMuPDF 只提取嵌入文字层，**完全丢弃图片、图表、架构图等视觉元素**
-  - 实际案例：W-sha-05e46bff6988 (Claude Sonnet 5 System Card) 解析后 content.md 只有纯文字（234K），无任何图片引用
-  - 系统卡片/技术文档类 PDF 通常包含大量架构图/流程图，丢失后严重影响阅读体验
-- **期望行为**：
-  - 方案A：允许用户在审核页面选择重新解析并指定后端（强制走 Cloud VLM）
-  - 方案B：修改路由规则，对特定类型文献（系统卡片/技术报告）默认走 VLM
-  - 方案C：PyMuPDF 抽取时同时提取图片（pymupdf 支持 `page.get_images()` 和 `pix.save()`）
-- **优先级**：🟡 中
-- **状态**：📋 待处理
-- **技术备注**：
-  - 路由代码：`parser/core/mineru/router.py` 的 `_route_by_d13()` 函数
-  - PyMuPDF 后端代码：`parser/core/mineru/pymupdf_client.py`（注释已写明代价：丢版面结构）
-  - VLM 后端保留图片：markdown 中 `![](images/xxx.png)` 引用 + 独立图片文件
-  - 用户提到子项目（MinerU）是保留了图片的，问题出在走了 pymupdf 分支
-
 ### QA-004: 分类词汇模板仍是预留能力，尚未建立同步/发布流程
 - **发现日期**：2026-07-04
 - **页面/模块**：模板管理（`api/routes/templates.py`、`TemplateManage.vue`）+ `api/classification_vocab.py` + 前端 labels
@@ -170,6 +150,47 @@
 ## 已解决问题
 
 <!-- 解决后移到这里，保留记录供参考 -->
+
+### UX-009: 合并版文字出现字面 <sub>/<sup> 标签 → ✅ 已解决（2026-08-31）
+- **发现日期**：2026-08-31 · **页面/模块**：`/works/:id` 合并版视图（merged_md.py + markdown.js）
+- **根因（两层）**：
+  1. MinerU vlm 对个别 PDF 产生**失控 `<sub>` 标记**（SkillSentry 单篇 7754 处，疑似被其 logo 下标风格诱导）；
+  2. PyMuPDF 样式 span 偏移基于含标签原文，**把标签从中间劈开**（`C<su`+`**b>ontr**`+`olled`）——碎片既躲过剥离正则也无法被渲染器还原，且跨元素拼接成字面 `<sub>`，单节点遍历难以定位。
+- **解决方式**：
+  - 失控文档（v2 中 `<sub>` > 100 处）：**样式应用前**整篇剥离 `<sub>` 并弃用该篇 style_spans（偏移已失效）；
+  - 正常文档：`_apply_style_spans` 增加劈标签防护（span 与标签部分重叠则弃用该 span，宁缺样式不碎标签）；
+  - 前端渲染器 `<sub>/<sup>` 白名单还原为真实标签（引文上标等正确显示，其余标签仍转义防注入）；
+  - 附带修复重解析后的陈旧读取：文件端点统一 `Cache-Control: no-cache`，前端 content/merged fetch 改 `cache: 'no-store'`。
+- **验证**：25 篇 vlm 合并资产离线再生成（0 失败）全量碎片扫描干净；SkillSentry 实测标题/正文无字面标签、27 个上下标正常渲染、图表完好；全量 614 passed。
+- **代价说明**：失控文档放弃 PyMuPDF 粗斜体样式（该篇文本干净优先）；正常文档样式不受影响。
+
+### UX-008: /ingest 页面没有上传文件入口 → ✅ 已解决（2026-08-30）
+- **发现日期**：2026-08-30 · **页面/模块**：`/ingest` 收件箱 Tab（InboxReview.vue）
+- **问题描述**：后端 `POST /api/ingest/upload`（网页上传→_inbox→自动摄入）与前端 `uploadFiles()` 封装自 2026-07-03 起均已存在，但**没有任何页面接线**——收件箱页只有「重新扫描/确认摄入」，网页上传实际不可用。
+- **解决方式**：InboxReview 过滤栏新增「上传 PDF」按钮（多选、仅 PDF、防重复提交），上传成功后 notifyNext 反馈摄入统计并自动刷新计划；空状态提示同步更新。
+- **保留边界**：上传即自动摄入（后端既有设计，会连带摄入 _inbox 中其他待摄文件）；大小限制与同名覆盖防护仍见 QA-003 待处理。
+- **验证**：`npm run build` 通过；按钮渲染/禁用态经浏览器核对。
+
+### UX-007: 输出层合并（MinerU 结构主体 + PyMuPDF 塞入）未接线 → ✅ 已解决（2026-08-29，方案C）
+- **发现日期**：2026-08-29 · **页面/模块**：解析链路（`parser/core/document/detail_result/`，来自原 document-parser 服务）
+- **用户决策**：方案C——旁路资产 + 合并版 MD + 前端展示，**原始资产一律保留**，有问题可溯源对照。
+- **解决方式**：
+  1. **合并接线**：`parser/core/document/detail_result/merged_md.py`（新）——`build_detail_assets()` 适配云包 uuid 命名三件套（v1/v2/model.json），调用既有 `merge.merged()`（与原服务逐字节一致，未改）产出 `detail.json`（unified_merge_schema v4）与 `content.merged.md`。合并版 MD 以 MinerU 结构为主体、PyMuPDF 字形样式塞入（style_spans→**粗**/*斜*）；`equation_interline`/`chart`/`algorithm`/`page_footnote` 从 v2 原始节点回填（行间公式 `$$..$$`、图片 `![](images/..)`、算法代码块），页面装饰节点剔除。
+  2. **自动触发**：`router.route_and_parse` 在 cloud vlm 成功后自动生成旁路资产（三处路径：强制 vlm/质检回退/扫描型）；失败仅告警不影响解析；重解析清理集补充两个新产物名。
+  3. **端点**：`GET /api/files/{work_id}/merged`（合并版 MD）、`GET /api/files/{work_id}/detail`（诊断 JSON），文件名白名单 + works 边界校验。
+  4. **前端**：WorkDetail 内容预览升级三态——**合并版**（默认，有产物时）/ 原版渲染 / 原版原文 + 「合并诊断 JSON」溯源链接；合并产物缺失时禁用并提示（仅云 VLM 解析生成）。
+  5. **存量回填**：`scripts/literature_merge_detail.py`（离线、不耗额度，dry-run 默认）——存量 8 篇 vlm 全部回填成功（502/427/1023/174/300/246/231/720 节点）；W-arxiv-1706.03762 因源 PDF 缺失跳过（存量数据问题，与本功能无关）。
+- **验证**：新增 14 项测试（`parser/tests/test_merged_md.py`、`parser/tests/test_router_detail_assets.py`、`tests/test_files_merged_endpoints.py`）；全量 606 passed；`npm run build` 通过；浏览器实测 W-arxiv-2506.19248 合并版（标题/粗体作者/行内公式/图表/表格渲染）、原版回退（19 图）、诊断 JSON 链接均正常。
+- **保留边界**：pymupdf 单独路径无 MinerU 结构、不生成合并资产；content.md 主链路输入完全不变，元数据/分类抽取口径不受影响。
+
+### UX-002: PyMuPDF 解析后丢失 PDF 中的图片/图表 → ✅ 已解决（2026-08-29）
+- **发现日期**：2026-07-02 · **页面/模块**：解析流程（parser/core/mineru/router.py 路由策略）
+- **解决方式**（三个断点一起打通）：
+  1. **PyMuPDF 图片抽取（方案C）**：`parser/core/mineru/pymupdf_client.py` 解析时按页提取实际绘制的栅格图（`get_image_info(xrefs=True)`，含跨页 xref 去重、图标级小图过滤），落盘 `images/` 并在 content.md 按页追加 `![](images/...)` 引用——与 VLM 产物契约一致，不耗云额度。矢量图表不在此路径覆盖。
+  2. **后端覆盖 + 强制重解析（方案A）**：`route_and_parse` 新增 `backend` 参数（auto/pymupdf/vlm，显式 pymupdf 不回退）；`POST /api/parse/trigger` 接线 `backend` + `force: true`（重解析不限 pending）；CLI 新增 `--backend/--force/--work-ids`；WorkDetail 页解析状态行新增后端下拉 + 「重新解析」按钮。重解析前自动清理已知解析产物。
+  3. **前端可见（新增）**：`GET /api/files/{work_id}/images/{name}` 图片端点（文件名白名单 + works 边界校验）；WorkDetail 内容预览支持「渲染/原文」切换，渲染模式由纯 JS markdown 渲染器（`web/src/utils/markdown.js`，无新依赖）展示标题/表格/图片，`images/` 相对引用自动改写到后端端点。
+- **验证**：新增 24 项测试（`parser/tests/test_pymupdf_images.py`、`parser/tests/test_router_backend_override.py`、`tests/test_parse_trigger_reparse.py`、`tests/test_files_images_endpoint.py`）全过；全量 592 passed；`npm run build` 通过；真实文献 W-sha-05e46bff6988（Claude Sonnet 5 System Card，本问题原始案例）强制重解析后图片落盘、端点可访问、前端渲染可见。
+- **保留边界**：矢量绘制的图表仍需 VLM 路径；旧 pipeline 后端维持弃用。
 
 ### UX-001: 缺少批量触发流程的管理页面 → ✅ 已完成
 - **解决日期**：2026-07-01/05 复核确认

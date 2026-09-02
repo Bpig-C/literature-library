@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-08-31T06:12:31+00:00",
+  "library_root": "D:\\02_academic\\doctoral\\literature_library",
+  "inbox_dir": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-RW-FRAME-001-20260831-tree-figures",
+  "dry_run": false,
+  "ingests": [
+    {
+      "inbox_path": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-RW-FRAME-001-20260831-tree-figures\\Mahmood_et_al_2022_OTA_Attack_Trees.pdf",
+      "library_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-sha-8c16756d6055\\source\\Mahmood_et_al_2022_OTA_Attack_Trees.pdf",
+      "archive_path": "D:\\02_academic\\doctoral\\literature_library\\_archive\\ingested_inbox\\20260831T061231Z\\Mahmood_et_al_2022_OTA_Attack_Trees.pdf",
+      "content_sha256": "8c16756d6055a9f2cb1550d67de68cbb472866e89e6e34c1b8a5905c20db18a2",
+      "source_file_id": "SF-8c16756d6055-00246",
+      "work_id": "W-sha-8c16756d6055",
+      "existing_work": false,
+      "original_name": "Mahmood_et_al_2022_OTA_Attack_Trees.pdf",
+      "file_size": 2776973,
+      "metadata": {
+        "title": "Systematic threat assessment and security testing of automotive over-the-air (OTA) updates",
+        "authors": [
+          "Windows User"
+        ],
+        "year": null,
+        "arxiv_id": "",
+        "doi": "",
+        "doc_type": "paper",
+        "language": "en",
+        "metadata_status": "needs_review"
+      },
+      "title_duplicate_candidates": []
+    },
+    {
+      "inbox_path": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-RW-FRAME-001-20260831-tree-figures\\Marksteiner_et_al_2023_From_TARA_to_Test.pdf",
+      "library_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-sha-020b5130e2d6\\source\\Marksteiner_et_al_2023_From_TARA_to_Test.pdf",
+      "archive_path": "D:\\02_academic\\doctoral\\literature_library\\_archive\\ingested_inbox\\20260831T061231Z\\Marksteiner_et_al_2023_From_TARA_to_Test.pdf",
+      "content_sha256": "020b5130e2d65c9aa18d9b13f4329dfff59ae52ba8faf4282a0ac272f3546f75",
+      "source_file_id": "SF-020b5130e2d6-00247",
+      "work_id": "W-sha-020b5130e2d6",
+      "existing_work": false,
+      "original_name": "Marksteiner_et_al_2023_From_TARA_to_Test.pdf",
+      "file_size": 779582,
+      "metadata": {
+        "title": "From TARA to Test: Automated Automotive Cybersecurity Test Generation Out of Threat Modeling",
+        "authors": [],
+        "year": null,
+        "arxiv_id": "",
+        "doi": "",
+        "doc_type": "paper",
+        "language": "en",
+        "metadata_status": "needs_review"
+      },
+      "title_duplicate_candidates": []
+    },
+    {
+      "inbox_path": "D:\\02_academic\\doctoral\\literature_library\\_inbox\\LS-RW-FRAME-001-20260831-tree-figures\\Ruijters_Stoelinga_2015_Fault_Tree_Analysis_Survey.pdf",
+      "library_path": "D:\\02_academic\\doctoral\\literature_library\\works\\W-sha-81fe14f467a7\\source\\Ruijters_Stoelinga_2015_Fault_Tree_Analysis_Survey.pdf",
+      "archive_path": "D:\\02_academic\\doctoral\\literature_library\\_archive\\ingested_inbox\\20260831T061231Z\\Ruijters_Stoelinga_2015_Fault_Tree_Analysis_Survey.pdf",
+      "content_sha256": "81fe14f467a7f17b02e15ed5b41df82dd52c8a940eea2c636f2f2e7c332f4a2a",
+      "source_file_id": "SF-81fe14f467a7-00248",
+      "work_id": "W-sha-81fe14f467a7",
+      "existing_work": false,
+      "original_name": "Ruijters_Stoelinga_2015_Fault_Tree_Analysis_Survey.pdf",
+      "file_size": 651656,
+      "metadata": {
+        "title": "Fault tree analysis: A survey of the state-of-the-art in modeling, analysis and tools",
+        "authors": [
+          "Enno Ruijters"
+        ],
+        "year": null,
+        "arxiv_id": "",
+        "doi": "",
+        "doc_type": "paper",
+        "language": "en",
+        "metadata_status": "needs_review"
+      },
+      "title_duplicate_candidates": []
+    }
+  ],
+  "exact_duplicates": [],
+  "skipped": [],
+  "warnings": [],
+  "ingest_version": "literature_phase1_ingest_v1",
+  "summary": {
+    "ingests": 3,
+    "exact_duplicates": 0,
+    "skipped": 0,
+    "title_duplicate_candidates": 0,
+    "warnings": 0
+  }
+}

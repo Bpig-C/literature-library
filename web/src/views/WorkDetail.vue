@@ -145,11 +145,15 @@
           </div>
           <div>链接</div><div><a v-if="work.url" :href="work.url" target="_blank">{{ work.url }}</a></div>
           <div>解析状态</div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</span>
             <n-button size="small" quaternary :loading="parseLoading"
                       :disabled="work.parse_status === 'succeeded'"
                       @click="triggerParse">触发解析</n-button>
+            <n-select v-model:value="parseBackend" size="tiny" style="width:190px"
+                      :options="parseBackendOptions" :consistent-menu-width="false" />
+            <n-button size="small" quaternary type="primary" :loading="parseLoading"
+                      @click="reparseWork">重新解析</n-button>
           </div>
           <div>阅读状态</div>
           <div>
@@ -327,10 +331,22 @@
         </div>
       </div>
 
-      <!-- 内容预览 -->
-      <div class="section" v-if="content">
-        <h3>内容预览</h3>
-        <pre class="content-preview">{{ content }}</pre>
+      <!-- 内容预览：合并版（旁路资产，可溯源） / 原版渲染 / 原版原文 -->
+      <div class="section" v-if="content || mergedContent">
+        <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          内容预览
+          <n-radio-group v-model:value="contentMode" size="tiny">
+            <n-radio-button value="merged" :disabled="mergedUnavailable" title="仅云 VLM 解析生成；可在解析状态行强制 VLM 重解析获得">合并版</n-radio-button>
+            <n-radio-button value="render">原版</n-radio-button>
+            <n-radio-button value="raw">原文</n-radio-button>
+          </n-radio-group>
+          <span v-if="contentMode === 'merged' && hasMergedImages" class="muted tiny">含解析图片</span>
+          <a v-if="contentMode === 'merged' && mergedContent" class="muted tiny" :href="workDetailJsonUrl(props.id)" target="_blank">合并诊断 JSON</a>
+          <span v-if="contentMode === 'merged' && mergedUnavailable" class="muted tiny">无合并产物（仅云 VLM 解析生成）</span>
+        </h3>
+        <div v-if="contentMode === 'merged' && mergedContent" class="content-markdown" v-html="mergedHtml"></div>
+        <div v-else-if="contentMode === 'render'" class="content-markdown" v-html="contentHtml"></div>
+        <pre v-else class="content-preview">{{ content }}</pre>
       </div>
     </div>
     <div v-else class="detail-panel empty-panel">
@@ -363,7 +379,8 @@
 import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, getTags, createTag, deleteTag, parseTrigger, triggerMetadataExtraction, triggerClassificationExtraction } from '../api'
+import { getWorks, getWork, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, workImageUrl, mergedContentUrl, workDetailJsonUrl, getTags, createTag, deleteTag, parseTrigger, triggerMetadataExtraction, triggerClassificationExtraction } from '../api'
+import { renderMarkdown } from '../utils/markdown'
 import { DOC_TYPE_LABELS, PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS, INGESTION_STATE_LABELS, PRIORITY_LABELS, LANGUAGE_LABELS, READ_STATUS_LABELS, PARSE_STATUS_LABELS, RELATION_TYPE_LABELS, TAG_GROUP_LABELS, TAG_VALUE_LABELS, READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS, RISK_DOMAIN_LABELS, METHOD_TAG_LABELS, label } from '../labels'
 import { useNextStep } from '../composables/useNextStep'
 import ResizeHandle from '../components/ResizeHandle.vue'
@@ -402,6 +419,18 @@ const savedFilters = ref(null)
 // --- Detail state ---
 const work = ref(null)
 const content = ref('')
+// 内容预览模式：merged=合并版（MinerU结构+PyMuPDF样式，仅 vlm 解析有）；
+// render=原版渲染（content.md）；raw=原版原文
+const contentMode = ref('merged')
+const mergedContent = ref('')
+const mergedUnavailable = ref(false)
+// 重解析后端选择：auto=D13 自动路由；pymupdf/vlm=强制后端
+const parseBackend = ref('auto')
+const parseBackendOptions = [
+  { label: '路由：自动', value: 'auto' },
+  { label: '强制 PyMuPDF（本地，快）', value: 'pymupdf' },
+  { label: '强制云 VLM（保留版面图）', value: 'vlm' },
+]
 const editing = ref(false)
 const editForm = ref({})
 const titleEl = ref(null)
@@ -621,6 +650,32 @@ const canTriggerParse = computed(() => {
   return work.value && work.value.parse_status !== 'succeeded'
 })
 
+// content.md 渲染为 markdown+图片：相对 images/ 引用改写到后端静态端点
+function markdownToHtml(md) {
+  return renderMarkdown(md, {
+    resolveImageSrc: (src) => {
+      const m = /^\.?\/?images\/(.+)$/.exec(String(src || '').trim())
+      if (m) return workImageUrl(props.id, m[1])
+      return src
+    },
+  })
+}
+
+const contentHtml = computed(() => {
+  if (!content.value || contentMode.value !== 'render') return ''
+  return markdownToHtml(content.value)
+})
+
+// 合并版（MinerU 结构 + PyMuPDF 样式）渲染；图片路径与原版同一套 images/ 契约
+const mergedHtml = computed(() => {
+  if (!mergedContent.value || contentMode.value !== 'merged') return ''
+  return markdownToHtml(mergedContent.value)
+})
+
+const hasParsedImages = computed(() => /\]\(\.?\/?images\//.test(content.value || ''))
+
+const hasMergedImages = computed(() => /\]\([^)]*images\//.test(mergedContent.value || ''))
+
 const canTriggerMetadata = computed(() => {
   if (!work.value) return false
   if (work.value.parse_status !== 'succeeded') return false
@@ -767,10 +822,22 @@ function clearSavedFilters() {
 async function loadWork() {
   work.value = await getWork(props.id)
   content.value = ''
+  mergedContent.value = ''
+  mergedUnavailable.value = false
   try {
-    const res = await fetch(contentUrl(props.id))
+    const res = await fetch(contentUrl(props.id), { cache: 'no-store' })
     if (res.ok) content.value = await res.text()
   } catch {}
+  // 合并版旁路资产（仅云 VLM 解析有）：404 容错，回退原版渲染。
+  // no-store：force 重解析会同路径覆盖产物，绝不能读 HTTP 缓存旧响应
+  try {
+    const mres = await fetch(mergedContentUrl(props.id), { cache: 'no-store' })
+    if (mres.ok) mergedContent.value = await mres.text()
+    else mergedUnavailable.value = true
+  } catch { mergedUnavailable.value = true }
+  if (mergedUnavailable.value && contentMode.value === 'merged') {
+    contentMode.value = 'render'
+  }
   await loadTags()
 }
 
@@ -912,6 +979,30 @@ async function triggerParse() {
     await loadWork()  // 刷新 parse_status 徽标 + content.md 预览
   } catch (e) {
     message.error('触发解析失败：' + e.message)
+  } finally {
+    parseLoading.value = false
+  }
+}
+
+// 强制重解析（force=true，不限 pending 状态），后端按下拉选择：
+// PyMuPDF 本地快但只有文本层栅格图；云 VLM 保留版面图表但耗时数分钟且耗额度。
+async function reparseWork() {
+  parseLoading.value = true
+  try {
+    const res = await parseTrigger({
+      work_ids: [props.id],
+      force: true,
+      backend: parseBackend.value,
+    })
+    const r = (res.results || [])[0] || {}
+    if (r.status === 'succeeded') {
+      notifyNext(`重解析完成 (${r.backend || parseBackend.value})，content.md 已更新`, { label: '查看内容预览' })
+    } else {
+      message.warning(`重解析：${r.status || '?'} — ${r.error || ''}`)
+    }
+    await loadWork()
+  } catch (e) {
+    message.error('重解析失败：' + e.message)
   } finally {
     parseLoading.value = false
   }
@@ -1094,6 +1185,31 @@ h1[contenteditable] { border-bottom: 2px solid var(--accent); padding-bottom: 2p
 .rel-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
 .add-rel { display: flex; gap: 8px; align-items: center; }
 .content-preview { font-size: 12px; font-family: Consolas, monospace; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+
+/* --- 内容预览 markdown 渲染样式 --- */
+.content-markdown {
+  font-size: 13px; line-height: 1.7; color: var(--text-primary);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px 20px;
+  max-height: 560px; overflow: auto; word-break: break-word;
+}
+.content-markdown .md-h { margin: 14px 0 8px; font-weight: 600; line-height: 1.4; }
+.content-markdown .md-h:first-child { margin-top: 0; }
+.content-markdown .md-h1 { font-size: 20px; }
+.content-markdown .md-h2 { font-size: 17px; }
+.content-markdown .md-h3 { font-size: 15px; }
+.content-markdown .md-h4, .content-markdown .md-h5, .content-markdown .md-h6 { font-size: 14px; }
+.content-markdown .md-p { margin: 8px 0; }
+.content-markdown .md-img { max-width: 100%; height: auto; display: block; margin: 10px auto; border: 1px solid var(--border); border-radius: var(--radius-sm, 6px); background: #fff; }
+.content-markdown .md-code { background: var(--bg-page, #f6f6f8); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow: auto; font-size: 12px; font-family: Consolas, monospace; margin: 10px 0; }
+.content-markdown .md-code-inline { background: var(--bg-page, #f6f6f8); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 12px; font-family: Consolas, monospace; }
+.content-markdown .md-quote { margin: 10px 0; padding: 6px 14px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.content-markdown .md-list { margin: 8px 0; padding-left: 24px; }
+.content-markdown .md-list li { margin: 4px 0; }
+.content-markdown .md-hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.content-markdown .md-table { border-collapse: collapse; margin: 10px 0; font-size: 12px; max-width: 100%; display: block; overflow-x: auto; }
+.content-markdown .md-table th, .content-markdown .md-table td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; vertical-align: top; }
+.content-markdown .md-table th { background: var(--bg-page, #f6f6f8); font-weight: 600; }
 
 .contrib-legend { display: inline-flex; gap: 3px; margin-left: 6px; opacity: 0.6; vertical-align: middle; }
 .status-succeeded { color: var(--ok); font-weight: 600; }

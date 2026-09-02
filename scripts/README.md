@@ -49,7 +49,8 @@ views\library_dashboard.html
 | Script | Status | Purpose |
 |---|---|---|
 | `literature_ingest.py` | active | `_inbox` dry-run / execute 摄入，写 `works`、`source_files`、`literature_parse_runs`。 |
-| `literature_batch_parse.py` | active | DB-only pending 解析，调用 `parser/core/mineru/router.py::route_and_parse`。 |
+| `literature_batch_parse.py` | active | DB-only pending 解析，调用 `parser/core/mineru/router.py::route_and_parse`；支持 `--work-ids/--force/--backend`（auto/pymupdf/vlm）强制重解析。 |
+| `literature_merge_detail.py` | active | 离线为云 VLM 解析回填合并旁路资产（detail.json + content.merged.md），不耗额度。 |
 | `healthcheck_library.py` | active | 当前只读健康检查和可选修复入口。 |
 | `check_docs.py` | active | 轻量文档治理检查：入口互链、三类手册、废弃目录和旧路径误用。 |
 | `run_api.py` | active | 启动 FastAPI 后端。 |
