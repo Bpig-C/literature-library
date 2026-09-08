@@ -57,7 +57,6 @@
             <span class="amb-badge" :class="ambLevel(ext.ambiguity_score)">
               amb {{ ext.ambiguity_score }}
             </span>
-            <span class="model-badge" :class="ext.model_name?.startsWith('mimo') ? 'mimo' : 'ollama'">{{ ext.model_name?.startsWith('mimo') ? 'Mimo' : 'Ollama' }}</span>
             <StatusBadge :status="ext.review_status" size="small" :label="statusLabel(ext.review_status)" />
             <StatusBadge v-if="ext.work_read_status === 'quarantined'" status="quarantined" size="small" label="已隔离" />
             <span class="muted tiny">{{ ext.created_at?.slice(0, 10) }}</span>
@@ -77,7 +76,7 @@
       <div class="detail-header">
         <div>
           <h2>{{ selected.work_title }}</h2>
-          <div class="muted tiny">{{ selected.work_id }} · <span class="model-badge" :class="selected.model_name?.startsWith('mimo') ? 'mimo' : 'ollama'">{{ selected.model_name?.startsWith('mimo') ? 'Mimo 2.5 Pro' : 'Ollama' }}</span> · {{ selected.created_at?.slice(0, 19) }}</div>
+          <div class="muted tiny">{{ selected.work_id }} · {{ selected.created_at?.slice(0, 19) }}</div>
         </div>
         <div class="header-badges">
           <button class="ctrl-btn pdf-toggle" :class="{ active: showPdfDrawer }" @click="togglePdfDrawer">
@@ -883,9 +882,6 @@ h2 { font-size: 16px; margin-bottom: 4px; }
 .badge {
   padding: 1px 6px; border-radius: 999px; font-size: 11px;
 }
-.model-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; }
-.model-badge.mimo { background: var(--accent-subtle); color: var(--accent); }
-.model-badge.ollama { background: var(--info-bg); color: var(--info-fg); }
 .badge.pending { background: var(--warn-bg); color: var(--warn-fg); }
 .badge.approved { background: var(--ok-bg); color: var(--ok-fg); }
 .badge.needs_fix { background: var(--bad-bg); color: var(--bad-fg); }

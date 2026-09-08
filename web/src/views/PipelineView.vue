@@ -234,11 +234,10 @@
             <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.display_title)">预览</button>
             <button class="btn-quarantine-row" @click.stop="openQuarantine(item.work_id || item.id)">隔离</button>
           </template>
-          <!-- 审核模式：显示审核状态 + 标题 + 模型名 -->
+          <!-- 审核模式：显示审核状态、标题和时间 -->
           <template v-else>
             <StatusBadge :status="item.status" size="small" />
             <span class="file-name">{{ item.display_title }}</span>
-            <span class="file-meta model">{{ item.model_name }}</span>
             <span class="file-meta">{{ formatDate(item.created_at) }}</span>
             <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.display_title)">预览</button>
           </template>
@@ -315,7 +314,6 @@
           <template v-if="item._source === 'extract'">
             <StatusBadge status="pending" size="small" />
             <span class="file-name">{{ item.display_title }}</span>
-            <span class="file-meta model" v-if="item.meta_model">{{ item.meta_model }}</span>
             <span class="file-meta">元数据已批准</span>
             <span class="file-meta">{{ formatDate(item.created_at) }}</span>
             <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.display_title)">预览</button>
@@ -328,7 +326,6 @@
             <span class="amb-badge" :class="ambLevel(item.ambiguity_score)">
               {{ ambLabel(item.ambiguity_score) }}
             </span>
-            <span class="file-meta model">{{ item.model_name }}</span>
             <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.display_title)">预览</button>
           </template>
         </template>
@@ -1060,11 +1057,6 @@ onMounted(loadAll)
   white-space: nowrap;
 }
 
-.file-meta.model {
-  padding: 1px 6px;
-  background: var(--bg-muted);
-  border-radius: var(--radius-sm);
-}
 
 .stat-badge.running {
   background: var(--info-bg);

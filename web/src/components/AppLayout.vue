@@ -33,10 +33,6 @@
 
       <div class="sidebar-footer">
         <p>探索、审核与归档始终由你掌控</p>
-        <p
-          class="credits"
-          title="早期整体设计：MiMo-2.5 Pro&#10;整体质量控制：GPT-5.5 · Claude Sonnet 4.6&#10;界面设计：含 GPT-5.6 贡献&#10;元数据/分类抽取：MiMo-2.5 Pro&#10;当前主力：Kimi 3（GPT-5.6 辅助审核）"
-        >模型贡献 · MiMo-2.5 Pro / GPT-5.5 / Claude 4.6 / GPT-5.6 / Kimi 3</p>
       </div>
     </aside>
 
@@ -261,7 +257,6 @@ a:hover { text-decoration: none; }
 .ai-dot { width: 5px; height: 5px; margin-left: auto; border-radius: 50%; background: #4dd4ad; box-shadow: 0 0 9px #4dd4ad; }
 .sidebar-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,.06); }
 .sidebar-footer p { margin: 9px 4px 0; color: #656863; font-size: 9px; line-height: 1.5; }
-.sidebar-footer .credits { color: #545752; cursor: default; }
 .workspace { min-height: 100vh; margin-left: var(--sidebar-width); }
 .topbar {
   position: sticky;

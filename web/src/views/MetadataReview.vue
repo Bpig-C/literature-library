@@ -9,11 +9,6 @@
           <b>{{ summary[s.key] || 0 }}</b><span>{{ s.label }}</span>
         </div>
       </div>
-      <!-- Model filter -->
-      <div class="model-bar">
-        <button v-for="m in MODELS" :key="m.key" class="model-btn" :class="{ active: modelFilter === m.key, [m.key]: true }"
-          @click="modelFilter = m.key">{{ m.label }} ({{ summary.model?.[m.key] || 0 }})</button>
-      </div>
       <!-- Risk filter -->
       <div class="risk-bar">
         <span class="risk-label">风险:</span>
@@ -46,7 +41,6 @@
             </span>
             <StatusBadge :status="ext.review_status" size="small" :label="statusLabel(ext.review_status)" />
             <StatusBadge v-if="ext.work_read_status === 'quarantined'" status="quarantined" size="small" label="已隔离" />
-            <span class="model-badge" :class="ext.model_name?.startsWith('mimo') ? 'mimo' : 'ollama'">{{ ext.model_name?.startsWith('mimo') ? 'Mimo' : 'Ollama' }}</span>
             <span class="muted tiny">{{ ext.created_at?.slice(0, 10) }}</span>
           </div>
         </div>
@@ -64,7 +58,7 @@
       <div class="detail-header">
         <div>
           <h2>{{ selected.work_title }}</h2>
-          <div class="muted tiny">{{ selected.work_id }} · {{ selected.model_name }} · {{ selected.created_at?.slice(0, 19) }}</div>
+          <div class="muted tiny">{{ selected.work_id }} · {{ selected.created_at?.slice(0, 19) }}</div>
         </div>
         <div class="header-badges">
           <span class="risk-badge large" :class="selected.risk_level" v-if="selected.risk_level && selected.risk_level !== 'pending'">
@@ -230,7 +224,7 @@
         <input v-model="reviewNote" :placeholder="notePlaceholder" class="note-input" />
         <button class="btn-approve" @click="doReview('approved')" title="结果正确，覆盖写入 works 表，同 work 其他抽取自动 supersede">批准</button>
         <button class="btn-fix" @click="doReview('needs_fix')" title="有小问题，我在页面上直接编辑后重新批准">需修正</button>
-        <button class="btn-reject" @click="doReview('rejected')" title="抽取完全不对，拒绝后通知 Mimo 重新抽取">拒绝</button>
+        <button class="btn-reject" @click="doReview('rejected')" title="抽取完全不对，需要重新抽取">拒绝</button>
         <button class="btn-quarantine" @click="openQuarantineModal" title="这篇文献本身没价值（404/空页面），整个隔离">隔离此文献</button>
       </div>
 
@@ -366,12 +360,6 @@ const RISKS = [
   { key: 'low', label: '低风险' },
 ]
 
-const MODELS = [
-  { key: 'all', label: '全部模型' },
-  { key: 'mimo', label: 'Mimo 2.5 Pro' },
-  { key: 'ollama', label: 'Ollama' },
-]
-
 const QUARANTINE_REASONS = [
   { key: 'bad_source', label: '坏源：PDF 内容为空、反爬页、扫描损坏等' },
   { key: 'out_of_scope', label: '不在范围：不属于当前研究主题或综述范围' },
@@ -396,7 +384,6 @@ const DEFAULT_FIELDS = [
 
 const statusFilter = ref(queryValue('status', 'pending'))
 const riskFilter = ref('all')
-const modelFilter = ref('all')
 const search = ref(queryValue('search'))
 const includeQuarantined = ref(false)
 const sortKey = ref('created_at')
@@ -447,14 +434,7 @@ const evidence = computed(() => selected.value?.extracted_json?.evidence || {})
 const pdfLink = computed(() => selected.value ? pdfUrl(selected.value.work_id) : '#')
 const pdfDrawerKey = computed(() => `${activePdfWorkId.value || 'none'}:${pdfPreviewKey.value}`)
 
-const notePlaceholder = computed(() => {
-  if (!selected.value) return '审核备注...'
-  const model = selected.value.model_name || ''
-  const isMimo = model.startsWith('mimo')
-  return isMimo
-    ? '审核备注（可选）...'
-    : '拒绝时请注明原因，Mimo 将重新抽取...'
-})
+const notePlaceholder = '审核备注...'
 
 const layoutStyle = computed(() => {
   if (selected.value && showPdfDrawer.value) {
@@ -634,7 +614,6 @@ function formatCurrent(f) {
 async function loadList() {
   const params = { ...paginationParams.value, status: statusFilter.value }
   if (riskFilter.value !== 'all') params.risk = riskFilter.value
-  if (modelFilter.value !== 'all') params.model = modelFilter.value
   if (search.value) params.search = search.value
   if (includeQuarantined.value) params.include_quarantined = true
   params.sort = sortKey.value
@@ -726,7 +705,7 @@ function highlightNext() {
 async function doReview(status) {
   if (!selected.value) return
   if (status === 'rejected' && !reviewNote.value.trim()) {
-    message.warning('拒绝时请填写原因，便于 Mimo 重新抽取')
+    message.warning('拒绝时请填写原因，便于后续重新抽取')
     return
   }
   // Validate fields before submission
@@ -887,9 +866,8 @@ async function copyPromptText() {
   }
 }
 
-watch(statusFilter, () => { reset(); riskFilter.value = 'all'; modelFilter.value = 'all'; loadList() })
+watch(statusFilter, () => { reset(); riskFilter.value = 'all'; loadList() })
 watch(riskFilter, () => { reset(); loadList() })
-watch(modelFilter, () => { reset(); loadList() })
 watch(includeQuarantined, () => { reset(); loadList() })
 let searchTimer = null
 watch(search, () => {
@@ -919,7 +897,6 @@ onMounted(async () => {
 .list-panel.collapsed { overflow: hidden; padding: var(--space-4) 6px; }
 .list-panel.collapsed h1,
 .list-panel.collapsed .stats-bar,
-.list-panel.collapsed .model-bar,
 .list-panel.collapsed .risk-bar,
 .list-panel.collapsed .search-input,
 .list-panel.collapsed .sort-row,
@@ -979,14 +956,6 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 .batch-btn { padding: 3px 10px; border: 1px solid var(--ok); border-radius: var(--radius-md); font-size: 11px; background: var(--ok-bg); color: var(--ok-fg); cursor: pointer; font-weight: 600; margin-left: auto; }
 .batch-btn:hover { background: var(--ok); color: #fff; }
 
-/* Model filter */
-.model-bar { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
-.model-btn { padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 11px; background: var(--bg-surface); cursor: pointer; transition: all .15s; }
-.model-btn:hover { border-color: var(--accent); }
-.model-btn.active { font-weight: 600; border-color: var(--accent); background: var(--selected-bg); }
-.model-btn.active.mimo { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
-.model-btn.active.ollama { background: var(--info-bg); border-color: #0284c7; color: var(--info-fg); }
-
 /* Extraction list */
 .ext-list { max-height: calc(100vh - 260px); overflow-y: auto; }
 .ext-item { padding: 8px 10px; border: 1px solid transparent; border-radius: var(--radius-lg); cursor: pointer; margin-bottom: 4px; transition: all .1s; }
@@ -1007,9 +976,6 @@ h2 { font-size: 16px; margin-bottom: 2px; }
 .badge.needs_fix { background: var(--fix-bg); color: var(--fix-fg); }
 .badge.rejected { background: var(--bad-bg); color: var(--bad-fg); }
 .badge.quarantined { background: var(--neutral-bg); color: var(--neutral-fg); }
-.model-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; }
-.model-badge.mimo { background: var(--accent-subtle); color: var(--accent); }
-.model-badge.ollama { background: var(--info-bg); color: var(--info-fg); }
 
 /* Risk badges */
 .risk-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; }
