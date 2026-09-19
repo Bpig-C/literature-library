@@ -37,6 +37,7 @@ README 是项目首页和导航页，不再承载完整操作手册。具体流�
 
 | 文档 | 职责 |
 |---|---|
+| [Agent 入口与跨仓约定](AGENTS.md) | 日常接续入口、共同规则版本与定向同步方式 |
 | [用户手册](docs/manuals/user-manual.md) | 浏览器页面怎么用，包括 `/ingest`、`/pipeline`、`/metadata`、`/templates` 等 |
 | [CLI 与自动化手册](docs/manuals/cli-manual.md) | 命令行、批处理、API 自动化、测试、健康检查 |
 | [Agent 协作手册](docs/manuals/agent-manual.md) | Codex/opencode/本地模型 agent 的边界、派发模板和两轮审核要求 |
