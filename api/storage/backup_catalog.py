@@ -38,8 +38,9 @@ def record_verified(catalog,stage,receipt,backend,verified_at):
     with file_lock(Path(catalog).with_suffix('.lock')):
         c=read_catalog(catalog);prior=[p for p in c['versions'] if p['id']==v['id']]
         if prior:
-            if prior[0]!=v:raise StorageError('revision_conflict','Snapshot identity cannot change')
-            return v
+            compare=dict(v);compare['verified_at']=prior[0]['verified_at']
+            if prior[0]!=compare:raise StorageError('revision_conflict','Snapshot identity cannot change')
+            return prior[0]
         c['versions'].append(v);write(catalog,c)
     return v
 

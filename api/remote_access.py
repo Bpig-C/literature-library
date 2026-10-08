@@ -19,6 +19,12 @@ class RemoteAuthentication(BaseHTTPMiddleware):
                 return JSONResponse({'detail':'Remote writes disabled on this runtime'},status_code=403)
         elif request.url.path.startswith('/api/remote/'):
             return JSONResponse({'detail':'Remote access disabled'},status_code=503)
+        if request.method not in {'GET','HEAD','OPTIONS'} and os.environ.get('LITLIB_STORAGE_MODE')=='immutable':
+            from .storage.authority import configured_authority
+            from .storage.core import StorageError
+            try:
+                with configured_authority().write_guard():return await call_next(request)
+            except StorageError as e:return JSONResponse({'code':e.code,'detail':str(e)},status_code=409 if e.code in {'busy','revision_conflict'} else 503)
         return await call_next(request)
 
 router=APIRouter()

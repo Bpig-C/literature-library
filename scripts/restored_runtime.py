@@ -23,7 +23,7 @@ def environment(root):
         if '/test/' not in ns.root or not Path(env.get('LITLIB_STORAGE_LOCAL_OBJECTS','')).is_absolute():raise StorageError('configuration_error','local backend allowed only in explicit test namespace')
     elif env.get('LITLIB_STORAGE_BACKEND')!='oss' or env.get('LITLIB_OSS_BUCKET')!=m['configuration'].get('oss_bucket') or env.get('LITLIB_OSS_REGION')!=m['configuration'].get('oss_region'):raise StorageError('configuration_error','release OSS backend configuration mismatch')
     for k in list(os.environ):
-        if k.startswith('LITLIB_'):os.environ.pop(k)
+        if k.startswith('LITLIB_') and k not in {'LITLIB_REMOTE_ENABLED','LITLIB_REMOTE_TOKEN','LITLIB_REMOTE_WRITE_ENABLED','LITLIB_AUTHORITY_TOKEN','LITLIB_AUTHORITY_EPOCH'}:os.environ.pop(k)
     os.environ.update(env);os.environ.update(LITLIB_RESEARCH_READ_ONLY='1',LITLIB_LEGACY_CLASSIFICATION_WRITES='block',PYTHONUTF8='1')
     return root,m
 
@@ -51,7 +51,7 @@ def check(root,development=False):
 def main():
     p=argparse.ArgumentParser();s=p.add_subparsers(dest='command',required=True)
     q=s.add_parser('check');q.add_argument('--root',required=True)
-    q=s.add_parser('serve');q.add_argument('--root',required=True);q.add_argument('--port',required=True,type=int);q.add_argument('--read-only',action='store_true')
+    q=s.add_parser('serve');q.add_argument('--root',required=True);q.add_argument('--port',required=True,type=int);q.add_argument('--read-only',action='store_true');q.add_argument('--allow-writes',action='store_true')
     q=s.add_parser('run-cli');q.add_argument('--root',required=True);q.add_argument('--allow-writes',action='store_true');q.add_argument('script',choices=['litlib.py','storage_assets.py','healthcheck_library.py','literature_ingest.py']);q.add_argument('arguments',nargs=argparse.REMAINDER)
     for command_parser in s.choices.values():command_parser.add_argument('--development',action='store_true',help='explicit isolated development from a clean descendant code commit; normal release checks remain strict')
     a=p.parse_args()
@@ -59,11 +59,18 @@ def main():
         result=check(a.root,a.development);print(json.dumps(result),flush=True)
         if a.command=='run-cli':
             os.environ['LITLIB_RESEARCH_READ_ONLY']='0' if a.allow_writes else '1'
+            if a.allow_writes:
+                from api.storage.authority import configured_authority
+                with configured_authority().write_guard():return subprocess.call([sys.executable,str(CODE/'scripts'/a.script),*a.arguments],cwd=CODE)
             return subprocess.call([sys.executable,str(CODE/'scripts'/a.script),*a.arguments],cwd=CODE)
         if a.command=='serve':
             if not 1024<=a.port<=65535:raise StorageError('invalid_request','explicit nonprivileged port required')
             with socket.socket() as sock:sock.bind(('127.0.0.1',a.port))
-            os.environ['LITLIB_RESEARCH_READ_ONLY']='1' if a.read_only else '0'
+            if a.allow_writes and a.read_only:raise StorageError('invalid_request','Choose read-only or explicit authority writes')
+            os.environ['LITLIB_RESEARCH_READ_ONLY']='0' if a.allow_writes else '1'
+            if a.allow_writes:
+                from api.storage.authority import configured_authority
+                configured_authority().check_remote()
             import uvicorn
             uvicorn.run('api.main:app',host='127.0.0.1',port=a.port)
     except (StorageError,OSError,KeyError,ValueError) as error:
