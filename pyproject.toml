@@ -1,0 +1,33 @@
+[project]
+name = "literature-library"
+version = "0.2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.0",
+    "pypdf>=4.0",
+    "requests>=2.34.2",
+    "pymupdf>=1.27.2.3",
+    "python-multipart>=0.0.20",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+]
+
+[project.optional-dependencies]
+storage = ["alibabacloud-oss-v2==1.4.0"]
+
+[tool.pytest.ini_options]
+# Scope collection to the project test suite. This keeps bare `pytest`
+# equivalent to `pytest tests/` (which is how CI/local green runs are done)
+# and prevents parser/tests from being collected — those modules import
+# optional deps (fitz) and error at collection time.
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "live_snapshot: tests that require a real literature.sqlite snapshot (deselect with '-m \"not live_snapshot\"')",
+]

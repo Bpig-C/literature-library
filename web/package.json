@@ -1,0 +1,31 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:report": "vite build --mode production",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.15",
+    "katex": "^0.18.7",
+    "markdown-it": "^15.0.2",
+    "naive-ui": "^2.44.1",
+    "pdfjs-dist": "^6.0.227",
+    "vue": "^3.5.34",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "jsdom": "^30.0.1",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.1.0",
+    "vite": "^8.0.12",
+    "vitest": "^5.0.0"
+  }
+}

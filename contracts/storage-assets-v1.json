@@ -1,0 +1,219 @@
+{
+  "contract": "storage-assets-v1",
+  "status": "isolated-candidate-not-deployed",
+  "research_contract_changed": false,
+  "namespace_roots": [
+    "research/agent-loss-of-control/literature/prod/",
+    "research/agent-loss-of-control/literature/test/<unique-run-id>/"
+  ],
+  "physical_object_relative_key": "objects/sha256/<sha256-first-two>/<full-sha256>",
+  "binding_unique_key": [
+    "identity",
+    "role",
+    "version"
+  ],
+  "binding_fields": [
+    "identity",
+    "role",
+    "version",
+    "sha256",
+    "bytes",
+    "parent_sha256",
+    "parent_bytes",
+    "member"
+  ],
+  "roles": {
+    "source_file_id": [
+      "pdf"
+    ],
+    "parse_run_id": [
+      "md",
+      "merged",
+      "detail",
+      "json",
+      "package",
+      "image:<filename>"
+    ]
+  },
+  "journal_unique_key": "operation_id",
+  "journal_states": [
+    "staged",
+    "uploaded_verified",
+    "registered"
+  ],
+  "staging_ownership_states": [
+    "reserved",
+    "ready",
+    "releasing",
+    "released"
+  ],
+  "staging_release": "tool-owned exact pending only; matching SHA/size, all references registered, no publisher/cache pins; unknown/changed files and unfinished references preserved",
+  "request_immutable_fields": [
+    "identity",
+    "role",
+    "version",
+    "sha256",
+    "bytes",
+    "parent_sha256",
+    "parent_bytes",
+    "member",
+    "virtual_path"
+  ],
+  "file_query_selectors": [
+    "source_file_id",
+    "parse_run_id",
+    "version"
+  ],
+  "page_selection_response": [
+    "work_id",
+    "parse_run_id",
+    "source_file_id",
+    "version",
+    "storage_mode"
+  ],
+  "error_codes": [
+    "invalid_request",
+    "configuration_error",
+    "not_found",
+    "permission_denied",
+    "network_unavailable",
+    "object_exists",
+    "revision_conflict",
+    "registration_pending",
+    "checksum_mismatch",
+    "unsafe_package",
+    "quota_exceeded",
+    "busy",
+    "cache_full",
+    "staging_full",
+    "staging_missing",
+    "cleanup_pending",
+    "producer_incomplete",
+    "producer_failed"
+  ],
+  "readiness": "registered locator, not current remote-health or scientific/human approval",
+  "limits": [
+    "ingest/parse API-function minimum adapters only; legacy batch CLI rejected",
+    "historical transport migration apply restricted to marked synthetic two-DB contexts; formal apply/collector mapping not accepted",
+    "no cloud deletion or old-original deletion; explicit registered owned PDF/parse/staging releases only",
+    "synthetic snapshot only, not production restore",
+    "synthetic HTTP/resolver evidence and real two-object OSS SDK cold reads do not establish production corpus acceptance",
+    "local locked dependencies and reconstructable Git bundle; public remote push/fetchability for this candidate not established"
+  ],
+  "producer_job_states": [
+    "preparing",
+    "artifacts_ready",
+    "registered",
+    "failed"
+  ],
+  "producer_registration": "immutable ingest owned PDF job preparing before exclusive copy and Source commit, then artifacts_ready/registered; legacy reconcile never infers copy ownership; parse new version/run/output; succeeded only after all registrations; explicit resume/reconcile",
+  "synthetic_snapshot": "v2 explicit client whitelist: both DBs/build manifest/explicit editing text; backend closure separate, outside client; excludes source/parsed/research_sources/cache/staging; copy receipt not_run, actual consumption SHA/size/text and file enumeration before passed verification",
+  "research_asset_reference": {
+    "format": "litlib-asset://<source_file_id>/pdf/<positive-version>",
+    "fields": [
+      "source_files.source_path",
+      "literature_parse_runs.source_path",
+      "research_sources.source_path",
+      "research_sources.snapshot_path"
+    ],
+    "schema_contract_versions": "6/5 unchanged; URI semantics new in opt-in storage contract",
+    "import": "explicit work/source/parse/version, registered PDF fingerprint and fixed MD text verification; no local source copy; arbitrary path rejected in immutable mode",
+    "materialize": "bounded cache pin scoped context"
+  },
+  "pdf_selection_response": [
+    "work_id",
+    "source_file_id",
+    "pdf_version"
+  ],
+  "pdf_revision_rule": "PDF selection independent of parse asset version; explicit work/source, immutable fixed pdf_version",
+  "producer_output_release": "explicit registered parse only; marker+durable job file manifest match, strict path/no-links and SHA checks, actual asset read before deletion; originals, unknown/modified/unmarked/failed preserved",
+  "ingested_pdf_release": {
+    "command": "release-ingested-pdf --job-id <PDF job>",
+    "ownership_states": [
+      "owned",
+      "releasing",
+      "released"
+    ],
+    "checks": "registered job, marker and durable owned_copy match, exact path/no links/SHA/size, no shared or legacy research reference, forced bounded cold read before fixed source URI commit and exact copy unlink",
+    "preservation": "inbox/archive originals and all legacy/unowned/changed/failed copies preserved"
+  },
+  "historical_transport_migration": {
+    "format": "litlib-transport-migration-v1",
+    "required_top_level": [
+      "format",
+      "assets",
+      "patches"
+    ],
+    "asset_required_fields": [
+      "identity",
+      "role",
+      "version",
+      "work_id",
+      "source",
+      "sha256",
+      "bytes"
+    ],
+    "parse_asset_additional_required": [
+      "source_file_id"
+    ],
+    "patch_required_fields": [
+      "database",
+      "table",
+      "id",
+      "column",
+      "old",
+      "new",
+      "identity",
+      "role",
+      "version"
+    ],
+    "commands": [
+      "migration-dry-run --manifest <json>",
+      "migration-apply-synthetic --manifest <json>",
+      "migration-prepare-controlled --manifest <json> --payloads <json>",
+      "migration-apply-controlled --ticket <ticket.json> --approved-ticket-sha256 <sha256>"
+    ],
+    "ledger_states": [
+      "publishing",
+      "prepared",
+      "catalog_committed",
+      "applied",
+      "compensated"
+    ],
+    "atomicity": "both DB writer locks for coherent SQLite backups; separate journaled commits; second-commit failure compensated by exact catalog field CAS; conflicts preserve journal",
+    "scientific_mutation": false,
+    "apply_scope": "original synthetic command still requires markers; controlled execution additionally supports explicit OSS prod namespace after reviewed exact ticket authorization, stopped writers, preupload coherent backups, code/context/payload/DB/business guards"
+  },
+  "controlled_migration": {
+    "ticket_format": "litlib-controlled-migration-v1",
+    "prepare_writes": false,
+    "prepare_network_requests": 0,
+    "prepare_before_registry_initialization": true,
+    "execute_initializes_registry": true,
+    "physical_closure_verification": "exact named SHA/bytes immediately before upload, forbid overwrite, forced bounded cold read for each object",
+    "database_guard": "endpoint SHA on first execute; business fingerprints excluding whitelisted transport fields on every execute and under both writer locks before CAS",
+    "backup": "both writer locks, complete SQLite backups before registry initialization/upload, immutable SHA checked on retries",
+    "authorization": "exact ticket digest must be passed after direct human approval; possession of generated ticket is not approval",
+    "formal_execution_this_round": false
+  },
+  "unified_release": {
+    "format": "litlib-unified-release-v1",
+    "code": "exact reviewed clean Git root revision, all tracked hashes and locked dependencies",
+    "essentials": "frontend, coherent pair of SQLite backups, explicit necessary drafts/assets/manuals/skills and whitelisted non-sensitive configuration",
+    "long_term_assets": "immutable binding index; default bounded lazy cache, no whole corpus download or repeat upload",
+    "validation": "exact manifest SHA, namespace, reviewed Git tree and locks, per-object SHA/bytes, frontend extraction bounds, SQLite quick_check/schema/contract, binding equality, runtime asset hashes",
+    "credentials": "environment variable names only; never ordinary backup values",
+    "existing_destination": "refused; publish new directory only after full integrity checks",
+    "formal_execution_this_round": false,
+    "commands": [
+      "snapshot-prepare",
+      "snapshot-stage",
+      "snapshot-publish",
+      "backup",
+      "restore"
+    ],
+    "backup_control": "exact named input digest, explicit byte budget, stopped-writer operator attestation, both SQLite writer locks, fixed staged bytes, verified immutable upload and resumable journal; manifest last",
+    "bootstrap": "recover_release.ps1 fetches exact Git revision, installs uv frozen storage dependencies, restores and installs checked runtime; never starts service",
+    "runtime": "restored_runtime.py applies exact environment.json roots before imports, validates code/frontend/DB/assets/SDK, refuses source-machine fallback; explicit port foreground serve only"
+  }
+}

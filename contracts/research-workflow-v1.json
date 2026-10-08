@@ -1,0 +1,109 @@
+{
+  "contract": "research-workflow",
+  "version": 5,
+  "schema_version": 6,
+  "statuses": {
+    "batch": ["planned", "running", "completed", "completed_with_errors"],
+    "batch_item": ["planned", "running", "submitted", "failed", "stale"],
+    "agent_review": ["pending", "approved", "needs_revision", "rejected"],
+    "human_adoption": ["pending", "adopted", "rejected"],
+    "validation": ["pending", "passed", "failed"],
+    "validity": ["active", "stale", "superseded"],
+    "content_state": ["needs_completion", "needs_review", "stable"],
+    "ontology_proposal": ["proposed", "impact_ready", "pilot_published", "rejected"],
+    "feedback": ["open", "formal_revision_created", "closed"],
+    "feedback_outcome": ["corrected", "partially_corrected", "retained_with_evidence", "unresolved"],
+    "reference_match": ["candidate", "matched", "unmatched", "ambiguous"],
+    "definition": ["draft", "released", "retired"]
+  },
+  "record_layers": ["metadata", "source_record", "interpretation", "ontology"],
+  "record_envelope": {
+    "required_fields": ["record_id", "layer", "work_id", "version", "supersedes_id", "definition_refs", "scope", "payload"],
+    "rule": "Every research record in every layer carries the envelope fields; definition_refs bind the release bundle active at submission time."
+  },
+  "consumption": {
+    "usable_basis": "For each work/source: the latest active revision whose content_state='stable' (stable requires passed structural validation and independent agent review approval).",
+    "current_revision": "The latest active revision regardless of content state; always visible next to the usable basis.",
+    "human_adoption_role": "Human adoption remains an independent human judgment overlay (R04); it is never required for research consumption, comparison, citation or export (R07/U3).",
+    "three_states": "needs_completion/needs_review/stable are content states of records; they are independent of human reading status and are never bulk-upgraded by migration.",
+    "unread_materials": "Unread or human-pending materials keep participating in queries, comparison, citation and candidate analysis."
+  },
+  "error_categories": [
+    "invalid_payload",
+    "incompatible_definition",
+    "identity_conflict",
+    "revision_conflict",
+    "lease_conflict",
+    "dependency_unavailable",
+    "read_only",
+    "not_found",
+    "retryable_failure"
+  ],
+  "task_protocol": {
+    "task_package": "A task package binds environment_id, batch_id, plan_digest, the active release bundle, per-item source/snapshot bindings and the submission/receipt/error contract for one external worker.",
+    "receipts": "Every mutating operation accepts an operation_id; the first durable outcome is stored as an idempotent receipt and replays identically for retries.",
+    "expected_head_id": "A worker may pin expected_head_id; a mismatch with the current head yields revision_conflict instead of a silent fork.",
+    "lease": "Worker mutations require worker_owner + attempt fencing while the lease is unexpired; offline mutations require manual_action with an explicit reason and audit event."
+  },
+  "human_readable_output": {
+    "default_locale": "zh-CN",
+    "rule": "Agent- or model-authored human-readable explanatory content defaults to Chinese.",
+    "preserve_verbatim": [
+      "model and paper proper names",
+      "stable IDs",
+      "schema keys",
+      "enum internal values",
+      "exact source quotes",
+      "evidence offsets and locators"
+    ],
+    "display_translation": {
+      "display_only": true,
+      "versioned_artifact_required": true,
+      "required_binding": [
+        "batch_id", "source_record_id", "source_record_version",
+        "interpretation_id", "interpretation_version", "snapshot_sha256"
+      ],
+      "inherits_review_state": false,
+      "may_mutate_reviewed_payload": false,
+      "may_change_human_adoption": false
+    }
+  },
+  "query_filters": [
+    "batch_id", "q", "source_id", "work_id", "citation_key", "validation_status",
+    "mapping_status", "update_object", "research_role", "deployment_condition",
+    "agent_review_status", "human_adoption_status", "content_state",
+    "source_validation_status", "source_agent_review_status", "source_human_adoption_status",
+    "source_validity_status", "source_content_state", "interpretation_validation_status",
+    "interpretation_agent_review_status", "interpretation_human_adoption_status",
+    "interpretation_validity_status", "interpretation_content_state", "limit"
+  ],
+  "invariants": [
+    "Every record binds an explicit source_file_id, parse_run_id, snapshot_id and snapshot_sha256.",
+    "Every distinct parse_run_id retains its own snapshot binding and parse quality even when its text content hash is identical to another run.",
+    "A source can have multiple globally unique citation aliases without changing its preserved work_id or source_file_id.",
+    "Every claim has at least one exact evidence anchor in the bound immutable text snapshot.",
+    "Successful structural and evidence-anchor validation is recorded independently as validation_status=passed on both record layers.",
+    "Agent review and human adoption are independent state transitions; neither implies the other.",
+    "A canonical plan_digest binds every request_key to its name, ontology version, contract version and sorted source/snapshot pairs; different intent conflicts unless an explicit rerun is requested.",
+    "A batch item records worker ownership, heartbeat/lease timestamps, a monotonically increasing attempt fencing token and durable recovery metadata; a crashed running item is reclaimed only by an explicit recover-running action.",
+    "Worker submission and failure mutations require the current owner and attempt token while the lease is unexpired; offline mutations require an explicit manual_action flag, reason and audit event.",
+    "A batch item remains running after source-record submission and becomes submitted only after its interpretation is stored; failed items retain an error and can be retried explicitly.",
+    "An identical record retry is idempotent; non-identical content requires an explicit supersedes_id that is the current linear head and creates a new version.",
+    "An interpretation can only bind the active source-record head selected by its batch item; consumption additionally requires that interpretation itself to be structurally valid and independently reviewed.",
+    "Legacy analysis and approval rows are never selected by research-workflow queries.",
+    "Ontology publication transactionally recomputes its base-version impact set and invalidates all currently active dependent interpretations, never source snapshots or source records.",
+    "Ordinary Agent review never clears ontology impact; only proposal-specific approval of a new relabel revision can clear that proposal's re-review requirement.",
+    "Legacy validation_status, agent_review_status and human_adoption_status query filters are compatibility aliases for the interpretation layer only.",
+    "Agent- or model-authored explanatory content defaults to Chinese, while stable identifiers, schema keys, enum internal values, proper names, exact source quotes, evidence offsets and locators remain verbatim.",
+    "A Chinese display adaptation of a reviewed record is an independently versioned, exactly bound, display-only artifact; it never mutates the reviewed payload or inherits review/adoption status.",
+    "A definition release is an immutable bundle of one definition version per layer (metadata, source_record, interpretation, ontology) with content hashes; released definitions never change in place and are retired only by a new release.",
+    "Record submissions bind the definition_refs of one release bundle; validation checks payloads against the bound definitions (incompatible_definition otherwise).",
+    "content_state transitions are: submissions start at needs_completion or needs_review; only passed structural validation plus independent agent review approval moves a record to stable; supersede/retraction returns revisions to needs_review; human actions never set stable directly.",
+    "Migration never marks migrated records stable; it assigns needs_review (or needs_completion when structural validation or evidence is incomplete) and preserves every prior state column.",
+    "A formal revision created from feedback records the feedback_id; feedback outcomes are corrected, partially_corrected, retained_with_evidence or unresolved, and pages/exports echo the outcome.",
+    "Citation edges (cites) require a verified evidence anchor in the citing work's bound snapshot; unresolved identity stays a candidate/unmatched reference object and never silently binds an existing work.",
+    "Cross-paper exports separate usable-basis content from current candidates and never present candidates as stable conclusions.",
+    "Receipts are idempotent by operation_id; a replayed operation returns the original durable outcome without re-executing.",
+    "Task packages carry an explicit environment_id; a package is only valid against the environment that issued it."
+  ]
+}

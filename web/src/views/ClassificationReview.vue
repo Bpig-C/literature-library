@@ -1,0 +1,912 @@
+<template>
+  <div class="review-layout" :style="layoutStyle">
+    <!-- Left: list panel -->
+    <div class="list-panel" :class="{ collapsed: listCollapsed }">
+      <h1>历史分类（只读）</h1>
+      <p class="legacy-note">旧分类已退出主流程。新分类请在研究解释记录和风险本体中维护；本页仅供查询历史结果。</p>
+      <div class="stats-bar">
+        <div class="ambiguity-bar">
+          <span class="amb-label">模糊度:</span>
+          <button class="amb-btn" :class="{ active: ambFilter === 'high' }" @click="ambFilter = ambFilter === 'high' ? null : 'high'; resetAndLoad()">
+            高 ({{ summary.ambiguity?.high || 0 }})
+          </button>
+          <button class="amb-btn" :class="{ active: ambFilter === 'medium' }" @click="ambFilter = ambFilter === 'medium' ? null : 'medium'; resetAndLoad()">
+            中 ({{ summary.ambiguity?.medium || 0 }})
+          </button>
+          <button class="amb-btn" :class="{ active: ambFilter === 'low' }" @click="ambFilter = ambFilter === 'low' ? null : 'low'; resetAndLoad()">
+            低 ({{ summary.ambiguity?.low || 0 }})
+          </button>
+        </div>
+        <div class="status-bar">
+          <div v-for="s in STATUSES" :key="s.key" class="stat-card"
+            :class="{ active: statusFilter === s.key }" @click="statusFilter = s.key; resetAndLoad()">
+            <b>{{ summary[s.key] || 0 }}</b><span>{{ s.label }}</span>
+          </div>
+        </div>
+      </div>
+      <input v-model="search" placeholder="搜索标题、ID..." class="search-input" @input="debouncedLoad" />
+      <div class="sort-row">
+        <n-select v-model:value="sortKey" :options="sortOptions" size="small" style="flex:1" @update:value="resetAndLoad" />
+        <button class="sort-dir-btn" @click="toggleSortDir" :title="sortDir === 'desc' ? '降序' : '升序'">
+          {{ sortDir === 'desc' ? '↓' : '↑' }}
+        </button>
+      </div>
+      <div class="priority-bar">
+        <span class="priority-label">优先级:</span>
+        <button v-for="p in ['P0','P1','P2','P3','archive']" :key="p"
+          class="priority-btn" :class="[p, { active: priorityFilter === p }]"
+          @click="priorityFilter = priorityFilter === p ? '' : p; resetAndLoad()">
+          {{ PRIORITY_LABELS[p] }} ({{ summary.priority?.[p] || 0 }})
+        </button>
+        <button v-if="priorityFilter" class="priority-clear" @click="priorityFilter = ''; resetAndLoad()">清除</button>
+      </div>
+      <label class="include-toggle">
+        <input type="checkbox" v-model="includeQuarantined" @change="reset(); loadList()" />
+        <span>显示已隔离</span>
+        <b v-if="summary.quarantined">({{ summary.quarantined }})</b>
+      </label>
+      <div class="ext-list">
+        <div v-for="ext in extractions" :key="ext.id"
+          class="ext-item" :class="{ selected: selected?.id === ext.id, [ext.review_status]: true, quarantined: ext.work_read_status === 'quarantined' }"
+          @click="selectExtraction(ext)">
+          <div class="ext-title">{{ ext.work_title || ext.work_id }}</div>
+          <div class="ext-meta">
+            <span>{{ ext.work_year || '' }}</span>
+            <span class="amb-badge" :class="ambLevel(ext.ambiguity_score)">
+              amb {{ ext.ambiguity_score }}
+            </span>
+            <StatusBadge :status="ext.review_status" size="small" :label="statusLabel(ext.review_status)" />
+            <StatusBadge v-if="ext.work_read_status === 'quarantined'" status="quarantined" size="small" label="已隔离" />
+            <span class="muted tiny">{{ ext.created_at?.slice(0, 10) }}</span>
+          </div>
+        </div>
+        <EmptyState v-if="!extractions.length" icon="search" title="没有匹配的记录" />
+      </div>
+      <n-pagination v-if="totalPages > 1" v-model:page="page" :page-count="totalPages" @update:page="loadList()" />
+      <div class="list-collapse-bar" @click="toggleListCollapse" :title="listCollapsed ? '展开列表' : '收起列表'">
+        {{ listCollapsed ? '»' : '«' }}
+      </div>
+    </div>
+    <ResizeHandle v-if="selected && showPdfDrawer" @resize="onResizeList" />
+
+    <!-- Right: detail panel -->
+    <div class="detail-panel" v-if="selected">
+      <div class="detail-header">
+        <div>
+          <h2>{{ selected.work_title }}</h2>
+          <div class="muted tiny">{{ selected.work_id }} · {{ selected.created_at?.slice(0, 19) }}</div>
+        </div>
+        <div class="header-badges">
+          <button class="ctrl-btn pdf-toggle" :class="{ active: showPdfDrawer }" @click="togglePdfDrawer">
+            {{ showPdfDrawer ? '关闭 PDF' : 'PDF 侧栏' }}
+          </button>
+          <a :href="pdfLink" target="_blank" class="pdf-link">打开 PDF</a>
+          <span class="amb-badge large" :class="ambLevel(selected.ambiguity_score)">
+            amb {{ selected.ambiguity_score }}
+          </span>
+          <StatusBadge :status="selected.review_status" size="large" :label="statusLabel(selected.review_status)" />
+          <StatusBadge v-if="selected.work_read_status === 'quarantined'" status="quarantined" size="large" label="已隔离" />
+        </div>
+      </div>
+
+      <!-- Current work info -->
+      <div class="section">
+        <div class="section-header">
+          <h3 class="section-title">当前文献信息</h3>
+          <template v-if="!editingWork">
+            <button @click="startEditWork">编辑</button>
+          </template>
+          <template v-else>
+            <button class="save" @click="saveEditWork">保存</button>
+            <button @click="editingWork = false">取消</button>
+          </template>
+        </div>
+        <div v-if="editingWork" class="kv-grid edit-mode">
+          <div class="kv-item"><span class="kv-label">doc_type</span><span>{{ selected.work_doc_type || '—' }}</span></div>
+          <div class="kv-item"><span class="kv-label">primary_doc_type</span><span>{{ label(PRIMARY_DOC_TYPE_LABELS, selected.work_primary_doc_type) || '—' }}</span></div>
+          <div class="kv-item"><span class="kv-label">secondary_doc_type</span><span>{{ label(PRIMARY_DOC_TYPE_LABELS, selected.work_secondary_doc_type) || '—' }}</span></div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">标题</span>
+            <input v-model="workEditForm.title" class="field-input" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">中文标题</span>
+            <input v-model="workEditForm.title_zh" class="field-input" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">作者</span>
+            <input v-model="workEditForm.authors" class="field-input" placeholder="用分号分隔" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">年份</span>
+            <input v-model="workEditForm.year" type="number" class="field-input short" />
+            <select v-model="workEditForm.month" class="field-input short">
+              <option :value="null">—</option>
+              <option v-for="m in 12" :key="m" :value="m">{{ m }}月</option>
+            </select>
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">语言</span>
+            <input v-model="workEditForm.language" class="field-input short" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">发表场所</span>
+            <input v-model="workEditForm.venue" class="field-input" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">arXiv ID</span>
+            <input v-model="workEditForm.arxiv_id" class="field-input" />
+          </div>
+          <div class="kv-item edit-row">
+            <span class="kv-label">DOI</span>
+            <input v-model="workEditForm.doi" class="field-input" />
+          </div>
+          <div class="kv-item" v-if="selected.work_contributors?.length">
+            <span class="kv-label">贡献方</span>
+            <span>{{ selected.work_contributors.map(c => c.name + (c.type ? `[${c.type}]` : '') + (c.role ? ` ${c.role}` : '')).join('; ') }}</span>
+          </div>
+          <div class="kv-item" v-if="selected.work_publication_status"><span class="kv-label">发布状态</span><span>{{ selected.work_publication_status }}</span></div>
+          <div class="kv-item" v-if="selected.work_priority"><span class="kv-label">优先级</span><span>{{ selected.work_priority }}</span></div>
+        </div>
+        <div v-else class="kv-grid">
+          <div class="kv-item"><span class="kv-label">doc_type</span><span>{{ selected.work_doc_type || '—' }}</span></div>
+          <div class="kv-item"><span class="kv-label">primary_doc_type</span><span>{{ label(PRIMARY_DOC_TYPE_LABELS, selected.work_primary_doc_type) || '—' }}</span></div>
+          <div class="kv-item"><span class="kv-label">secondary_doc_type</span><span>{{ label(PRIMARY_DOC_TYPE_LABELS, selected.work_secondary_doc_type) || '—' }}</span></div>
+          <div class="kv-item" v-if="selected.work_title_zh"><span class="kv-label">中文标题</span><span>{{ selected.work_title_zh }}</span></div>
+          <div class="kv-item" v-if="selected.work_authors_display"><span class="kv-label">作者</span><span>{{ selected.work_authors_display }}</span></div>
+          <div class="kv-item" v-if="selected.work_institutions?.length">
+            <span class="kv-label">机构</span>
+            <span>{{ selected.work_institutions.map(i => i.name).join('; ') }}</span>
+          </div>
+          <div class="kv-item" v-if="selected.work_contributors?.length">
+            <span class="kv-label">贡献方</span>
+            <span>{{ selected.work_contributors.map(c => c.name + (c.type ? `[${c.type}]` : '') + (c.role ? ` ${c.role}` : '')).join('; ') }}</span>
+          </div>
+          <div class="kv-item"><span class="kv-label">日期</span><span>{{ selected.work_date_display || selected.work_year || '—' }}</span></div>
+          <div class="kv-item" v-if="selected.work_language"><span class="kv-label">语言</span><span>{{ selected.work_language }}</span></div>
+          <div class="kv-item" v-if="selected.work_venue"><span class="kv-label">发表场所</span><span>{{ selected.work_venue }}</span></div>
+          <div class="kv-item" v-if="selected.work_arxiv_id"><span class="kv-label">arXiv ID</span><span>{{ selected.work_arxiv_id }}</span></div>
+          <div class="kv-item" v-if="selected.work_doi"><span class="kv-label">DOI</span><span>{{ selected.work_doi }}</span></div>
+          <div class="kv-item" v-if="selected.work_publication_status"><span class="kv-label">发布状态</span><span>{{ selected.work_publication_status }}</span></div>
+          <div class="kv-item" v-if="selected.work_priority"><span class="kv-label">优先级</span><span>{{ selected.work_priority }}</span></div>
+        </div>
+        <div v-if="selected.work_abstract" class="work-abstract">
+          <span class="kv-label">摘要</span>
+          <div class="abstract-text">{{ selected.work_abstract }}</div>
+        </div>
+      </div>
+
+      <!-- Classification fields -->
+      <div class="section">
+        <h3 class="section-title">分类候选字段</h3>
+        <div v-if="invalidTags.length" class="invalid-tags-banner">
+          ⚠ 以下值不在词汇表中：{{ invalidTags.map(t => t.field + ':' + t.value).join('、') }}
+        </div>
+        <div class="field-table">
+          <div class="field-row header">
+            <div class="field-name">字段</div>
+            <div class="field-extracted">候选值</div>
+            <div class="field-conf">置信</div>
+          </div>
+          <div v-for="f in CLASS_FIELDS" :key="f.key" class="field-row">
+            <div class="field-name">{{ f.label }}</div>
+            <div class="field-extracted">
+              <template v-if="f.type === 'multi-select'">
+                <n-select
+                  v-model:value="editForm[f.key]"
+                  :options="getNSelectOptions(f)"
+                  disabled
+                  multiple
+                  filterable
+                  placeholder="选择或搜索..."
+                  clearable
+                />
+              </template>
+              <template v-else-if="f.type === 'select'">
+                <select v-model="editForm[f.key]" class="field-select" disabled>
+                  <option :value="null">未知 (unknown)</option>
+                  <option v-for="opt in f.options" :key="opt" :value="opt">{{ resolveSelectLabel(f.key, opt) }} ({{ opt }})</option>
+                </select>
+              </template>
+              <template v-else-if="f.type === 'searchable-select'">
+                <n-select
+                  v-model:value="editForm[f.key]"
+                  :options="[{ label: '未知 (unknown)', value: null }, ...getNSelectOptions(f)]"
+                  disabled
+                  filterable
+                  placeholder="检索或输入..."
+                  clearable
+                />
+              </template>
+              <template v-else-if="f.type === 'locked-select'">
+                <n-select
+                  v-model:value="editForm[f.key]"
+                  :options="[{ label: '未知 (unknown)', value: null }, ...getNSelectOptions(f)]"
+                  disabled
+                  filterable
+                  placeholder="请选择..."
+                  clearable
+                />
+              </template>
+              <template v-else>
+                <input v-model="editForm[f.key]" class="field-input" readonly />
+              </template>
+            </div>
+            <div class="field-conf">
+              <span v-if="confidence[f.key]" class="conf-badge" :class="confidence[f.key]">{{ confidence[f.key] }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ambiguity reasons -->
+      <div class="section" v-if="selected.ambiguity_reasons?.length">
+        <h3 class="section-title">模糊原因</h3>
+        <div class="reason-list">
+          <div v-for="(reason, i) in selected.ambiguity_reasons" :key="i" class="reason-item">
+            {{ reason }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Evidence -->
+      <div class="section" v-if="evidence && Object.keys(evidence).length">
+        <h3 class="section-title" @click="showEvidence = !showEvidence">
+          证据片段 {{ showEvidence ? '[-]' : '[+]' }}
+        </h3>
+        <div v-if="showEvidence" class="evidence-box">
+          <div v-for="(v, k) in evidence" :key="k" class="evidence-item">
+            <span class="ev-key">{{ k }}</span>
+            <span class="ev-val">{{ v }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review bar -->
+      <div class="review-bar">
+        <span class="legacy-readonly">历史记录只读。需要修订研究分类时，请进入该文献所属的研究批次。</span>
+      </div>
+
+    </div>
+    <div v-else class="detail-empty">选择一条记录查看详情</div>
+    <ResizeHandle v-if="selected && showPdfDrawer" @resize="onResizeDetail" />
+    <PdfPreviewDrawer
+      v-if="selected && showPdfDrawer && activePdfWorkId === selected.work_id"
+      :key="pdfDrawerKey"
+      :url="pdfLink"
+      :work-id="selected.work_id"
+      @close="closePdfDrawer"
+    />
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, watch, defineAsyncComponent } from 'vue'
+import { useRoute } from 'vue-router'
+import { useMessage } from 'naive-ui'
+import { usePagination } from '../composables/usePagination'
+import {
+  getClassificationExtractions, getClassificationExtraction,
+  quarantineFromClassificationReview, pdfUrl, updateWork,
+  saveClassificationDraft,
+} from '../api'
+import ResizeHandle from '../components/ResizeHandle.vue'
+import StatusBadge from '../components/StatusBadge.vue'
+import EmptyState from '../components/EmptyState.vue'
+
+const PdfPreviewDrawer = defineAsyncComponent(() => import('../components/PdfPreviewDrawer.vue'))
+import {
+  PRIMARY_DOC_TYPE_LABELS, PUBLICATION_STATUS_LABELS,
+  INGESTION_STATE_LABELS, PRIORITY_LABELS,
+  SOURCE_ACTOR_TYPE_LABELS, REGION_LABELS,
+  READING_LANE_LABELS, ARTIFACT_FOCUS_LABELS,
+  RISK_DOMAIN_LABELS, METHOD_TAG_LABELS,
+  TAG_VALUE_LABELS,
+  label,
+} from '../labels'
+
+const message = useMessage()
+const route = useRoute()
+const queryValue = (key, fallback = '') => typeof route.query[key] === 'string' ? route.query[key] : fallback
+
+const STATUSES = [
+  { key: 'pending', label: '待审核' },
+  { key: 'approved', label: '已批准' },
+  { key: 'needs_fix', label: '需修正' },
+  { key: 'rejected', label: '已拒绝' },
+  { key: 'all', label: '全部' },
+]
+
+const CLASS_FIELDS = [
+  { key: 'primary_doc_type', label: '主文档类型', type: 'select',
+    options: Object.keys(PRIMARY_DOC_TYPE_LABELS) },
+  { key: 'secondary_doc_type', label: '次要文档类型', type: 'select',
+    options: Object.keys(PRIMARY_DOC_TYPE_LABELS) },
+  { key: 'publication_status', label: '发布状态', type: 'select',
+    options: Object.keys(PUBLICATION_STATUS_LABELS) },
+  { key: 'primary_source_actor_type', label: '来源机构类型', type: 'searchable-select',
+    options: SOURCE_ACTOR_TYPE_LABELS, allowCustom: true },
+  { key: 'region', label: '地区', type: 'locked-select',
+    options: REGION_LABELS, allowCustom: false },
+  { key: 'reading_lane', label: '阅读用途', type: 'multi-select',
+    options: READING_LANE_LABELS },
+  { key: 'artifact_focus', label: '贡献对象', type: 'multi-select',
+    options: ARTIFACT_FOCUS_LABELS },
+  { key: 'risk_domain', label: '风险领域', type: 'multi-select',
+    options: RISK_DOMAIN_LABELS },
+  { key: 'method_tags', label: '方法标签', type: 'multi-select',
+    options: METHOD_TAG_LABELS },
+  { key: 'ingestion_state', label: '入库状态', type: 'select',
+    options: Object.keys(INGESTION_STATE_LABELS) },
+  { key: 'priority', label: '优先级', type: 'select',
+    options: Object.keys(PRIORITY_LABELS) },
+]
+
+const QUARANTINE_REASONS = [
+  { key: 'bad_source', label: '坏源：PDF 内容为空、反爬页、扫描损坏等' },
+  { key: 'out_of_scope', label: '不在范围：不属于当前研究主题或综述范围' },
+  { key: 'not_literature', label: '非文献：不是论文、报告、标准等目标文献' },
+  { key: 'duplicate_residual', label: '重复残留：已由其他 work 覆盖' },
+  { key: 'needs_rerun', label: '待重跑：主题对，但上传文档本身有问题，需替换后重新抽取' },
+  { key: 'user_removed', label: '用户移除：明确不想保留' },
+]
+
+const extractions = ref([])
+const { page, total, totalPages, params: paginationParams, reset } = usePagination({ perPage: 50, mode: 'offset' })
+const statusFilter = ref(queryValue('status', 'pending'))
+const ambFilter = ref(null)
+const priorityFilter = ref('')
+const search = ref(queryValue('search'))
+const includeQuarantined = ref(false)
+const sortKey = ref('created_at')
+const sortDir = ref('desc')
+const sortOptions = [
+  { label: '抽取时间', value: 'created_at' },
+  { label: '模糊度', value: 'ambiguity_score' },
+  { label: '标题', value: 'work_title' },
+]
+const selected = ref(null)
+const summary = ref({})
+const editForm = ref({})
+const confidence = ref({})
+const evidence = ref({})
+const reviewNote = ref('')
+const showEvidence = ref(false)
+const showPdfDrawer = ref(false)
+const activePdfWorkId = ref(null)
+const pdfPreviewKey = ref(0)
+
+// Work metadata editing
+const editingWork = ref(false)
+const workEditForm = ref({})
+const listWidth = ref(340)
+const listPrevWidth = ref(340)
+const listCollapsed = ref(false)
+const detailWidth = ref(null) // null = auto (1fr)
+
+function getNSelectOptions(f) {
+  if (!f.options) return []
+  // f.options is an object like { key: 'label', ... }
+  return Object.entries(f.options).map(([k, v]) => ({
+    label: `${v} (${k})`,
+    value: k,
+  }))
+}
+
+const pdfLink = computed(() => selected.value ? pdfUrl(selected.value.work_id) : '#')
+
+// Detect tag values not in vocabulary
+const invalidTags = computed(() => {
+  if (!selected.value) return []
+  const ej = selected.value.extracted_json || {}
+  const result = []
+  for (const group of ['reading_lane', 'artifact_focus', 'risk_domain', 'method_tags']) {
+    for (const v of (ej[group] || [])) {
+      if (isInvalidTag(group, v)) result.push({ field: group, value: v })
+    }
+  }
+  return result
+})
+
+// Extract month from publication_date_json (for edit form)
+const workMonth = computed(() => {
+  if (!selected.value) return null
+  try {
+    const pdj = JSON.parse(selected.value.work_publication_date_json || '{}')
+    return pdj.month || null
+  } catch { return null }
+})
+
+// Institutions display
+const workInstitutions = computed(() => {
+  if (!selected.value?.work_institutions) return ''
+  return selected.value.work_institutions.map(i => i.name).join('; ')
+})
+const pdfDrawerKey = computed(() => `${activePdfWorkId.value || 'none'}:${pdfPreviewKey.value}`)
+
+const layoutStyle = computed(() => {
+  if (selected.value && showPdfDrawer.value) {
+    const detail = detailWidth.value === null ? 'minmax(320px, 1fr)' : `${detailWidth.value}px`
+    return { gridTemplateColumns: `${listWidth.value}px 6px ${detail} 6px minmax(420px, 42vw)` }
+  }
+  return { gridTemplateColumns: `${listWidth.value}px minmax(0, 1fr)` }
+})
+
+function onResizeList(w) { listWidth.value = Math.max(240, Math.min(w, 600)) }
+function onResizeDetail(w) { detailWidth.value = Math.max(300, Math.min(w, 900)) }
+
+function toggleListCollapse() {
+  if (listCollapsed.value) {
+    listWidth.value = listPrevWidth.value
+    listCollapsed.value = false
+  } else {
+    listPrevWidth.value = listWidth.value
+    listWidth.value = 80
+    listCollapsed.value = true
+  }
+}
+
+function openPdfDrawer() {
+  if (!selected.value) return
+  activePdfWorkId.value = selected.value.work_id
+  showPdfDrawer.value = true
+  pdfPreviewKey.value += 1
+}
+
+function closePdfDrawer() {
+  showPdfDrawer.value = false
+  detailWidth.value = null
+  activePdfWorkId.value = null
+  pdfPreviewKey.value += 1
+}
+
+function togglePdfDrawer() {
+  if (showPdfDrawer.value) closePdfDrawer()
+  else openPdfDrawer()
+}
+
+let timer = null
+function debouncedLoad() {
+  clearTimeout(timer)
+  timer = setTimeout(() => { reset(); loadList() }, 300)
+}
+
+function toggleSortDir() {
+  sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
+  loadList()
+}
+
+function resetAndLoad() {
+  reset()
+  loadList()
+}
+
+function ambLevel(score) {
+  if (score >= 50) return 'high'
+  if (score >= 20) return 'medium'
+  return 'low'
+}
+
+function statusLabel(s) {
+  const map = { pending: '待审核', approved: '已批准', needs_fix: '需修正', rejected: '已拒绝' }
+  return map[s] || s
+}
+
+const SELECT_LABEL_MAP = {
+  primary_doc_type: PRIMARY_DOC_TYPE_LABELS,
+  secondary_doc_type: PRIMARY_DOC_TYPE_LABELS,
+  publication_status: PUBLICATION_STATUS_LABELS,
+  ingestion_state: INGESTION_STATE_LABELS,
+  priority: PRIORITY_LABELS,
+}
+
+function resolveSelectLabel(fieldKey, opt) {
+  const map = SELECT_LABEL_MAP[fieldKey]
+  return map ? label(map, opt) : opt
+}
+
+function resolveTagValue(fieldKey, value) {
+  const map = TAG_VALUE_LABELS[fieldKey]
+  return map ? label(map, value) : value
+}
+
+// Check if a tag value is NOT in the vocabulary for its group
+const VOCAB_MAP = {
+  reading_lane: READING_LANE_LABELS,
+  artifact_focus: ARTIFACT_FOCUS_LABELS,
+  risk_domain: RISK_DOMAIN_LABELS,
+  method_tags: METHOD_TAG_LABELS,
+}
+function isInvalidTag(fieldKey, value) {
+  const vocab = VOCAB_MAP[fieldKey]
+  return vocab && !(value in vocab)
+}
+
+async function loadList() {
+  const params = {
+    ...paginationParams.value,
+    status: statusFilter.value,
+    priority: priorityFilter.value,
+    search: search.value,
+    include_quarantined: includeQuarantined.value,
+    sort: sortKey.value,
+    order: sortDir.value,
+  }
+  if (ambFilter.value) params.ambiguity_level = ambFilter.value
+  const res = await getClassificationExtractions(params)
+  extractions.value = res.extractions
+  total.value = res.total
+  summary.value = res.summary || {}
+}
+
+async function selectExtraction(ext) {
+  const keepPdfOpen = showPdfDrawer.value
+  selected.value = await getClassificationExtraction(ext.id)
+  if (keepPdfOpen) openPdfDrawer()
+  initEditForm()
+}
+
+function initEditForm() {
+  if (!selected.value) return
+  const ej = selected.value.extracted_json || {}
+  editForm.value = {
+    primary_doc_type: ej.primary_doc_type || null,
+    secondary_doc_type: ej.secondary_doc_type || null,
+    publication_status: ej.publication_status || null,
+    primary_source_actor_type: ej.primary_source_actor_type || null,
+    region: ej.region || null,
+    reading_lane: [...(ej.reading_lane || [])],
+    artifact_focus: [...(ej.artifact_focus || [])],
+    risk_domain: [...(ej.risk_domain || [])],
+    method_tags: [...(ej.method_tags || [])],
+    ingestion_state: ej.ingestion_state || null,
+    priority: ej.priority || null,
+  }
+  confidence.value = selected.value.confidence_json || {}
+  evidence.value = selected.value.extracted_json?.evidence || {}
+  reviewNote.value = selected.value.review_note || ''
+  showEvidence.value = false
+}
+
+// Work metadata editing
+function startEditWork() {
+  if (!selected.value) return
+  // Parse month from publication_date_json
+  let month = null
+  try {
+    const pdj = JSON.parse(selected.value.work_publication_date_json || '{}')
+    month = pdj.month || null
+  } catch {}
+  workEditForm.value = {
+    title: selected.value.work_title || '',
+    authors: selected.value.work_authors || '',
+    year: selected.value.work_year || null,
+    month: month,
+    language: selected.value.work_language || '',
+    venue: selected.value.work_venue || '',
+    arxiv_id: selected.value.work_arxiv_id || '',
+    doi: selected.value.work_doi || '',
+    title_zh: selected.value.work_title_zh || '',
+  }
+  editingWork.value = true
+}
+
+async function saveEditWork() {
+  if (!selected.value) return
+  const data = { ...workEditForm.value }
+  // Convert authors string to array if needed
+  if (typeof data.authors === 'string') {
+    data.authors = data.authors.split(/[;,，]/).map(s => s.trim()).filter(Boolean)
+  }
+  // Convert year to int
+  if (data.year) data.year = parseInt(data.year, 10)
+  // Convert month to int
+  if (data.month) data.month = parseInt(data.month, 10)
+  // Remove empty values
+  Object.keys(data).forEach(k => { if (data[k] === '' || data[k] === null) delete data[k] })
+  try {
+    await updateWork(selected.value.work_id, data)
+    // Update selected work info
+    Object.assign(selected.value, {
+      work_title: data.title || selected.value.work_title,
+      work_authors: Array.isArray(data.authors) ? data.authors.join('; ') : (data.authors || selected.value.work_authors),
+      work_year: data.year || selected.value.work_year,
+      work_language: data.language || selected.value.work_language,
+      work_venue: data.venue || selected.value.work_venue,
+      work_arxiv_id: data.arxiv_id || selected.value.work_arxiv_id,
+      work_doi: data.doi || selected.value.work_doi,
+      work_title_zh: data.title_zh || selected.value.work_title_zh,
+    })
+    editingWork.value = false
+    message.success('文献信息已更新')
+  } catch (e) {
+    message.error('更新失败: ' + (e.message || e))
+  }
+}
+
+
+// 审核完成后自动选中下一条 pending：优先原位置之后，没有则取第一条 pending；无 pending 则清空选中
+function selectNextPending(reviewedId, prevIdx) {
+  const list = extractions.value
+  // 若原位置仍是被审条（如"全部"筛选下未移出列表），从其后一位开始找
+  const startIdx = list[prevIdx]?.id === reviewedId ? prevIdx + 1 : prevIdx
+  let next = null
+  for (let i = Math.max(startIdx, 0); i < list.length; i++) {
+    if (list[i].review_status === 'pending') { next = list[i]; break }
+  }
+  if (!next) next = list.find(e => e.review_status === 'pending') || null
+  if (next) selectExtraction(next)
+  else selected.value = null
+}
+
+async function saveDraft() {
+  if (!selected.value) return
+  const data = {
+    review_note: reviewNote.value,
+    edited_fields: { ...editForm.value },
+  }
+  try {
+    const res = await saveClassificationDraft(selected.value.id, data)
+    selected.value.ambiguity_score = res.ambiguity_score
+    selected.value.extracted_json = { ...selected.value.extracted_json, ...editForm.value }
+    message.success(`草稿已保存，模糊度: ${res.ambiguity_score}`)
+  } catch (e) {
+    message.error('保存失败: ' + (e.message || e))
+  }
+}
+
+
+
+
+onMounted(loadList)
+</script>
+
+<style scoped>
+.review-layout {
+  display: grid;
+  gap: 0;
+  height: calc(100vh - 40px);
+}
+.list-panel {
+  min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  overflow-y: auto;
+  transition: width .2s;
+  position: relative;
+}
+.list-panel.collapsed { overflow: hidden; padding: var(--space-4) 6px; }
+.list-panel.collapsed h1,
+.list-panel.collapsed .stats-bar,
+.list-panel.collapsed .search-input,
+.list-panel.collapsed .sort-row,
+.list-panel.collapsed .priority-bar,
+.list-panel.collapsed .include-toggle,
+.list-panel.collapsed .ext-meta,
+.list-panel.collapsed .pagination { display: none; }
+.list-collapse-bar {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 18px;
+  height: 28px;
+  cursor: pointer;
+  background: var(--bg-muted);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  user-select: none;
+  transition: background .15s;
+  z-index: 10;
+}
+.list-collapse-bar:hover { background: var(--bg-muted); color: var(--text-primary); }
+.detail-panel {
+  min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  overflow-y: auto;
+}
+.detail-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+h1 { font-size: 20px; margin-bottom: 12px; }
+.legacy-note { margin: -5px 0 12px; color: var(--text-tertiary); font-size: 10px; line-height: 1.55; }
+h2 { font-size: 16px; margin-bottom: 4px; }
+.muted { color: var(--text-secondary); }
+.tiny { font-size: 12px; }
+
+/* Stats */
+.stats-bar { margin-bottom: 10px; }
+.ambiguity-bar, .status-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.amb-label, .status-label { font-size: 12px; color: var(--text-secondary); align-self: center; }
+.stat-card {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  cursor: pointer; font-size: 12px; background: var(--bg-surface);
+}
+.stat-card.active { border-color: var(--accent); background: var(--selected-bg); }
+.stat-card b { font-size: 16px; }
+.amb-btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-surface); cursor: pointer; font: inherit; font-size: 12px;
+}
+.amb-btn.active { border-color: var(--accent); background: var(--selected-bg); }
+.batch-btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--ok); border-radius: var(--radius-md);
+  background: var(--bg-surface); color: var(--ok); cursor: pointer; font: inherit; font-size: 12px;
+}
+.include-toggle {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
+  color: var(--text-secondary); font-size: 12px; user-select: none;
+}
+.include-toggle input { margin: 0; }
+.search-input {
+  width: 100%; height: 32px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 0 10px; font: inherit; margin-bottom: 8px;
+}
+.sort-row {
+  display: flex; gap: 4px; align-items: center; margin-bottom: 8px;
+}
+.sort-dir-btn {
+  width: 28px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-surface); cursor: pointer; font-size: 13px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.sort-dir-btn:hover { background: var(--bg-muted); }
+
+/* Priority filter */
+.priority-bar {
+  display: flex; gap: 4px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;
+}
+.priority-label { font-size: 12px; color: var(--text-secondary); }
+.priority-btn {
+  height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-surface); cursor: pointer; font: inherit; font-size: 11px;
+}
+.priority-btn.active { border-color: var(--accent); background: var(--selected-bg); }
+.priority-btn.P0.active { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.priority-btn.P2.active { border-color: var(--info); background: var(--info-bg); color: var(--info); }
+.priority-btn.P3.active { border-color: var(--text-secondary); background: var(--bg-muted); color: var(--text-secondary); }
+.priority-btn.archive.active { border-color: var(--text-tertiary); background: var(--bg-page); color: var(--text-tertiary); }
+.priority-clear {
+  height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-surface); cursor: pointer; font: inherit; font-size: 11px; color: var(--text-secondary);
+}
+.priority-clear:hover { background: var(--bg-muted); }
+
+/* List */
+.ext-list { overflow-y: auto; flex: 1 1 auto; }
+.ext-item {
+  padding: 8px; border-bottom: 1px solid var(--border); cursor: pointer;
+  border-radius: var(--radius-md); margin-bottom: 2px;
+}
+.ext-item:hover { background: var(--bg-muted); }
+.ext-item.selected { background: var(--selected-bg); border-color: var(--accent); }
+.ext-item.quarantined { opacity: .68; background: var(--bg-page); }
+.ext-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.ext-meta { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+.amb-badge {
+  padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+.amb-badge.high { background: var(--bad-bg); color: var(--bad-fg); }
+.amb-badge.medium { background: var(--warn-bg); color: var(--warn-fg); }
+.amb-badge.low { background: var(--ok-bg); color: var(--ok-fg); }
+.badge {
+  padding: 1px 6px; border-radius: 999px; font-size: 11px;
+}
+.badge.pending { background: var(--warn-bg); color: var(--warn-fg); }
+.badge.approved { background: var(--ok-bg); color: var(--ok-fg); }
+.badge.needs_fix { background: var(--bad-bg); color: var(--bad-fg); }
+.badge.rejected { background: var(--bg-muted); color: var(--text-secondary); }
+.badge.quarantined { background: var(--neutral-bg); color: var(--neutral-fg); }
+.pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 8px; }
+.pagination button { height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; font: inherit; font-size: 12px; }
+.pagination button:disabled { opacity: 0.4; cursor: default; }
+
+/* Detail */
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.header-badges { display: flex; gap: 8px; }
+.amb-badge.large, .badge.large { font-size: 13px; padding: 3px 10px; }
+.section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.section-title { font-size: 13px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; cursor: pointer; }
+.kv-grid { display: grid; gap: 4px 8px; font-size: 13px; }
+.kv-item { display: grid; grid-template-columns: 140px 1fr; gap: 0 8px; }
+.kv-label { color: var(--text-secondary); }
+
+/* Field table */
+.field-table { font-size: 13px; }
+.field-row { display: grid; grid-template-columns: 120px 1fr 60px; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); align-items: center; }
+.field-row.header { font-weight: 600; color: var(--text-secondary); font-size: 12px; }
+.field-name { color: var(--text-secondary); }
+.field-select, .field-input {
+  height: 28px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 6px; font: inherit; font-size: 12px; width: 100%;
+}
+.field-input.short { width: 120px; }
+.kv-grid.edit-mode .kv-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.kv-grid.edit-mode .edit-row { flex: 1; }
+.kv-grid.edit-mode .edit-row .kv-label { min-width: 70px; flex-shrink: 0; }
+.kv-grid.edit-mode .edit-row .field-input { flex: 1; }
+.section-header { display: flex; align-items: center; gap: 8px; }
+.conf-badge { padding: 1px 6px; border-radius: 999px; font-size: 11px; }
+.conf-badge.high { background: var(--ok-bg); color: #166534; }
+.conf-badge.medium { background: #fef3c7; color: var(--warn-fg); }
+.conf-badge.low { background: var(--bad-bg); color: var(--bad-fg); }
+
+/* Tags */
+.tag-list { display: flex; gap: 4px; flex-wrap: wrap; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--bg-muted); font-size: 12px; }
+
+/* Reasons */
+.reason-list { font-size: 13px; }
+.reason-item { padding: 4px 0; color: var(--warn-fg); }
+
+/* Evidence */
+.evidence-box { font-size: 12px; }
+.evidence-item { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.ev-key { color: var(--text-secondary); min-width: 100px; }
+.ev-val { color: var(--text-primary); }
+
+/* Review bar */
+.review-bar {
+  display: flex; gap: 8px; align-items: center; margin-top: 16px;
+  padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap;
+}
+.note-input {
+  flex: 1 1 200px; min-width: 200px; height: 32px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 0 10px; font: inherit;
+}
+.review-bar button { flex-shrink: 0; white-space: nowrap; }
+.legacy-readonly { color: var(--text-secondary); font-size: 12px; }
+.btn-approve { height: 32px; padding: 0 14px; border: 1px solid var(--ok); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--ok); cursor: pointer; font: inherit; }
+.btn-fix { height: 32px; padding: 0 14px; border: 1px solid var(--warn); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--warn); cursor: pointer; font: inherit; }
+.btn-reject { height: 32px; padding: 0 14px; border: 1px solid var(--bad); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--bad); cursor: pointer; font: inherit; }
+.btn-save-draft { height: 32px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; font: inherit; }
+.btn-quarantine { height: 32px; padding: 0 14px; border: 1px solid var(--text-secondary); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; font: inherit; }
+.btn-quarantine:disabled { opacity: .5; cursor: default; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-box { background: var(--bg-surface); border-radius: var(--radius-xl); padding: 22px; width: 440px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,.18); }
+.modal-box h3 { margin: 0 0 8px; font-size: 16px; color: var(--text-primary); }
+.modal-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5; }
+.modal-reasons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.reason-option { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 6px 8px; border-radius: var(--radius-lg); transition: background .1s; }
+.reason-option:hover { background: var(--bg-muted); }
+.reason-option input { margin-top: 2px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.btn-cancel { height: 34px; padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); cursor: pointer; font: inherit; }
+.btn-confirm-quarantine { height: 34px; padding: 0 16px; border: none; border-radius: var(--radius-lg); background: var(--bad); color: #fff; cursor: pointer; font: inherit; font-weight: 600; }
+.btn-confirm-quarantine:disabled { opacity: .5; cursor: default; }
+
+/* PDF preview */
+.ctrl-btn { height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-md); font-size: 11px; background: var(--bg-surface); cursor: pointer; transition: all .15s; }
+.ctrl-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ctrl-btn:disabled { opacity: 0.4; cursor: default; }
+.ctrl-btn:active:not(:disabled) { transform: scale(0.95); }
+.pdf-toggle { font-weight: 600; }
+.pdf-link { font-size: 12px; color: var(--accent); text-decoration: none; align-self: center; }
+.pdf-link:hover { text-decoration: underline; }
+
+/* Work metadata */
+.work-abstract { margin-top: 6px; font-size: 13px; }
+.invalid-tags-banner { padding: 6px 10px; margin-bottom: 8px; border-radius: 6px; background: var(--warn-bg); color: var(--warn-fg); font-size: 12px; }
+.abstract-text {
+  margin-top: 4px; max-height: 120px; overflow-y: auto;
+  font-size: 12px; color: var(--text-primary); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+</style>
