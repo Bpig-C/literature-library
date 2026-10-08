@@ -6,3 +6,7 @@ def test_read_argument_cannot_disguise_a_mutating_subcommand():
     assert not read_only_cli('storage_assets.py',['register','--source','read'])
     assert not read_only_cli('literature_ingest.py',['--library-root','/explicit'])
     assert read_only_cli('storage_assets.py',['check'])
+    assert read_only_cli('storage_backup.py',['--catalog','/explicit/backup.json','versions'])
+    assert not read_only_cli('storage_backup.py',['--catalog','/explicit/backup.json','tick','--inputs','versions'])
+    assert read_only_cli('storage_authority.py',['status'])
+    assert not read_only_cli('storage_authority.py',['freeze'])

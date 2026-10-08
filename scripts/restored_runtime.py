@@ -10,6 +10,11 @@ def read_only_cli(script,arguments):
     if arguments in (['--help'],['-h']):return True
     if script=='storage_assets.py':return bool(arguments) and arguments[0] in {'check','migration-dry-run','migration-prepare-controlled'}
     if script=='healthcheck_library.py':return '--apply' not in arguments
+    if script=='storage_authority.py':return arguments==['status']
+    if script=='storage_backup.py':
+        p=argparse.ArgumentParser(add_help=False);p.add_argument('--catalog')
+        _,remaining=p.parse_known_args(arguments)
+        return bool(remaining) and remaining[0] in {'versions','select','plan','discover-remote'}
     if script!='litlib.py':return False
     p=argparse.ArgumentParser(add_help=False);p.add_argument('--library-root');p.add_argument('--db-path');p.add_argument('--read-only',action='store_true')
     _,remaining=p.parse_known_args(arguments)
@@ -61,12 +66,15 @@ def main():
     p=argparse.ArgumentParser();s=p.add_subparsers(dest='command',required=True)
     q=s.add_parser('check');q.add_argument('--root',required=True)
     q=s.add_parser('serve');q.add_argument('--root',required=True);q.add_argument('--port',required=True,type=int);q.add_argument('--read-only',action='store_true');q.add_argument('--allow-writes',action='store_true')
-    q=s.add_parser('run-cli');q.add_argument('--root',required=True);q.add_argument('--allow-writes',action='store_true');q.add_argument('script',choices=['litlib.py','storage_assets.py','healthcheck_library.py','literature_ingest.py']);q.add_argument('arguments',nargs=argparse.REMAINDER)
+    q=s.add_parser('run-cli');q.add_argument('--root',required=True);q.add_argument('--allow-writes',action='store_true');q.add_argument('--authority-control',action='store_true');q.add_argument('script',choices=['litlib.py','storage_assets.py','healthcheck_library.py','literature_ingest.py','storage_authority.py','storage_backup.py']);q.add_argument('arguments',nargs=argparse.REMAINDER)
     for command_parser in s.choices.values():command_parser.add_argument('--development',action='store_true',help='explicit isolated development from a clean descendant code commit; normal release checks remain strict')
     a=p.parse_args()
     try:
         result=check(a.root,a.development);print(json.dumps(result),flush=True)
         if a.command=='run-cli':
+            if a.authority_control:
+                if a.allow_writes or a.script not in {'storage_authority.py','storage_backup.py'}:raise StorageError('permission_denied','Authority control is exclusively for explicit backup/handover administrative commands')
+                return subprocess.call([sys.executable,str(CODE/'scripts'/a.script),*a.arguments],cwd=CODE)
             if not a.allow_writes and not read_only_cli(a.script,a.arguments):raise StorageError('permission_denied','Mutating CLI requires --allow-writes and an active authority; read-only is the default')
             os.environ['LITLIB_RESEARCH_READ_ONLY']='0' if a.allow_writes else '1'
             if a.allow_writes:
