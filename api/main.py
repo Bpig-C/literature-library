@@ -15,9 +15,9 @@ from fastapi.responses import JSONResponse
 if enabled(): validate_startup()  # explicit roots, both schemas and registry; fail before serving
 
 from .routes import duplicates, export, files, ingest, intake, metadata, parse, relations, works, classification, discovery, templates, research
+from .remote_access import RemoteAuthentication, router as remote_router
 
 app = FastAPI(title="Literature Library API", version="0.1.0")
-from .remote_access import RemoteAuthentication,router as remote_router
 app.add_middleware(RemoteAuthentication)
 app.include_router(remote_router,prefix='/api')
 
@@ -59,7 +59,7 @@ async def spa_fallback(request, exc):
 
     API 路径保持 JSON 404；仅当 dist 存在时启用（开发模式走 vite）。
     """
-    from fastapi.responses import FileResponse, JSONResponse
+    from fastapi.responses import FileResponse
 
     if request.url.path.startswith("/api"):
         return JSONResponse({"detail": "Not Found"}, status_code=404)

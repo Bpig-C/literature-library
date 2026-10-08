@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Reviewed literature backup; replace paths/account/time before installation. Template disabled.</Description></RegistrationInfo>
+  <Triggers><CalendarTrigger><StartBoundary>2026-10-11T03:00:00+08:00</StartBoundary><Enabled>true</Enabled><ScheduleByWeek><WeeksInterval>1</WeeksInterval><DaysOfWeek><Sunday /></DaysOfWeek></ScheduleByWeek></CalendarTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>REPLACE_TARGET_SERVICE_ACCOUNT</UserId><LogonType>Password</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>true</StartWhenAvailable><Enabled>false</Enabled><ExecutionTimeLimit>PT2H</ExecutionTimeLimit></Settings>
+  <Actions Context="Author"><Exec><Command>C:\Program Files\PowerShell\7\pwsh.exe</Command><Arguments>-NoProfile -NonInteractive -File "C:\litlib\control\backup-weekly.ps1" -Configuration "C:\litlib\control\target-config.json" -Execute</Arguments><WorkingDirectory>C:\litlib\control</WorkingDirectory></Exec></Actions>
+</Task>

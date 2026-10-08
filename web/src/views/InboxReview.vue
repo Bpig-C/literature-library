@@ -219,7 +219,7 @@ onMounted(reload)
 .filter-bar label { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); font-size: 12px; }
 .filter-bar button { padding: 4px 12px; border-radius: var(--radius-lg); border: 1px solid var(--border); cursor: pointer; background: var(--bg-surface); }
 .filter-bar button:disabled { opacity: .5; cursor: not-allowed; }
-.btn-execute { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filter-bar .btn-execute { background: var(--accent); color: #fff; border-color: var(--accent); }
 .ext-list { display: flex; flex-direction: column; gap: 6px; }
 .ext-item { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-lg); cursor: pointer; }
 .ext-item:hover { background: var(--bg-muted); }

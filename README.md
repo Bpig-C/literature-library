@@ -1,5 +1,8 @@
 # Literature Library deployment code
 
+Target installation, updates, weekly backup templates, retention limits and
+the maintained-code recommendation are in [operations](docs/operations.md).
+
 This repository contains the application, dependency locks, machine contracts,
 and a small deployment guide. Research assets and mutable runtime state are
 restored from private OSS snapshots; they do not belong in this Git tree.

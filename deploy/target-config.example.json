@@ -1,0 +1,23 @@
+{
+  "format": "litlib-target-config-v1",
+  "server_url": "https://replace-target.invalid",
+  "restored_root": "C:/litlib/releases/REPLACE_RELEASE",
+  "code_url": "https://github.com/Bpig-C/literature-library",
+  "code_commit": "REPLACE_REVIEWED_CODE_SHA40",
+  "manifest_key": "REPLACE_EXACT_MANIFEST_KEY",
+  "manifest_sha256": "REPLACE_MANIFEST_SHA64",
+  "namespace": "research/agent-loss-of-control/literature/prod/",
+  "oss_bucket": "oss-pai-4cgzlpfj129drp4dni-cn-shanghai",
+  "oss_region": "cn-shanghai",
+  "backup_catalog": "C:/litlib/control/backup-catalog.json",
+  "backup_inputs": "C:/litlib/control/current-backup-inputs.json",
+  "stage_parent": "C:/litlib/staged-backups",
+  "max_snapshot_bytes": 134217728,
+  "interval_days": 7,
+  "retain_successful": 3,
+  "weekly_day": "Sunday",
+  "weekly_time": "03:00",
+  "time_zone": "Asia/Shanghai",
+  "maintenance_adapter": "C:/litlib/control/maintenance-adapter.ps1",
+  "maintenance_adapter_sha256": "REPLACE_REVIEWED_ADAPTER_SHA64"
+}
