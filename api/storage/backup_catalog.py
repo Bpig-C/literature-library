@@ -45,6 +45,8 @@ def record_verified(catalog,stage,receipt,backend,verified_at):
     keys={e['key'] for e in m['essentials'].values()}|{m['frontend']['key']}
     for b in m['asset_index']['bindings']:keys.add(ns.key(b.get('parent_sha256') or b['sha256']))
     v={'id':m['release_id'],'state':'verified','verified_at':verified_at,'namespace':ns.root,'manifest_key':ns.key(sha),'manifest_sha256':sha,'code_commit':m['code']['commit'],'asset_keys':sorted(keys)}
+    from .backup_discovery import publish_discovery
+    advertised=publish_discovery(backend,v,root);v['verified_at']=advertised['verified_at']
     with file_lock(Path(catalog).with_suffix('.lock')):
         c=read_catalog(catalog);prior=[p for p in c['versions'] if p['id']==v['id']]
         if prior:

@@ -9,14 +9,23 @@ from api.storage.core import Namespace,StorageError
 from api.storage.backends import LocalObjectBackend,oss_from_environment
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--catalog',required=True)
+    p=argparse.ArgumentParser();p.add_argument('--catalog')
     s=p.add_subparsers(dest='command',required=True);s.add_parser('versions')
     q=s.add_parser('select');q.add_argument('--version-id',required=True)
+    q=s.add_parser('discover-remote');q.add_argument('--namespace',required=True);q.add_argument('--retain',type=int,default=3);q.add_argument('--limit',type=int,default=1000);q.add_argument('--local-objects')
     for name in ('plan','tick'):
         q=s.add_parser(name);q.add_argument('--inputs',required=True);q.add_argument('--now',required=True);q.add_argument('--interval-days',type=int,default=7);q.add_argument('--retain',type=int,default=3)
         if name=='tick':
             q.add_argument('--stage-parent',required=True);q.add_argument('--max-snapshot-bytes',type=int,required=True);q.add_argument('--writers-stopped',action='store_true');q.add_argument('--local-objects')
-    a=p.parse_args();catalog=Path(a.catalog)
+    a=p.parse_args()
+    if a.command=='discover-remote':
+        from api.storage.backup_discovery import discover_remote
+        ns=Namespace(a.namespace)
+        if a.local_objects and '/test/' not in ns.root:raise StorageError('permission_denied','Local discovery is only for test namespaces')
+        backend=LocalObjectBackend(a.local_objects) if a.local_objects else oss_from_environment()
+        print(json.dumps(discover_remote(backend,ns.root,retain=a.retain,limit=a.limit)));return
+    if not a.catalog:p.error('--catalog required for authority-side commands')
+    catalog=Path(a.catalog)
     if not catalog.is_absolute():raise StorageError('invalid_request','Explicit absolute authority backup catalog required')
     if a.command=='versions':result=discover(catalog)
     elif a.command=='select':result=select(catalog,a.version_id)

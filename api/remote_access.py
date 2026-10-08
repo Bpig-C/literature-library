@@ -28,6 +28,10 @@ class RemoteAuthentication(BaseHTTPMiddleware):
         return await call_next(request)
 
 router=APIRouter()
+@router.get('/remote/backups')
+def backup_versions():
+    from .storage.backup_discovery import discover_remote
+    service=configured_service();return discover_remote(service.backend,service.ns.root)
 @router.get('/remote/assets/{identity}')
 def asset(identity:str,role:str,version:int,metadata:bool=False):
     if version<1:raise HTTPException(400,'Positive fixed version required')

@@ -18,6 +18,13 @@ class LocalObjectBackend:
         p=self.path(key)
         if not p.is_file(): raise StorageError('not_found','object absent')
         return p.stat().st_size
+    def list_keys(self,prefix,limit=1000):
+        root=self.path(prefix.rstrip('/'));keys=[]
+        if root.exists():
+            for p in root.rglob('*.json'):
+                if p.is_file() and not p.is_symlink():keys.append(p.relative_to(self.root).as_posix())
+                if len(keys)>limit:raise StorageError('quota_exceeded','Discovery key budget exceeded')
+        return sorted(keys)
     def put_immutable(self,key,source):
         p=self.path(key); p.parent.mkdir(parents=True,exist_ok=True)
         with file_lock(p.with_suffix('.lock')):
@@ -50,6 +57,20 @@ class OSSBackend:
         import alibabacloud_oss_v2 as oss
         try: return self.client.head_object(oss.HeadObjectRequest(bucket=self.bucket,key=key)).content_length
         except Exception as exc: raise self.translated(exc) from None
+    def list_keys(self,prefix,limit=1000):
+        import alibabacloud_oss_v2 as oss
+        keys=[];token=None
+        try:
+            while True:
+                r=self.client.list_objects_v2(oss.ListObjectsV2Request(bucket=self.bucket,prefix=prefix,continuation_token=token,max_keys=min(1000,limit+1-len(keys))))
+                keys.extend(o.key for o in (r.contents or []))
+                if len(keys)>limit:raise StorageError('quota_exceeded','Discovery key budget exceeded')
+                if not r.is_truncated:break
+                token=r.next_continuation_token
+                if not token:raise StorageError('checksum_mismatch','Missing discovery continuation token')
+            return keys
+        except StorageError:raise
+        except Exception as exc:raise self.translated(exc) from None
     def download(self,key,destination,max_bytes=None):
         import alibabacloud_oss_v2 as oss
         try:

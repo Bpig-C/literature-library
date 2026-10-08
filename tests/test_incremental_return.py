@@ -45,6 +45,12 @@ def test_incremental_roundtrip_preserves_new_code_parse_and_draft(release,tmp_pa
     def fail():raise StorageError('network_unavailable','synthetic backup failure')
     with pytest.raises(StorageError):run_due(catalog,[],fail,now='2026-10-15T00:00:00Z')
     assert discover(catalog)==[v]
+    from api.storage.backup_discovery import discover_remote
+    remote_versions=discover_remote(backend,ns)
+    assert remote_versions[0]['id']==v['id'] and remote_versions[0]['manifest_sha256']==v['manifest_sha256']
+    # Discovery is independent of the authority disk/catalog.
+    catalog.rename(tmp_path/'authority-catalog-unavailable.json')
+    assert discover_remote(backend,ns)==remote_versions
     a2=tmp_path/'A-returned';restore_release(backend,manifest_key=v['manifest_key'],manifest_sha256=v['manifest_sha256'],destination=a2,namespace=ns,expected_git_url=str(b/'app'))
     assert subprocess.check_output(['git','-C',str(a2/'app'),'rev-parse','HEAD']).decode().strip()==new_commit
     assert (a2/'app/docs/synthetic-iteration.md').read_text()=='Synthetic code iteration on B'
