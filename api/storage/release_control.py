@@ -16,6 +16,8 @@ def write(path,value):
 def code_tree(url,namespace):
     if not (url.startswith('https://github.com/') or ('/test/' in namespace and Path(url).is_absolute())):raise StorageError('invalid_request','explicit supported GitHub source required; local Git only in test namespace')
     if subprocess.check_output(['git','status','--porcelain'],cwd=CODE).strip():raise StorageError('revision_conflict','snapshot tool code must be committed and clean')
+    from scripts.check_release import check as check_code
+    if not check_code(CODE)['ok']:raise StorageError('permission_denied','generic complete code history audit required before snapshot publication')
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=CODE).decode().strip()
     paths=subprocess.check_output(['git','ls-tree','-r','--name-only','-z','HEAD'],cwd=CODE).decode().rstrip('\0').split('\0')
     files={p:hash_file(CODE/p)[0] for p in paths}

@@ -16,6 +16,7 @@ def test_incremental_roundtrip_preserves_new_code_parse_and_draft(release,tmp_pa
     root,backend,ns,first,action,old_job,old_snap,config,code,files,frontend=release
     b=tmp_path/'B';e=first['manifest_object']
     restore_release(backend,manifest_key=e['key'],manifest_sha256=e['sha256'],destination=b,namespace=ns,expected_git_url=code['url'])
+    subprocess.run(['git','-C',str(b/'app'),'fetch','--quiet','--unshallow','--no-tags',code['url']],check=True)
     for k,v in json.loads((b/'environment.json').read_text()).items():monkeypatch.setenv(k,v)
     service=configured_service()
     def parser(pdf,out,*args,**kwargs):

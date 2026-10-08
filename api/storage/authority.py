@@ -4,6 +4,7 @@ Owner secrets are process-only and never part of a release. No expiry permits
 automatic failover: loss of the current owner requires deliberate recovery.
 """
 import hashlib,json,tempfile
+from datetime import datetime,timezone
 from pathlib import Path
 from contextlib import contextmanager
 from .core import StorageError,file_lock,Namespace,checked_sha
@@ -62,7 +63,7 @@ class Authority:
         with file_lock(self.lock,timeout=0):
             if self.marker.exists():return json.loads(self.marker.read_text('utf-8'))
             self.check_remote()
-            value={'format':'litlib-authority-freeze-v1','phase':'frozen','namespace':self.ns.root,'epoch':self.epoch,'owner_sha256':self.owner}
+            value={'format':'litlib-authority-freeze-v1','phase':'frozen','namespace':self.ns.root,'epoch':self.epoch,'owner_sha256':self.owner,'frozen_at':datetime.now(timezone.utc).isoformat()}
             write(self.marker,value);return value
 
 def configured_authority():

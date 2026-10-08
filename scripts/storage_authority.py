@@ -17,6 +17,10 @@ def main():
     else:
         if not a.writers_stopped or not authority.marker.exists():raise StorageError('permission_denied','Freeze source before final backup; actual writers must be stopped')
         v=select(a.catalog,a.version_id)
+        marker=json.loads(authority.marker.read_text('utf-8'))
+        if marker.get('phase')=='frozen':
+            from api.storage.snapshot_policy import timestamp
+            if timestamp(v['verified_at'])<timestamp(marker['frozen_at']):raise StorageError('revision_conflict','Final verified backup must follow source freeze; old snapshots cannot hand over authority')
         value=authority.handover(a.target_owner_sha256,{'manifest_sha256':v['manifest_sha256'],'manifest_key':v['manifest_key']})
     print(json.dumps(value))
 if __name__=='__main__':
