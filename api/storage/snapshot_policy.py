@@ -34,5 +34,5 @@ def plan(versions,active_keys,*,now,interval_days=7,retain=3):
         'backup_due':latest is None or current>=latest+timedelta(days=interval_days),
         'keep':[v['id'] for _,v,_ in keep],'retire_snapshot_records':[v['id'] for _,v,_ in success[retain:]],
         'protected_keys':sorted(protected),'unreferenced_candidates':sorted(all_keys-protected),
-        'failed_versions_count':sum(v['state'] not in {'verified','retired'} for v in versions),
+        'failed_versions_count':sum(v['state'] not in {'verified','retired','reclaimed'} for v in versions),
         'deletion_performed':False,'requires_exact_review_before_deletion':True}

@@ -142,7 +142,7 @@ python scripts/storage_reclamation.py --catalog ABSOLUTE_CATALOG --roots ABSOLUT
 ```
 
 Invoke via the restored read-only CLI wrapper for applied target environment.
-No delete command is exposed. Authority, producer and scheduler locks are held
+Production deletion is disabled. Authority, producer and scheduler locks are held
 through capture and verification; CLI uses host UTC, and plans expire after
 30 minutes. Injected dates in the Python planner API are for deterministic
 isolated tests, not a production deletion clock. Cold SHA/size
@@ -160,11 +160,47 @@ the isolated local simulation can resume after a manifest deletion. Its durable
 intent journal handles interruption between unlink and success logging; exact
 retry accepts only journaled deletions, protects changed/reappearing objects
 and deletes manifests last. That simulation rejects OSS and non-test namespaces.
-A later new plan refuses unexplained missing retired manifests; a production
-executor still needs durable reclamation receipts/catalog reconciliation before
-successive physical rotations. This is not implemented or deployed here.
-Physical three-version retention and OSS byte reclamation therefore remain
-unaccepted until that executor and target integration exist.
+The exact execution interface is now `ReclamationExecution`. A separate
+`litlib-gc-authorization-v1` approval must explicitly bind execute=true, target,
+plan SHA, exact object/byte summary, approver label and approval validity window.
+The label/digest does not prove human approval; the actual operator must supply
+the authorization. No environment flag enables production. Only explicit
+`--simulate-local` with a LocalObjectBackend test namespace is accepted:
+
+```text
+python scripts/storage_reclamation.py --catalog ABSOLUTE_CATALOG --roots ABSOLUTE_ROOTS --max-verify-bytes CEILING execute --plan FROZEN_PLAN --authorization REVIEWED_APPROVAL --journal NEW_DURABLE_JOURNAL --receipt NEW_IMMUTABLE_RECEIPT --simulate-local
+python scripts/storage_reclamation.py --catalog ABSOLUTE_CATALOG --roots ABSOLUTE_ROOTS --max-verify-bytes CEILING reconcile --receipt COMPLETED_RECEIPT --simulate-local
+```
+
+Use the restored wrapper's --authority-control for these administrative test
+commands: the executor owns the guard. Each object's intent/result is fsynced
+in an atomic journal with a verified event hash chain; manifests are last.
+Interruption after unlink is recovered only from the exact durable intent.
+An immutable complete receipt contains the frozen plan, explicit approval and
+complete event chain. Reconciliation anchors the receipt's file SHA in the
+catalog and marks precisely deleted retired manifests `reclaimed`, preserving
+their verified archived closure. The next plan recognizes only these anchored
+deletions, still protects shared live references, and refuses missing/tampered
+receipts or unexplained absence/reappearance. Failed reconciliation before the
+atomic catalog commit can be retried without new deletion.
+
+Two consecutive local 4→3 rotations, with a genuinely new fifth snapshot between
+them, are validated. This is runnable execution/receipt/reconciliation code,
+not a production OSS delete adapter: the production adapter is hard disabled,
+and live three-version retention remains unaccepted. Partial work whose plan
+or approval has expired is blocked; cross-expiry automatic renewal is not
+implemented. Inspect/review the existing journal rather than spoofing old UTC.
+
+## Agent handoff boundary
+
+Physical deployment belongs to the receiving host's agent. This source task
+does not wait for a host address or deploy the formal service. The delivered
+HANDOFF.md is the single receiving-agent entrypoint and includes the latest
+unpublished code bundle/SHA, approved first OSS release, restore commands and
+target configuration/acceptance responsibilities. A bundle is not a published
+GitHub commit. Do not bind a new production release to an unreachable code
+commit, bypass frontend integrity, or confuse first-release recovery with the
+new candidate already running. Source originals/formal service remain retained.
 
 ## Minimal real acceptance scenario (prepared, not executed)
 

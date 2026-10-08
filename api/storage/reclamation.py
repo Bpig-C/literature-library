@@ -53,15 +53,21 @@ class ReclamationPlanner:
         return self.descriptor({'key':self.ns.key(sha),'sha256':sha,'bytes':size})
 
     def capture(self,*,cached=None,deleted=()):
-        cached=cached or {};deleted=set(deleted);docs={};entries={};protected={};origins={};verified_keys=set()
+        cached=dict(cached or {});deleted=set(deleted);docs={};entries={};protected={};origins={};verified_keys=set()
         require(self.roots.stat().st_size<=self.budget and self.catalog.stat().st_size<=self.budget,'Root metadata budget exceeded','quota_exceeded')
         root_raw=self.roots.read_bytes();catalog_raw=self.catalog.read_bytes()
         roots=json.loads(root_raw);require(set(roots)==ROOT_FIELDS and roots['format']=='litlib-gc-roots-v1' and roots['namespace']==self.ns.root and roots['writers_quiescent'] is True,'Complete explicit quiescent roots inventory required')
         for name in ('pins','handover_releases','snapshot_stages'):require(isinstance(roots[name],list),'Complete root lists required')
-        cat=json.loads(catalog_raw);require(set(cat)=={'format','versions','attempts'} and cat['format']=='litlib-backup-catalog-v1','Backup catalog unavailable/unknown')
+        cat=json.loads(catalog_raw);require({'format','versions','attempts'}<=set(cat)<={'format','versions','attempts','reclamations'} and cat['format']=='litlib-backup-catalog-v1','Backup catalog unavailable/unknown')
+        from .reclamation_execution import ledger
+        archived,historical_deleted,reclaimed_versions,receipt_proofs=ledger(cat,self.target,self.budget)
+        for key,value in archived.items():require(key not in cached or cached[key]==value,'Plan/receipt manifest archive differs');cached[key]=value
+        ongoing_deleted=set(deleted);deleted|=historical_deleted
         require(all(a.get('state')=='failed' and a.get('at') and a.get('code') for a in cat['attempts']),'Unknown backup attempt state')
         versions=cat['versions'];require(isinstance(versions,list) and len({v['id'] for v in versions})==len(versions),'Unknown or duplicate snapshot state')
-        require(all(v.get('state') in {'verified','retired'} and v.get('namespace')==self.ns.root for v in versions),'Unknown snapshot state/namespace')
+        require(all(v.get('state') in {'verified','retired','reclaimed'} and v.get('namespace')==self.ns.root for v in versions),'Unknown snapshot state/namespace')
+        require(set(reclaimed_versions)<={v['id'] for v in versions} and all((v['state']=='reclaimed')==(v['id'] in reclaimed_versions) for v in versions),'Reclaimed metadata lacks trusted receipt')
+        require(all(v.get('reclamation_sha256') in reclaimed_versions[v['id']] for v in versions if v['state']=='reclaimed'),'Reclaimed version receipt anchor differs')
         successes=sorted((v for v in versions if v['state']=='verified'),key=lambda v:(timestamp(v['verified_at']),v['id']),reverse=True)
         require(bool(successes),'At least one verified backup required')
         keep={v['id'] for v in successes[:3]};extra_verified=[v['id'] for v in successes[3:]]
@@ -85,7 +91,7 @@ class ReclamationPlanner:
                 require((hashlib.sha256(raw).hexdigest(),len(raw))==(e['sha256'],e['bytes']),'Manifest SHA/size differs','checksum_mismatch')
             require(sum(len(base64.b64decode(v)) for v in docs.values())+len(raw)<=self.budget,'Manifest closure verification budget exceeded','quota_exceeded')
             docs[key]=base64.b64encode(raw).decode('ascii');return json.loads(raw)
-        def closure(e,reason=None,origin=None,local_manifest=None):
+        def closure(e,reason=None,origin=None,local_manifest=None,archived_only=False):
             e=add(e,reason,origin)
             if local_manifest:
                 raw=local_manifest.read_bytes();require(hash_file(local_manifest)==(e['sha256'],e['bytes']),'Frozen stage changed','revision_conflict')
@@ -100,15 +106,16 @@ class ReclamationPlanner:
                 relative_key(name);require(name in {'library/literature.sqlite','research/research.sqlite'} or name.startswith(('research/assets/','research/editing/','library/templates/','library/docs/')),'Unknown essential reference path')
             for item in [*m['essentials'].values(),m['frontend']]:keys.add(add(item,reason,origin)['key'])
             for b in m['asset_index']['bindings']:keys.add(add(self.binding(b),reason,origin)['key'])
-            if not local_manifest:verified_keys.update(keys)
+            if not local_manifest and not archived_only:verified_keys.update(keys)
             return m,keys
-        version_keys={}
+        version_keys={};fresh_origins=set()
         for v in versions:
             e={'key':v['manifest_key'],'sha256':v['manifest_sha256'],'bytes':self.backend_size(v['manifest_key'],cached,deleted)}
             reason='retained:'+v['id'] if v['id'] in keep else 'rotation_pending:'+v['id'] if v['state']=='verified' else None
-            m,keys=closure(e,reason,v['id'] if v['state']=='retired' else None)
+            m,keys=closure(e,reason,v['id'] if v['state'] in {'retired','reclaimed'} else None,archived_only=v['state']=='reclaimed')
             require(m['release_id']==v['id'] and m['code']['commit']==v['code_commit'] and set(v['asset_keys'])==keys-{v['manifest_key']},'Catalog/manifest closure differs','checksum_mismatch')
             version_keys[v['id']]=keys
+            if v['state']=='retired':fresh_origins|=keys
         closure(roots['runtime_release'],'current_runtime')
         authority=self.authority.check_remote()
         if authority['release']:
@@ -173,9 +180,16 @@ class ReclamationPlanner:
             closure(e,None if item['state']=='completed' else 'snapshot_retry:'+item['id'],local_manifest=p/'release.json')
         require({p.name for p in parent.iterdir()}==set(stage_paths),'Snapshot stage inventory incomplete')
         require(len(docs)<=self.max_manifests,'Manifest count budget exceeded','quota_exceeded')
-        for key in verified_keys-deleted:require(self.backend.size(key)==entries[key]['bytes'],'Referenced object missing/size differs','revision_conflict')
-        fingerprint=digest({'roots':hashlib.sha256(root_raw).hexdigest(),'catalog':hashlib.sha256(catalog_raw).hexdigest(),'registry':tables,'authority':authority,'local_artifacts':local_artifacts,'snapshot_stages':stage_fingerprints})
-        return {'fingerprint':fingerprint,'entries':entries,'protected':{k:sorted(v) for k,v in protected.items()},'origins':{k:sorted(v) for k,v in origins.items()},'manifest_cache':docs,'keep':sorted(keep),'rotation_pending':extra_verified,'blockers':[{'version':v['id'],'manifest_key':v['manifest_key'],'reasons':sorted(protected[v['manifest_key']])} for v in versions if v['state']=='retired' and v['manifest_key'] in protected]}
+        for key in verified_keys-ongoing_deleted:require(self.backend.size(key)==entries[key]['bytes'],'Referenced object missing/size differs','revision_conflict')
+        known_absent=set()
+        for key in historical_deleted:
+            try:self.backend.size(key)
+            except StorageError as error:
+                if error.code!='not_found':raise
+                known_absent.add(key);continue
+            require(key in protected or key in fresh_origins,'Reclaimed object reappeared without fresh ownership','revision_conflict')
+        fingerprint=digest({'roots':hashlib.sha256(root_raw).hexdigest(),'catalog':hashlib.sha256(catalog_raw).hexdigest(),'registry':tables,'authority':authority,'local_artifacts':local_artifacts,'snapshot_stages':stage_fingerprints,'reclamation_receipts':receipt_proofs})
+        return {'fingerprint':fingerprint,'entries':entries,'protected':{k:sorted(v) for k,v in protected.items()},'origins':{k:sorted(v) for k,v in origins.items() if k not in known_absent},'manifest_cache':docs,'keep':sorted(keep),'rotation_pending':extra_verified,'blockers':[{'version':v['id'],'manifest_key':v['manifest_key'],'reasons':sorted(protected[v['manifest_key']])} for v in versions if v['state']=='retired' and v['manifest_key'] in protected]}
 
     def backend_size(self,key,cached,deleted):
         if key in deleted and key in cached:return len(base64.b64decode(cached[key],validate=True))

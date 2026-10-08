@@ -1,4 +1,4 @@
-"""Dry-run and revalidate exact production reference plans; no delete command."""
+"""Dry-run default; exact execution/reconciliation only in local test namespace."""
 import argparse,json,sys
 from datetime import datetime,timezone
 from pathlib import Path
@@ -14,6 +14,8 @@ def main():
     s=p.add_subparsers(dest='command',required=True)
     q=s.add_parser('plan');q.add_argument('--output',required=True)
     q=s.add_parser('validate');q.add_argument('--plan',required=True)
+    q=s.add_parser('execute');q.add_argument('--plan',required=True);q.add_argument('--authorization',required=True);q.add_argument('--journal',required=True);q.add_argument('--receipt',required=True);q.add_argument('--simulate-local',action='store_true')
+    q=s.add_parser('reconcile');q.add_argument('--receipt',required=True);q.add_argument('--simulate-local',action='store_true')
     a=p.parse_args();svc=configured_service();planner=ReclamationPlanner(svc,a.catalog,a.roots,configured_authority(),max_verify_bytes=a.max_verify_bytes)
     now=datetime.now(timezone.utc).isoformat()
     if a.command=='plan':
@@ -23,8 +25,15 @@ def main():
         # Exclusive creation prevents overwriting evidence even under a race.
         with output.open('x',encoding='utf-8') as f:json.dump(value,f,ensure_ascii=False,indent=2)
         result={k:value[k] for k in ('plan_sha256','keep_successful','rotation_pending','physical_limit_blockers','total_unique_bytes','deletion_performed','production_delete_supported')};result['plan']=str(output)
-    else:
+    elif a.command=='validate':
         with planner.guard():result=planner.validate(read(a.plan),now=now)
+    else:
+        from api.storage.reclamation_execution import ReclamationExecution,LocalExactDeletion
+        if not a.simulate_local:raise StorageError('permission_denied','Production execution/reconciliation disabled')
+        LocalExactDeletion(planner)
+        execution=ReclamationExecution(planner)
+        if a.command=='execute':result=execution.execute(read(a.plan),read(a.authorization),a.journal,a.receipt,now=now,simulate_local=True)
+        else:result=execution.reconcile(a.receipt)
     print(json.dumps(result,ensure_ascii=False));return 0
 if __name__=='__main__':
     try:raise SystemExit(main())

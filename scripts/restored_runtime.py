@@ -77,7 +77,7 @@ def main():
         result=check(a.root,a.development);print(json.dumps(result),flush=True)
         if a.command=='run-cli':
             if a.authority_control:
-                if a.allow_writes or a.script not in {'storage_authority.py','storage_backup.py'}:raise StorageError('permission_denied','Authority control is exclusively for explicit backup/handover administrative commands')
+                if a.allow_writes or a.script not in {'storage_authority.py','storage_backup.py','storage_reclamation.py'}:raise StorageError('permission_denied','Authority control is exclusively for explicit backup/handover/reclamation administrative commands')
                 return subprocess.call([sys.executable,str(CODE/'scripts'/a.script),*a.arguments],cwd=CODE)
             if not a.allow_writes and not read_only_cli(a.script,a.arguments):raise StorageError('permission_denied','Mutating CLI requires --allow-writes and an active authority; read-only is the default')
             os.environ['LITLIB_RESEARCH_READ_ONLY']='0' if a.allow_writes else '1'
