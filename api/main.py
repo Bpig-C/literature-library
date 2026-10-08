@@ -17,6 +17,9 @@ if enabled(): validate_startup()  # explicit roots, both schemas and registry; f
 from .routes import duplicates, export, files, ingest, intake, metadata, parse, relations, works, classification, discovery, templates, research
 
 app = FastAPI(title="Literature Library API", version="0.1.0")
+from .remote_access import RemoteAuthentication,router as remote_router
+app.add_middleware(RemoteAuthentication)
+app.include_router(remote_router,prefix='/api')
 
 @app.exception_handler(StorageError)
 async def storage_failure(request,exc):

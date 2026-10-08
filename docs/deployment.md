@@ -1,5 +1,13 @@
 # Controlled backup and complete recovery
 
+## Continuous operation candidate
+
+Parse production persists immutable assets immediately through the existing producer/storage service, independently of backup cadence. Failed uploads retain pending bytes and operation status; resume uses the same operation identity. Remote transport uses `scripts/litlib_remote.py --server https://HOST asset ID --role md --version VERSION --max-bytes BUDGET --output PATH`, with `LITLIB_REMOTE_TOKEN` injected into the process environment. Set server `LITLIB_REMOTE_ENABLED=1`; writes remain disabled unless `LITLIB_REMOTE_WRITE_ENABLED=1`. HTTPS termination is required for non-loopback clients. No credential belongs in command arguments, Git, backups or receipts. Single-authority handover fencing remains a separate requirement; a write-enabled flag alone does not enforce it.
+
+`storage_backup.py --catalog ABSOLUTE_PATH versions|select|plan|tick` provides authority-side discovery, explicit version selection and scheduled due execution. Tick requires reviewed inputs, an actual stopped-writer window and explicit payload budget. Run it from the authority host scheduler; default policy is 7 days and 3 successful versions. A failed backup preserves prior successful versions. Rotation produces a plan only, protecting active and retained snapshot assets; no cloud deletion is executed. The due runner does not upload daily parse assets.
+
+Normal restored runtime checks still require exact published code. `--development` explicitly permits clean generic-code descendants of the restored commit for isolated development. Submit and test code changes before preparing the next snapshot; publish the code commit before a real remote restore. `check_release.py` scans every reachable ancestor for forbidden data paths, allowing continuous code history without importing broad research history. Default branch selection and production machine cutover require separate user decisions.
+
 Code is a clean minimal Git revision. Private DBs, drafts, runtime scientific assets and selected execution materials are versioned OSS snapshots. Long-term objects are SHA addressed and read through bounded lazy cache. No credential values enter backups.
 
 ## Exact reviewed inputs and one backup command
