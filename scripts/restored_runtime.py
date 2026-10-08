@@ -6,6 +6,15 @@ CODE=Path(__file__).resolve().parents[1];sys.path.insert(0,str(CODE))
 from api.storage.core import StorageError,hash_file,Namespace
 from api.storage.unified_release import validate_versions
 
+def read_only_cli(script,arguments):
+    if arguments in (['--help'],['-h']):return True
+    if script=='storage_assets.py':return bool(arguments) and arguments[0] in {'check','migration-dry-run','migration-prepare-controlled'}
+    if script=='healthcheck_library.py':return '--apply' not in arguments
+    if script!='litlib.py':return False
+    p=argparse.ArgumentParser(add_help=False);p.add_argument('--library-root');p.add_argument('--db-path');p.add_argument('--read-only',action='store_true')
+    _,remaining=p.parse_known_args(arguments)
+    return bool(remaining) and remaining[0] in {'lookup','read','search','query','evidence','units','feedback-list','citations-view','citations-export','output-history','matrix','comparison','composition','ontology-impact','usable-basis','verify-environment'}
+
 def environment(root):
     root=Path(root)
     if not root.is_absolute() or not root.is_dir():raise StorageError('configuration_error','explicit existing absolute restored root required')
@@ -58,6 +67,7 @@ def main():
     try:
         result=check(a.root,a.development);print(json.dumps(result),flush=True)
         if a.command=='run-cli':
+            if not a.allow_writes and not read_only_cli(a.script,a.arguments):raise StorageError('permission_denied','Mutating CLI requires --allow-writes and an active authority; read-only is the default')
             os.environ['LITLIB_RESEARCH_READ_ONLY']='0' if a.allow_writes else '1'
             if a.allow_writes:
                 from api.storage.authority import configured_authority
