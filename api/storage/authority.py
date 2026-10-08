@@ -11,9 +11,10 @@ from .core import StorageError,file_lock,Namespace,checked_sha
 from .release_control import write
 
 class Authority:
-    def __init__(self,backend,namespace,owner_token,epoch,local_root):
+    def __init__(self,backend,namespace,owner_token,epoch,local_root,release_sha256=None):
         if len(owner_token)<32 or not isinstance(epoch,int) or epoch<0:raise StorageError('configuration_error','Explicit authority token and nonnegative epoch required')
         self.backend=backend;self.ns=Namespace(namespace);self.owner=hashlib.sha256(owner_token.encode()).hexdigest();self.epoch=epoch
+        self.release_sha256=checked_sha(release_sha256) if release_sha256 is not None else None
         self.root=Path(local_root).resolve();self.root.mkdir(parents=True,exist_ok=True)
         self.marker=self.root/f'{self.owner}-{epoch}.frozen.json';self.lock=self.root/f'{self.owner}-{epoch}.lock'
     def key(self,epoch):return self.ns.root+f'control/authority/epochs/{epoch:010d}.json'
@@ -36,6 +37,7 @@ class Authority:
     def check_remote(self):
         v=self.read(self.epoch)
         if v['owner_sha256']!=self.owner:raise StorageError('permission_denied','This process is not the current authority owner')
+        if self.epoch>0 and (self.release_sha256 is None or (v.get('release') or {}).get('manifest_sha256')!=self.release_sha256):raise StorageError('revision_conflict','Writer must use the exact handover release')
         try:self.backend.size(self.key(self.epoch+1))
         except StorageError as e:
             if e.code!='not_found':raise
@@ -72,4 +74,8 @@ def configured_authority():
     service=configured_service()
     try:epoch=int(os.environ['LITLIB_AUTHORITY_EPOCH']);token=os.environ['LITLIB_AUTHORITY_TOKEN']
     except (KeyError,ValueError):raise StorageError('configuration_error','Writer requires explicit authority epoch/token') from None
-    return Authority(service.backend,service.ns.root,token,epoch,required_path('LITLIB_LIBRARY_ROOT').parent/'.authority')
+    from .core import hash_file
+    library=required_path('LITLIB_LIBRARY_ROOT')
+    manifest=library.parent.parent/'release-manifest.json'
+    if not manifest.is_file():raise StorageError('configuration_error','Writer requires its restored release manifest')
+    return Authority(service.backend,service.ns.root,token,epoch,library.parent/'.authority',hash_file(manifest)[0])

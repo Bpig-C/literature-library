@@ -19,9 +19,21 @@ def test_handover_fences_old_writer_and_wrong_owner(tmp_path):
     # Even a restored old owner without its local freeze marker is fenced.
     stale=Authority(backend,ns.root,'A'*32,0,tmp_path/'stale')
     with pytest.raises(StorageError):stale.check_remote()
-    b=Authority(backend,ns.root,'B'*32,1,tmp_path/'B')
+    b=Authority(backend,ns.root,'B'*32,1,tmp_path/'B',release['manifest_sha256'])
     with b.write_guard():pass
     assert b.read(1)['release']==release
+
+def test_new_owner_cannot_write_from_wrong_or_unspecified_release(tmp_path):
+    backend=LocalObjectBackend(tmp_path/'remote');ns=Namespace('research/agent-loss-of-control/literature/test/wrong-release/')
+    a=Authority(backend,ns.root,'A'*32,0,tmp_path/'A');a.initialize()
+    release={'manifest_sha256':'3'*64,'manifest_key':ns.key('3'*64)}
+    a.handover(hashlib.sha256(('B'*32).encode()).hexdigest(),release)
+    for sha in (None,'4'*64):
+        b=Authority(backend,ns.root,'B'*32,1,tmp_path/str(sha),sha)
+        with pytest.raises(StorageError,match='exact handover release'):
+            with b.write_guard():pass
+    b=Authority(backend,ns.root,'B'*32,1,tmp_path/'correct','3'*64)
+    with b.write_guard():pass
 
 def test_failed_handover_keeps_source_frozen_and_retry_exact(tmp_path):
     backend=LocalObjectBackend(tmp_path/'remote');ns=Namespace('research/agent-loss-of-control/literature/test/handover-failure/')
