@@ -11,6 +11,10 @@ def read_only_cli(script,arguments):
     if script=='storage_assets.py':return bool(arguments) and arguments[0] in {'check','migration-dry-run','migration-prepare-controlled'}
     if script=='healthcheck_library.py':return '--apply' not in arguments
     if script=='storage_authority.py':return arguments==['status']
+    if script=='storage_reclamation.py':
+        p=argparse.ArgumentParser(add_help=False);p.add_argument('--catalog');p.add_argument('--roots');p.add_argument('--max-verify-bytes')
+        _,remaining=p.parse_known_args(arguments)
+        return bool(remaining) and remaining[0] in {'plan','validate'}
     if script=='storage_backup.py':
         p=argparse.ArgumentParser(add_help=False);p.add_argument('--catalog')
         _,remaining=p.parse_known_args(arguments)
@@ -66,7 +70,7 @@ def main():
     p=argparse.ArgumentParser();s=p.add_subparsers(dest='command',required=True)
     q=s.add_parser('check');q.add_argument('--root',required=True)
     q=s.add_parser('serve');q.add_argument('--root',required=True);q.add_argument('--port',required=True,type=int);q.add_argument('--read-only',action='store_true');q.add_argument('--allow-writes',action='store_true')
-    q=s.add_parser('run-cli');q.add_argument('--root',required=True);q.add_argument('--allow-writes',action='store_true');q.add_argument('--authority-control',action='store_true');q.add_argument('script',choices=['litlib.py','storage_assets.py','healthcheck_library.py','literature_ingest.py','storage_authority.py','storage_backup.py']);q.add_argument('arguments',nargs=argparse.REMAINDER)
+    q=s.add_parser('run-cli');q.add_argument('--root',required=True);q.add_argument('--allow-writes',action='store_true');q.add_argument('--authority-control',action='store_true');q.add_argument('script',choices=['litlib.py','storage_assets.py','healthcheck_library.py','literature_ingest.py','storage_authority.py','storage_backup.py','storage_reclamation.py']);q.add_argument('arguments',nargs=argparse.REMAINDER)
     for command_parser in s.choices.values():command_parser.add_argument('--development',action='store_true',help='explicit isolated development from a clean descendant code commit; normal release checks remain strict')
     a=p.parse_args()
     try:

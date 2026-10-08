@@ -115,8 +115,56 @@ A reviewable physical-reclamation operation must use this exact sequence:
    objects are preserved. Verify the retained three restores and active assets
    before closing the operation.
 
-The current test-only local purge demonstrates shared-object protection, not
-that this production executor exists. Its OSS equivalent remains work to do.
+The production planner is now `scripts/storage_reclamation.py`, with only
+`plan` and `validate` commands. It reads the actual registry bindings, durable
+operation/staging/producer states and verified/retired snapshot catalog. It
+cold-verifies fixed manifests and protects their full closure (including ZIP
+parents), the current epoch release, running release, named pending handovers,
+unfinished snapshot stages and explicit pins. Failed backup attempts do not
+retire successful versions. Excess still-verified versions remain protected
+and are reported as `rotation_pending`, never implicitly treated as retired.
+
+Fill `deploy/gc-roots.example.json` after the actual maintenance adapter has
+quiesced all writers. Empty lists are declarations requiring real inventory,
+not evidence. `runtime_release` and each handover/pin release require exact
+key/SHA/bytes. Each pin has `id`, `reason`, `release`. Every direct child of the
+configured `stage_parent` must be listed in `snapshot_stages` with exact
+`id`, absolute `path`, and `state` (`staged`, `publishing`, `failed`, `completed`).
+The frozen receipt, journal and stage bytes are checked; incomplete/unknown
+producer closure or unaccounted stage/partial file blocks the whole plan.
+The host adapter must inventory every supported stage location and external
+pin; this does not detect deliberately unregistered external writers/direct
+database access. Such writers remain prohibited/quiescent during maintenance.
+
+```text
+python scripts/storage_reclamation.py --catalog ABSOLUTE_CATALOG --roots ABSOLUTE_ROOTS --max-verify-bytes APPROVED_CEILING plan --output NEW_ABSOLUTE_PLAN
+python scripts/storage_reclamation.py --catalog ABSOLUTE_CATALOG --roots ABSOLUTE_ROOTS --max-verify-bytes APPROVED_CEILING validate --plan FROZEN_PLAN
+```
+
+Invoke via the restored read-only CLI wrapper for applied target environment.
+No delete command is exposed. Authority, producer and scheduler locks are held
+through capture and verification; CLI uses host UTC, and plans expire after
+30 minutes. Injected dates in the Python planner API are for deterministic
+isolated tests, not a production deletion clock. Cold SHA/size
+verification has an explicit ceiling per candidate pass, each manifest capture,
+aggregate pending byte capture and each unfinished stage; do not interpret it
+as one combined transfer ceiling.
+Roots are rechecked before and after verification, including pending local
+bytes, epoch, catalog and complete stage inventory. Changed roots, expired plan,
+changed bytes or unknown state abort validation. The output includes precise
+candidates, source retired version IDs, bytes, reasons and physical-limit pin
+blockers. No live database, backup catalog or object is deleted/modified.
+
+Plans cache verified manifest bytes as private local evidence outside Git, so
+the isolated local simulation can resume after a manifest deletion. Its durable
+intent journal handles interruption between unlink and success logging; exact
+retry accepts only journaled deletions, protects changed/reappearing objects
+and deletes manifests last. That simulation rejects OSS and non-test namespaces.
+A later new plan refuses unexplained missing retired manifests; a production
+executor still needs durable reclamation receipts/catalog reconciliation before
+successive physical rotations. This is not implemented or deployed here.
+Physical three-version retention and OSS byte reclamation therefore remain
+unaccepted until that executor and target integration exist.
 
 ## Minimal real acceptance scenario (prepared, not executed)
 

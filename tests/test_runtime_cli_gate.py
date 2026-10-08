@@ -10,3 +10,5 @@ def test_read_argument_cannot_disguise_a_mutating_subcommand():
     assert not read_only_cli('storage_backup.py',['--catalog','/explicit/backup.json','tick','--inputs','versions'])
     assert read_only_cli('storage_authority.py',['status'])
     assert not read_only_cli('storage_authority.py',['freeze'])
+    assert read_only_cli('storage_reclamation.py',['--catalog','/explicit/backups.json','--roots','/explicit/roots.json','--max-verify-bytes','1024','plan'])
+    assert not read_only_cli('storage_reclamation.py',['--catalog','/explicit/backups.json','delete'])

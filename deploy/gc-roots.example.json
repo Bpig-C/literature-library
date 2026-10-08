@@ -1,0 +1,14 @@
+{
+  "format": "litlib-gc-roots-v1",
+  "namespace": "research/agent-loss-of-control/literature/prod/",
+  "runtime_release": {
+    "key": "REPLACE_EXACT_RUNNING_MANIFEST_KEY",
+    "sha256": "REPLACE_RUNNING_MANIFEST_SHA64",
+    "bytes": 0
+  },
+  "handover_releases": [],
+  "pins": [],
+  "stage_parent": "C:/litlib/staged-backups",
+  "snapshot_stages": [],
+  "writers_quiescent": false
+}
