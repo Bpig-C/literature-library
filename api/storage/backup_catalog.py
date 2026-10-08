@@ -8,7 +8,7 @@ from datetime import datetime,timezone
 from .core import StorageError,Namespace,file_lock,hash_file
 from .release_control import write,staged
 from .unified_release import object_read
-from .snapshot_policy import plan
+from .snapshot_policy import plan,timestamp
 
 def read_catalog(path):
     p=Path(path)
@@ -53,6 +53,7 @@ def run_due(catalog,active_keys,backup,*,now=None,interval_days=7,retain=3):
         try:
             version=backup()
             if select(catalog,version['id'])!=version:raise StorageError('checksum_mismatch','Backup did not register verified version')
+            if version['id'] in {v['id'] for v in c['versions']} or timestamp(version['verified_at'])<timestamp(now):raise StorageError('revision_conflict','Due backup must produce a newly verified version, not replay an old successful snapshot')
         except Exception as e:
             with file_lock(Path(catalog).with_suffix('.lock')):
                 c=read_catalog(catalog);c['attempts'].append({'at':now,'state':'failed','code':e.code if isinstance(e,StorageError) else 'backup_failed'});write(catalog,c)

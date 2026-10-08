@@ -37,7 +37,9 @@ def test_incremental_roundtrip_preserves_new_code_parse_and_draft(release,tmp_pa
     monkeypatch.setattr(control,'CODE',b/'app');ticket=control.prepare(inputs,10*1024**2)
     stage=tmp_path/'B-new-snapshot';staged=control.stage(ticket,control.digest(ticket),stage,True)
     published=control.publish(stage,staged['manifest_sha256'],backend,staged['maximum_upload_bytes'])
-    catalog=tmp_path/'backup-catalog.json';v=record_verified(catalog,stage,published,backend,'2026-10-08T00:00:00Z')
+    catalog=tmp_path/'backup-catalog.json'
+    result=run_due(catalog,[],lambda:record_verified(catalog,stage,published,backend,'2026-10-08T00:00:00Z'),now='2026-10-08T00:00:00Z');assert result['state']=='backed_up'
+    v=result['version']
     assert select(catalog,v['id'])['code_commit']==new_commit
     assert run_due(catalog,[],lambda:pytest.fail('Not due'),now='2026-10-09T00:00:00Z')['state']=='not_due'
     def fail():raise StorageError('network_unavailable','synthetic backup failure')
