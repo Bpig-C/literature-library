@@ -103,7 +103,7 @@ Markdown：${assetLine('md')}
 JSON：${assetLine('json')}
 固定快照读取（C 层原文）：${source.id && snapshot.id ? `${origin}/api/research/sources/${encodeURIComponent(source.id)}/text?snapshot_id=${encodeURIComponent(snapshot.id)}` : MISSING}
 材料/手册/契约获取：GET ${origin}/api/materials（逐项带 sha256/bytes；响应头 X-Litlib-SHA256/X-Litlib-Bytes 必须与清单一致）
-资产读取：litlib_remote.py asset --server ${origin}，按上行 identity/role/version；服务器本地路径与 litlib-asset:// 虚拟引用不适用于客户端执行
+资产读取：litlib_remote.py --server ${origin} asset <identity> --role <pdf|md|json> --version <上行列明的版本> --max-bytes <预算> --output <本地新路径>（--server 在 asset 子命令之前）；服务器本地路径与 litlib-asset:// 虚拟引用不适用于客户端执行
 证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含 
 ；渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。资产未取得时明确报缺口，不自行生成路径。`
 }
@@ -191,7 +191,12 @@ function compactBatchRow(row) {
   const describe = value => value
     ? `${value.id} v${value.version ?? '?'} / ${value.content_state || '状态未提供'} / ${value.agent_review_status || '审查状态未提供'} / ${value.validity_status || '有效性未提供'}`
     : '尚未生成'
-  return `- ${source.work_id || 'Work ID 未取得'}；source=${source.id || '未取得'}；snapshot=${snapshot.id || '未取得'}@${snapshot.content_sha256 || 'hash 未取得'}；C原文=${describe(sourceRecord)}；D解释=${describe(interpretation)}；A元数据按 Work 从元数据工作台查询，R参考文献从正式接口查询`
+  const assets = row?.assets || {}
+  const asset = role => {
+    const b = assets[role]
+    return b ? `${b.identity} role=${role} v${b.version} sha256=${b.sha256} bytes=${b.bytes}` : '未登记（报缺口，不猜版本）'
+  }
+  return `- ${source.work_id || 'Work ID 未取得'}；source=${source.id || '未取得'}；snapshot=${snapshot.id || '未取得'}@${snapshot.content_sha256 || 'hash 未取得'}；C原文=${describe(sourceRecord)}；D解释=${describe(interpretation)}；PDF=${asset('pdf')}；Markdown=${asset('md')}；JSON=${asset('json')}；A元数据按 Work 从元数据工作台查询，R参考文献从正式接口查询`
 }
 
 const BATCH_MODE_INSTRUCTIONS = {
@@ -236,7 +241,7 @@ ${BATCH_MODE_INSTRUCTIONS[mode] || BATCH_MODE_INSTRUCTIONS.resume}
 3. D 解释与分类：只能基于已核查的 C 及钉定 A，区分观察与推断、能力与自然倾向、形成/表现/影响以及参数/harness 双循环坐标。
 4. R 参考文献：候选条目提取只依赖解析快照，可与 A/C 并行；候选身份匹配使用 DOI/arXiv/标题与版本关系，引用边必须有固定快照锚点并由独立身份核验。不得凭相似标题静默绑定。
 
-【批次当前清单（只作生成时快照）】
+【批次当前清单（只作生成时快照；行内已列各文献固定版本 PDF/Markdown/JSON 的 identity/role/version/sha/bytes，与 snapshot SHA 对账，取材版本以此为准、不猜不换）】
 ${coverageWarning}
 ${manifest}
 
