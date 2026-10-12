@@ -96,7 +96,7 @@
       <n-alert v-if="error" type="error" :show-icon="false">{{ error }}</n-alert>
       <div class="actions">
         <n-button @click="show = false">取消</n-button>
-        <n-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="createBatch">
+        <n-button type="primary" :loading="submitting" :disabled="readOnly || !canSubmit" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="createBatch">
           创建并进入批次
         </n-button>
       </div>

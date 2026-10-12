@@ -118,7 +118,7 @@
       </label>
 
       <div class="form-actions">
-        <button v-if="kind !== 'agent_judge'" type="submit" :disabled="busy || !canSubmit" data-testid="feedback-submit">
+        <button v-if="kind !== 'agent_judge'" type="submit" :disabled="readOnly || busy || !canSubmit" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" data-testid="feedback-submit">
           {{ kind === 'parse' ? '登记解析纠错' : '登记问题' }}
         </button>
         <button v-else type="button" :disabled="!claim.trim()" data-testid="feedback-agent-judge" @click="generateJudgePrompt">
@@ -140,6 +140,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 // 工单工作包 B：统一反馈流程。复用现有 research_feedback 体系（layer:
 // interpretation/source_record/metadata/page_display）与解析纠错登记（工作包 E），
 // 不生造服务不能消费的记录层值；“请 Agent 判断”只生成提示词，不落库。

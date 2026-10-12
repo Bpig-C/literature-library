@@ -39,7 +39,7 @@ export function showError(error, options = {}) {
           message = '登录已过期，请刷新页面'
         } else if (error.status === 403) {
           type = 'warning'
-          message = '没有权限执行此操作'
+          message = '服务端拒绝了此操作：远程只读部署下所有写入（提交/解析/上传/审核等）均被禁用；读取、检索与导出不受影响'
         } else if (error.status === 404) {
           type = 'info'
           message = '请求的资源不存在'

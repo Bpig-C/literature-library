@@ -31,7 +31,7 @@ export function buildBatchSelectionAgentPrompt({
     ? `当前搜索入口可见约 ${Number(stagedSourceCount)} 条已进入研究库的来源，这只是候选池的一部分，不能代替对书目库和解析结果的筛选。`
     : '不要把已进入研究库的来源误当成全部候选；还要检查已解析但尚未送入研究库的材料。'
 
-  return `你在本地项目 D:\\02_academic\\doctoral\\literature_library 中工作。请为 Scholar OS 规划一个新的研究批次，目标规模约 ${count} 篇。
+  return `本工单按远程/客户端方式执行，不要求访问任何服务器本地目录。请为 Scholar OS 规划一个新的研究批次，目标规模约 ${count} 篇。材料获取：GET <服务地址>/api/materials 取逐项 SHA 清单（契约、docs 手册与 skills 均在其中；直接请求须带 Authorization: Bearer 头）。
 
 研究目标：
 ${cleanPromptValue(focus, DEFAULT_BATCH_SELECTION_FOCUS)}
@@ -55,7 +55,7 @@ ${cleanPromptValue(exclusions, DEFAULT_BATCH_SELECTION_EXCLUSIONS)}
 5. 用户确认后只调用一次 POST ${baseUrl}/api/research/batches/plan；使用稳定 request_key，网络重试复用同一 key。创建完成即停止，不自动领取任务，不开始抽取。
 6. 最终报告 batch_id、纳入/排除清单、各材料固定的 snapshot、release、未决项。任何失败都如实报告，不用旧分类流程兜底。
 
-先从 /api/research/schema 核对代码目录与手册技能材料根目录；从材料根目录阅读 docs/CURRENT_STATE.md、docs/workflows/research-organization.md、docs/manuals/agent-manual.md 和 contracts/research-workflow-v1.json。第一轮只给筛选结果，不执行写操作。`
+先从 /api/research/schema 核对环境与只读状态；再按 /api/materials 清单阅读 docs/CURRENT_STATE.md、docs/workflows/research-organization.md、docs/manuals/agent-manual.md 和 contracts/research-workflow-v1.json（逐项核对 SHA）。只读部署下第一轮只给筛选结果，不执行写操作。`
 }
 
 export function makeBatchRequestKey(now = Date.now(), nonce = '') {

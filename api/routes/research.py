@@ -41,8 +41,10 @@ def materials_list():
     """RWEB-02: versioned runtime-materials closure of the restored release.
 
     Every entry carries the authenticated fetch URL plus the exact SHA/bytes a
-    clean client must verify; clients need no OSS credentials and no access to
-    server-local paths.
+    clean client must verify; clients need no OSS credentials, no GitHub
+    dependency and no access to server-local paths. Contracts/research-workflow
+    v1 is served from the running code tree, integrity-bound to the manifest's
+    code-file hashes.
     """
     manifest = _release_manifest()
     if not manifest:
@@ -54,6 +56,15 @@ def materials_list():
                 "bytes": entry["bytes"]}
                for name, entry in sorted(manifest["data"].get("essentials", {}).items())
                if name.startswith("library/docs/")]
+    for name in ("contracts/research-workflow-v1.json",):
+        sha = manifest["data"].get("code", {}).get("files", {}).get(name)
+        target = REPO_ROOT / name
+        if sha and target.is_file():
+            from ..storage.core import hash_file
+            digest, size = hash_file(target)
+            if digest == sha:
+                entries.append({"path": name, "url": f"/api/materials/{name}",
+                                "sha256": sha, "bytes": size})
     return {"available": True,
             "release_id": manifest["data"].get("release_id"),
             "manifest_sha256": manifest["sha256"],
@@ -66,19 +77,29 @@ def materials_file(material_path: str):
     manifest = _release_manifest()
     if not manifest:
         raise HTTPException(503, "runtime materials closure not published")
-    entry = manifest["data"].get("essentials", {}).get(material_path)
-    if not entry or not material_path.startswith("library/docs/"):
-        raise HTTPException(404, "material outside published closure")
     root = Path(os.environ.get("LITLIB_RUNTIME_MATERIALS_ROOT", str(REPO_ROOT))).resolve()
-    target = (root / material_path[len("library/docs/"):]).resolve()
-    if target.is_symlink() or not target.is_file() or not target.is_relative_to(root):
-        raise HTTPException(404, "material absent")
+    entry = None
+    target = None
+    if material_path.startswith("library/docs/"):
+        entry = manifest["data"].get("essentials", {}).get(material_path)
+        target = (root / material_path[len("library/docs/"):]).resolve()
+        if not target.is_relative_to(root):
+            target = None
+    elif material_path in ("contracts/research-workflow-v1.json",):
+        code_sha = manifest["data"].get("code", {}).get("files", {}).get(material_path)
+        if code_sha:
+            candidate = (REPO_ROOT / material_path).resolve()
+            if candidate.is_relative_to(REPO_ROOT.resolve()):
+                entry = {"sha256": code_sha}
+                target = candidate
+    if not entry or target is None or target.is_symlink() or not target.is_file():
+        raise HTTPException(404, "material outside published closure")
     from ..storage.core import hash_file
     digest, size = hash_file(target)
-    if (digest, size) != (entry["sha256"], entry["bytes"]):
+    if (digest, size) != (entry["sha256"], entry.get("bytes", size)):
         raise HTTPException(502, "material integrity differs from release manifest")
     return FileResponse(target, headers={"X-Litlib-SHA256": entry["sha256"],
-                                         "X-Litlib-Bytes": str(entry["bytes"]),
+                                         "X-Litlib-Bytes": str(size),
                                          "Cache-Control": "no-store"})
 
 @router.get('/research/runtime-assets')
@@ -427,6 +448,7 @@ def schema_status():
             "runtime_materials_root": os.environ.get("LITLIB_RUNTIME_MATERIALS_ROOT", str(REPO_ROOT)),
             "environment_id": compute_environment_id(ctx.library_root, ctx.db_path),
             "read_only": os.environ.get("LITLIB_RESEARCH_READ_ONLY") == "1",
+            "remote_enabled": os.environ.get("LITLIB_REMOTE_ENABLED") == "1",
             "remote_writes_enabled": os.environ.get("LITLIB_REMOTE_WRITE_ENABLED") == "1",
             "code_commit": code_commit,
             "release_id": manifest["data"].get("release_id") if manifest else None,

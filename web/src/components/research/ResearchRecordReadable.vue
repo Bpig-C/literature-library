@@ -261,8 +261,8 @@
       <p class="draft-intro">这里是“建议修改”的交互入口：改动保存为独立展示稿并记入历史，不直接替代正式结论；要推动正式修订请使用下方“质疑与建议修改”登记反馈。既有工作稿、版本绑定与历史数据保留。</p>
       <div class="edit-toolbar">
         <div><strong>保留已审原记录</strong><span>取消不会写入；撤回会恢复上次保存前内容，但保留审计历史。</span></div>
-        <button type="button" @click="openEditor">{{ editorOpen ? '重新载入' : '编辑工作稿' }}</button>
-        <button type="button" :disabled="!activeDraft || editBusy" @click="undoDraft">撤回上次修改</button>
+        <button type="button" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="openEditor">{{ editorOpen ? '重新载入' : '编辑工作稿' }}</button>
+        <button type="button" :disabled="readOnly || !activeDraft || editBusy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="undoDraft">撤回上次修改</button>
       </div>
       <p v-if="draftLoadError" class="edit-error">{{ draftLoadError }}</p>
       <p v-if="editMessage" class="edit-message">{{ editMessage }}</p>
@@ -289,7 +289,7 @@
           <div><select v-model="requestField"><option value="">选择字段</option><option v-for="item in reviewFieldOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select><input v-model="requestText" placeholder="用一句话说明要核查什么" /><button type="button" @click="addReviewRequest">加入待办</button></div>
           <ul v-if="Object.keys(draftForm.review_requests).length"><li v-for="(text, field) in draftForm.review_requests" :key="field"><code>{{ field }}</code><span>{{ text }}</span><button type="button" @click="removeReviewRequest(field)">移除</button></li></ul>
         </div>
-        <div class="form-actions"><button type="submit" :disabled="editBusy">保存工作稿</button><button type="button" @click="cancelEdit">取消</button></div>
+        <div class="form-actions"><button type="submit" :disabled="readOnly || editBusy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''">保存工作稿</button><button type="button" @click="cancelEdit">取消</button></div>
         <p class="evidence-lock">精确 quote 与 offset 不开放直接改字；如证据定位有误，应通过反馈或解析纠错流程重新定位并生成新的正式记录。</p>
       </form>
     </section>
@@ -361,6 +361,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { computed, reactive, ref, watch } from 'vue'
 import ResearchAgentPrompt from './ResearchAgentPrompt.vue'
 import FeedbackPanel from './FeedbackPanel.vue'

@@ -177,8 +177,8 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span :class="'status-' + work.parse_status">{{ label(PARSE_STATUS_LABELS, work.parse_status) }}</span>
             <n-button size="small" quaternary :loading="parseLoading"
-                      :disabled="work.parse_status === 'succeeded'"
-                      @click="triggerParse">触发解析</n-button>
+                      :disabled="readOnly || work.parse_status === 'succeeded'"
+                      :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="triggerParse">触发解析</n-button>
             <n-select v-model:value="parseBackend" size="tiny" style="width:190px"
                       :options="parseBackendOptions" :consistent-menu-width="false" />
             <n-button size="small" quaternary type="primary" :loading="parseLoading" :disabled="readOnly"
@@ -394,7 +394,7 @@
             {{ r.partner_title }}
           </router-link>
           <n-tag size="small">{{ label(RELATION_TYPE_LABELS, r.relation_type) }}</n-tag>
-          <n-button text type="error" size="tiny" @click="removeRelation(r)">删除</n-button>
+          <n-button text type="error" size="tiny" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="removeRelation(r)">删除</n-button>
         </div>
       </div>
 
@@ -404,7 +404,7 @@
         <div class="add-rel">
           <n-input v-model:value="newRel.targetId" placeholder="目标 Work ID" size="small" style="width: 200px" />
           <n-select v-model:value="newRel.type" :options="relationTypeOptions" size="small" style="width: 140px" />
-          <n-button size="small" :disabled="!newRel.targetId" @click="addRelation">添加</n-button>
+          <n-button size="small" :disabled="readOnly || !newRel.targetId" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="addRelation">添加</n-button>
         </div>
       </div>
 

@@ -14,7 +14,7 @@
     <div v-if="ontologyDraftResponse?.binding_status === 'stale'" class="overlay-warning"><strong>旧词表工作稿未自动套用</strong><span>基础展示配置或机器词表已变化；旧稿仍保留在历史中，需重新核对。</span></div>
     <div class="ontology-edit-toolbar">
       <div><strong>轻量词表工作稿</strong><span>覆盖层优先于页面基线；原机器词表和试点提案保持不变。</span></div>
-      <button :disabled="!ontologyDraftResponse?.draft || ontologyBusy" type="button" @click="undoOntologyEdit">撤回上次修改</button>
+      <button :disabled="readOnly || !ontologyDraftResponse?.draft || ontologyBusy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" type="button" @click="undoOntologyEdit">撤回上次修改</button>
       <small v-if="ontologyMessage">{{ ontologyMessage }}</small>
     </div>
     <details v-if="ontologyDraftResponse?.history?.length" class="ontology-history"><summary>查看词表工作稿历史（{{ ontologyDraftResponse.history.length }}）</summary><ul><li v-for="event in ontologyDraftResponse.history" :key="`${event.revision}-${event.action}`"><span>{{ event.action === 'undo' ? '撤回' : '保存' }}</span><code>r{{ event.revision }} · {{ event.at }}</code></li></ul></details>
@@ -74,7 +74,7 @@
         </fieldset>
         <label><span>循环位置说明</span><textarea v-model="ontologyForm.position.note" rows="2"></textarea></label>
         <div class="ontology-review-request"><strong>请 Agent 核查（仅保存待办）</strong><select v-model="ontologyForm.review_field"><option value="">选择字段</option><option value="zh">中文名称</option><option value="definition">定义</option><option value="includes">包括</option><option value="excludes">不包括</option><option value="position">循环位置</option></select><input v-model="ontologyForm.review_request" placeholder="用一句话说明要核查什么" /></div>
-        <footer><button type="submit" :disabled="ontologyBusy">保存工作稿</button><button type="button" @click="cancelOntologyEdit">取消</button><span>用户无需填写版本号；保存自动记入历史。</span></footer>
+        <footer><button type="submit" :disabled="readOnly || ontologyBusy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''">保存工作稿</button><button type="button" @click="cancelOntologyEdit">取消</button><span>用户无需填写版本号；保存自动记入历史。</span></footer>
       </form>
       <div v-for="group in conceptGroups" :key="group.key" class="concept-group">
         <h3>{{ group.label }} <small>{{ group.items.length }}</small></h3>
@@ -83,7 +83,7 @@
             <thead><tr><th>概念</th><th>状态 / 版本差异</th><th>定义</th><th>循环位置（初步定位）</th><th>包括</th><th>不包括</th></tr></thead>
             <tbody>
               <tr v-for="concept in group.items" :key="concept.id">
-                <td><strong>{{ concept.zh }}</strong><span>{{ concept.en }}</span><code>{{ concept.id }}</code><button class="concept-edit" type="button" @click="openOntologyEdit(concept)">编辑工作稿</button></td>
+                <td><strong>{{ concept.zh }}</strong><span>{{ concept.en }}</span><code>{{ concept.id }}</code><button class="concept-edit" type="button" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="openOntologyEdit(concept)">编辑工作稿</button></td>
                 <td><b :class="concept.pilotOnly ? 'pilot' : 'baseline'">{{ concept.pilotOnly ? '试点新增·继续验证' : '现行基线' }}</b><p v-if="concept.difference">{{ concept.difference }}</p></td>
                 <td>{{ concept.definition }}</td>
                 <td class="position-cell">
@@ -176,6 +176,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { computed, onMounted, ref } from 'vue'
 import { ontologyDraft } from '../data/research-ontology-draft'
 import { getOntologyDraft, saveOntologyDraft, undoOntologyDraft, getReleasedComposition, getOntologyReviewCards } from '../api'

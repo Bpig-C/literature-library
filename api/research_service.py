@@ -2787,6 +2787,39 @@ class ResearchService:
                     catalog_titles = {}
             for item in items:
                 item["title"] = catalog_titles.get(item["source"].get("work_id"))
+            # RWEB-02 (review P2): give research work orders the same fixed-version
+            # asset locators as the metadata worklist - pdf binds to the source
+            # file identity, md/json to the parse-run identity; the newest
+            # registered version wins, never a guess.
+            asset_ids = sorted({item["source"]["id"] for item in items} |
+                               {item["snapshot"]["parse_run_id"] for item in items
+                                if item["snapshot"].get("parse_run_id")} |
+                               {item["source"]["source_file_id"] for item in items
+                                if item["source"].get("source_file_id")})
+            worklist_assets = {}
+            if asset_ids:
+                library_db = _library_db_path
+                try:
+                    lib = sqlite3.connect(f"file:{library_db.as_posix()}?mode=ro", uri=True)
+                    try:
+                        placeholders = ",".join("?" * len(asset_ids))
+                        for binding in lib.execute(
+                                f"SELECT identity,role,version,sha256,bytes FROM storage_bindings "
+                                f"WHERE identity IN ({placeholders}) AND role IN ('pdf','md','json') "
+                                f"ORDER BY identity,role,version DESC", asset_ids):
+                            worklist_assets.setdefault(binding[0], {}).setdefault(binding[1], {
+                                "identity": binding[0], "role": binding[1], "version": binding[2],
+                                "sha256": binding[3], "bytes": binding[4]})
+                    finally:
+                        lib.close()
+                except sqlite3.Error:
+                    worklist_assets = {}
+            for item in items:
+                parse_run = item["snapshot"].get("parse_run_id")
+                source_file = item["source"].get("source_file_id")
+                item["assets"] = {"pdf": worklist_assets.get(source_file, {}).get("pdf"),
+                                  "md": worklist_assets.get(parse_run, {}).get("md"),
+                                  "json": worklist_assets.get(parse_run, {}).get("json")}
             # All derived fields and every interpretation-side filter consume
             # the same final D object selected above.  Filtering before this
             # point would silently test the batch pointer instead.

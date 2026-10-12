@@ -13,7 +13,7 @@
             </select>
           </label>
           <button @click="reload">刷新</button>
-          <button @click="showCreateForm = true" class="btn-create">新建主题</button>
+          <button @click="showCreateForm = true" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" class="btn-create">新建主题</button>
         </div>
 
         <div class="topic-list">
@@ -74,21 +74,21 @@
         </table>
 
         <div class="gate-bar">
-          <button class="btn-propose" :disabled="busy || selected.map_status !== 'seedling'"
+          <button class="btn-propose" :disabled="readOnly || busy || selected.map_status !== 'seedling'" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''"
                   @click="doPropose"
                   title="将主题从 seedling（种子）提升为 proposed（已提案），需填写 4 条判据">
             提案为 proposed
           </button>
-          <button class="btn-map" :disabled="busy || selected.map_status !== 'proposed'"
+          <button class="btn-map" :disabled="readOnly || busy || selected.map_status !== 'proposed'" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''"
                   @click="openMapModal"
                   title="将主题从 proposed（已提案）提升为 mapped（已映射），需关联标准标签">
             映射为 mapped
           </button>
-          <button class="btn-collect" :disabled="busy" @click="showCollectConfirm"
+          <button class="btn-collect" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="showCollectConfirm"
                   title="按主题里已有的显式 ID / 种子 ID 直接下载指定文献全文，不联网搜索">
             直接采集
           </button>
-          <button class="btn-resolve" :disabled="busy" @click="showResolveConfirm"
+          <button class="btn-resolve" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="showResolveConfirm"
                   title="触发重量级闸门 resolve：下载 pending 候选的 PDF → 计算 SHA256 → 判别是否重复/精确命中/标题疑似">
             触发 resolve
           </button>
@@ -210,7 +210,7 @@
           </details>
           <div class="form-actions">
             <button @click="showCreateForm = false" class="btn-cancel">取消</button>
-            <button @click="doCreateTopic" :disabled="!createForm.name || busy" class="btn-submit">创建</button>
+            <button @click="doCreateTopic" :disabled="readOnly || !createForm.name || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" class="btn-submit">创建</button>
           </div>
         </div>
       </div>
@@ -246,7 +246,7 @@
 
           <div class="form-actions">
             <button @click="showMapModal = false" class="btn-cancel">取消</button>
-            <button @click="doMap" :disabled="!mapTags.length || busy" class="btn-submit">提交映射</button>
+            <button @click="doMap" :disabled="readOnly || !mapTags.length || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" class="btn-submit">提交映射</button>
           </div>
         </div>
       </div>
@@ -263,6 +263,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted } from 'vue'
 import {
   getIntakeTopics,

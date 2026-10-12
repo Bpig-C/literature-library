@@ -1256,11 +1256,12 @@ class ResearchNextService:
                 placeholders = ",".join("?" * len(asset_ids))
                 for binding in catalog.execute(
                         f"SELECT identity,role,version,sha256,bytes FROM storage_bindings "
-                        f"WHERE identity IN ({placeholders}) AND role IN ('pdf','md','json')", asset_ids):
-                    worklist_assets.setdefault(binding["identity"], {})[binding["role"]] = {
+                        f"WHERE identity IN ({placeholders}) AND role IN ('pdf','md','json') "
+                        f"ORDER BY identity,role,version DESC", asset_ids):
+                    worklist_assets.setdefault(binding["identity"], {}).setdefault(binding["role"], {
                         "identity": binding["identity"], "role": binding["role"],
                         "version": binding["version"], "sha256": binding["sha256"],
-                        "bytes": binding["bytes"]}
+                        "bytes": binding["bytes"]})
         with closing(self.context.connect(read_only=True)) as conn:
             tasks = {r["work_id"]: dict(r) for r in conn.execute(
                 "SELECT * FROM research_metadata_tasks")}

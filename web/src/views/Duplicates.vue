@@ -147,7 +147,7 @@
           <button
             v-for="dt in DECISION_TYPES" :key="dt[0]"
             :class="[dt[0], { selected: processing[g.id] === dt[0] }]"
-            :disabled="!!processing[g.id]"
+            :disabled="readOnly || !!processing[g.id]" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''"
             @click="onDecision(g, dt[0])"
           >{{ processing[g.id] === dt[0] ? '处理中...' : dt[1] }}</button>
         </div>
@@ -171,7 +171,7 @@
         <p class="modal-warn">⚠ 合并不可撤销：副本文献设为 quarantined，源文件移入 _archive，标签合并到主文献。</p>
         <template #action>
           <n-button @click="confirmMerge.show = false">取消</n-button>
-          <n-button type="error" :disabled="!confirmMerge.chosenPrimary" :loading="confirmMerge.submitting" @click="executeMerge">确认合并</n-button>
+          <n-button type="error" :disabled="readOnly || !confirmMerge.chosenPrimary" :loading="confirmMerge.submitting" @click="executeMerge">确认合并</n-button>
         </template>
       </n-modal>
     </div>
@@ -181,6 +181,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import { getDuplicates, getMergePreview, reviewDuplicate, pdfUrl } from '../api'

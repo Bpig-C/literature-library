@@ -94,10 +94,10 @@
         <div class="section-header">
           <h3 class="section-title">当前文献信息</h3>
           <template v-if="!editingWork">
-            <button @click="startEditWork">编辑</button>
+            <button :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="startEditWork">编辑</button>
           </template>
           <template v-else>
-            <button class="save" @click="saveEditWork">保存</button>
+            <button class="save" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="saveEditWork">保存</button>
             <button @click="editingWork = false">取消</button>
           </template>
         </div>
@@ -281,6 +281,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'

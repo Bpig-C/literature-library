@@ -8,7 +8,7 @@
           {{ data._meta?.has_customizations ? '✏️' : '📖' }} 默认
           <template v-if="data._meta?.last_modified"> · 更新于 {{ formatTime(data._meta.last_modified) }}</template>
         </span>
-        <button v-if="hasChanges" class="btn-save" :disabled="saving" @click="doSave">
+        <button v-if="hasChanges" class="btn-save" :disabled="readOnly || saving" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doSave">
           {{ saving ? '保存中...' : '💾 保存修改' }}
         </button>
       </div>
@@ -39,7 +39,7 @@
         <div class="toolbar-right">
           <button class="ctrl-sm" @click="copyJSON('metadata')">📋 复制 JSON</button>
           <button class="ctrl-sm" @click="copyPrompt()">📄 复制 LLM Prompt</button>
-          <button class="ctrl-sm warn" @click="confirmReset">🔄 恢复默认</button>
+          <button class="ctrl-sm warn" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="confirmReset">🔄 恢复默认</button>
           <button class="ctrl-sm" @click="showAddField = true">➕ 添加字段</button>
         </div>
       </div>
@@ -196,6 +196,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { getTemplates, saveMetadataTemplate, resetMetadataTemplate } from '../api_templates'
 

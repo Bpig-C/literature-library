@@ -61,6 +61,12 @@ function renderFeedbackSection(feedbackItems, parseIssues) {
   return lines.join('\n')
 }
 
+/** 固定版本资产定位行；assets 由 /api/research/query 逐条携带。 */
+function assetLineOf(assets, role) {
+  const b = assets?.[role]
+  return b ? `${b.identity} role=${role} v${b.version} sha256=${b.sha256} bytes=${b.bytes}` : '未登记（报缺口，不猜版本）'
+}
+
 /** 公共上下文：Work、来源、批次、快照、头、解析路径、页面入口。 */
 function buildContextBlock(record, work, schema, origin, batchIdOverride) {
   const source = record.source || {}
@@ -72,6 +78,8 @@ function buildContextBlock(record, work, schema, origin, batchIdOverride) {
   const batchId = batchIdOverride || record.batch_id
   const binding = row => row ? `${row.id}；版本 ${row.version}；定义 ${row.schema_version || MISSING}；状态 ${row.content_state || MISSING}` : '尚未生成'
   const root = (source.source_path || '').replace(/\\/g, '/').match(/^(.*)\/works\//)?.[1]
+  const assets = record.assets || {}
+  const assetLine = role => assetLineOf(assets, role)
   return `论文：${work?.title || workId || MISSING}
 Work ID：${workId || MISSING}
 批次：${batchId || MISSING}
@@ -89,27 +97,25 @@ API：${origin}/api/research
 页面：${origin}/research/records/${encodeURIComponent(workId || '')}${batchId ? `?batch_id=${encodeURIComponent(batchId)}${source.id ? `&source_id=${encodeURIComponent(source.id)}` : ''}` : ''}
 文献页：${workId ? `${origin}/works/${encodeURIComponent(workId)}` : MISSING}
 
-【本地材料与读取方式】
-代码目录（接口报告，先核对）：${schema?.code_root || root || MISSING}
-手册与技能材料根目录（接口报告）：${schema?.runtime_materials_root || root || MISSING}
-实际研究数据库（接口报告）：${schema?.plan?.db_path || MISSING}
-PDF 来源：${source.source_path || MISSING}
-归档 PDF：${source.snapshot_path || MISSING}
-当前绑定解析 Markdown：${parse?.content_md_path || MISSING}
-当前绑定解析 JSON：${parse?.content_json_path || MISSING}
-当前绑定解析目录：${parse?.output_dir || MISSING}
-固定快照读取：${source.id && snapshot.id ? `${origin}/api/research/sources/${encodeURIComponent(source.id)}/text?snapshot_id=${encodeURIComponent(snapshot.id)}` : MISSING}
-本地解析文件是阅读辅助，证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含 \\r；渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。路径未取得或文件不可用时明确报缺口，不自行生成路径。`
+【固定版本材料定位（identity/role/version 来自服务端登记，不猜不换）】
+PDF：${assetLine('pdf')}
+Markdown：${assetLine('md')}
+JSON：${assetLine('json')}
+固定快照读取（C 层原文）：${source.id && snapshot.id ? `${origin}/api/research/sources/${encodeURIComponent(source.id)}/text?snapshot_id=${encodeURIComponent(snapshot.id)}` : MISSING}
+材料/手册/契约获取：GET ${origin}/api/materials（逐项带 sha256/bytes；响应头 X-Litlib-SHA256/X-Litlib-Bytes 必须与清单一致）
+资产读取：litlib_remote.py asset --server ${origin}，按上行 identity/role/version；服务器本地路径与 litlib-asset:// 虚拟引用不适用于客户端执行
+证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含 
+；渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。资产未取得时明确报缺口，不自行生成路径。`
 }
 
-const COMMON_SKILLS = `【通用技能与填写要求】
-从已核对代码目录读取 contracts/research-workflow-v1.json 和 scripts/litlib.py；从手册与技能材料根目录读取 docs/manuals/agent-manual.md。
-按任务从材料根目录读取 skills/litlib-batch/SKILL.md、skills/litlib-extract/SKILL.md、skills/litlib-interpret/SKILL.md、skills/litlib-review/SKILL.md 及其必要引用文件。不要从不可变资产 URI 推导本地项目目录。
+function commonSkills(origin, schema) { return `【通用技能与填写要求】
+契约与手册经认证端点获取：GET ${origin}/api/materials（清单含 contracts/research-workflow-v1.json、docs 手册与全部 skills 及各自 SHA/bytes；也可按 schema.code_commit 从 GitHub 原始文件取得，逐项核对 SHA）。
+按任务读取 skills/litlib-batch/SKILL.md、skills/litlib-extract/SKILL.md、skills/litlib-interpret/SKILL.md、skills/litlib-review/SKILL.md 及其必要引用文件（同清单获取）。不要从不可变资产 URI 推导本地项目目录，不访问服务器本地路径。
 先读取实际批次钉定的发布包/任务与当前定义；接口或 scripts/litlib.py 是提交入口。CLI 必须显式绑定已核对的环境，不直接 SQL 改记录或审核状态。
 复用已有 Work ID、PDF、解析和历史。回看旧修订、工作稿与反馈；若记录已更新，先核对差异再做新修订，不把旧卡片当最新记录。
 Agent 撰写的说明字段使用中文；论文/模型专名、稳定编号、受控键、原文引文及定位保留原样。每项实质判断保留对应证据，缺口不得猜填。
 由另一名独立 Agent 回看固定原文与依赖，不得换身份自审。无法安排独立核查时交付待核查版本；不能伪造 stable 或人工采纳。
-保存、复制或生成本提示词都不表示任务已派发或已开始执行。`
+保存、复制或生成本提示词都不表示任务已派发或已开始执行。` }
 
 /**
  * 生成任务提示词。
@@ -122,8 +128,8 @@ export function buildResearchAgentPrompt(record, work, schema, origin, options =
   const focusBlock = focus ? `我特别关注的问题：${focus}\n` : '我特别关注的问题：（请在这里补充；也可保留为空）\n'
   const parts = []
   parts.push(`【部署模式与执行位置】
-部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）'}
-执行位置：本工单不要求访问服务器本地路径。客户端 Agent 取材：契约 https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json；手册/技能经 ${origin}/api/materials/<path>（清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes）；固定版本资产用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <服务端登记的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网地址时对 100.66.1.3 配置 NO_PROXY。只读阶段仅做预检、读取与汇报。`)
+部署模式：${schema ? (schema.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）') : '未知（schema 未取得；一律按只读处理，先 GET /api/research/schema 确认）'}
+执行位置：本工单不要求访问服务器本地路径。取材通道（全部经 ${origin}，直接 HTTP 请求须带 Authorization: Bearer 头，litlib_remote 已内置）：①契约 GET ${origin}/api/materials/contracts/research-workflow-v1.json（备选：https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json）；②手册/技能 清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes；③固定版本资产用 litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <工单/清单列明的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。litlib_remote.py 本身按 ${schema?.code_commit ? 'https://raw.githubusercontent.com/Bpig-C/literature-library/' + schema.code_commit + '/scripts/litlib_remote.py' : '<先取 schema.code_commit，再从同路径取得>'} 获取（零第三方依赖，Python ≥3.11）。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网虚拟地址时须对该地址配置 NO_PROXY 绕行（地址见服务端交接说明）。只读阶段仅做预检、读取与汇报。`)
 
   if (mode === 'organize') {
     parts.push(`请对以下文献开展单篇研究整理，开始前核对任务范围；已有 Agent 正在处理时，不要重复领取或并发改写同一记录。
@@ -169,7 +175,7 @@ ${context}
 4. 采用生成新快照（POST .../adopt，旧快照不变）；下游通过现有 POST /research/source-records（supersedes 当前头、绑定新快照）重新提交并重新核查锚点。GET .../impact 提供受影响证据的重定位分析：唯一/可复核匹配是辅助定位，重复或不匹配的如实待核查，不得继承旧偏移冒充有效。`)
   }
 
-  parts.push(COMMON_SKILLS)
+  parts.push(commonSkills(origin, schema))
   parts.push(COMMON_REVIEW_RULES)
 
   parts.push(`【交付】
@@ -210,8 +216,8 @@ export function buildResearchBatchAgentPrompt(batch, rows, schema, origin, optio
   return `请作为本研究批次的总控 Agent，按固定快照和当前发布包组织批量处理。先只读预检，再分波执行；已有 Agent 占用的条目不得并发改写。
 
 【部署模式与执行位置】
-部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）'}
-执行位置：本工单不要求访问服务器本地路径。客户端 Agent 取材：契约 https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json；手册/技能经 ${origin}/api/materials/<path>（清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes）；固定版本资产用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <服务端登记的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网地址时对 100.66.1.3 配置 NO_PROXY。只读阶段仅做预检、读取与汇报。
+部署模式：${schema ? (schema.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）') : '未知（schema 未取得；一律按只读处理，先 GET /api/research/schema 确认）'}
+执行位置：本工单不要求访问服务器本地路径。取材通道（全部经 ${origin}，直接 HTTP 请求须带 Authorization: Bearer 头，litlib_remote 已内置）：①契约 GET ${origin}/api/materials/contracts/research-workflow-v1.json（备选：https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json）；②手册/技能 清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes；③固定版本资产用 litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <工单/清单列明的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。litlib_remote.py 本身按 ${schema?.code_commit ? 'https://raw.githubusercontent.com/Bpig-C/literature-library/' + schema.code_commit + '/scripts/litlib_remote.py' : '<先取 schema.code_commit，再从同路径取得>'} 获取（零第三方依赖，Python ≥3.11）。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网虚拟地址时须对该地址配置 NO_PROXY 绕行（地址见服务端交接说明）。只读阶段仅做预检、读取与汇报。
 
 【批次与模式】
 批次名称：${batch?.name || '未取得'}
@@ -242,7 +248,7 @@ ${manifest}
 5. 所有正式写入通过现有 API 或 scripts/litlib.py；禁止直接 SQL 改记录、审查状态或人工采纳。版本冲突时重新读取 head，不覆盖他人结果。
 6. 每波 reconcile，并报告成功、待修订、阻塞、未处理和下一波；最终逐项查库核实 active/stable/approved 与依赖关系，不能采信子 Agent 的口头汇报。
 
-${COMMON_SKILLS}
+${commonSkills(origin, schema)}
 
 ${COMMON_REVIEW_RULES}
 

@@ -23,7 +23,7 @@
           </button>
           <button @click="reload" :disabled="busy">重新扫描</button>
           <button class="btn-execute" @click="showExecuteConfirm"
-                  :disabled="busy || !plan || plan.summary.ingests === 0">
+                  :disabled="readOnly || busy || !plan || plan.summary.ingests === 0" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''">
             确认摄入{{ plan ? ` (${plan.summary.ingests})` : '' }}
           </button>
         </div>

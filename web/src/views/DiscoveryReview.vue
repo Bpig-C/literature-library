@@ -78,7 +78,7 @@
           <label class="form-label">Freeform Note / Research Context</label>
           <textarea v-model="composite.freeform_note" placeholder="自由备注、研究背景或其他上下文信息 (可选)" class="form-textarea form-textarea-lg"></textarea>
         </div>
-        <button class="btn-plan btn-plan-composite" :disabled="busy || !hasCompositeInput" @click="doCompositePlan">
+        <button class="btn-plan btn-plan-composite" :disabled="readOnly || busy || !hasCompositeInput" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doCompositePlan">
           生成方案
         </button>
       </div>
@@ -102,7 +102,7 @@
           <input v-else-if="planMode === 'name'" v-model="planInput" placeholder="作者或机构名称" />
           <input v-else-if="planMode === 'title'" v-model="planInput" placeholder="论文标题关键词" />
           <input v-else-if="planMode === 'url'" v-model="planInput" placeholder="目标 URL" />
-          <button class="btn-plan" :disabled="busy || !planInput.trim()" @click="doPlan">
+          <button class="btn-plan" :disabled="readOnly || busy || !planInput.trim()" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doPlan">
             生成方案
           </button>
         </div>
@@ -220,8 +220,8 @@
       <!-- Review actions -->
       <div class="review-bar" v-if="selectedHit.review_status === 'pending'">
         <input v-model="reviewNote" placeholder="审核备注（可选）..." class="note-input" />
-        <button class="btn-accept" :disabled="busy" @click="doAccept">接受</button>
-        <button class="btn-reject" :disabled="busy" @click="doReject">拒绝</button>
+        <button class="btn-accept" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doAccept">接受</button>
+        <button class="btn-reject" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doReject">拒绝</button>
       </div>
       <div v-else class="reviewed-info muted">
         已{{ hitStatusLabel(selectedHit.review_status) }}
@@ -235,6 +235,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {

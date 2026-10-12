@@ -13,6 +13,7 @@
       :count="stages.ingest.count"
       stat-label="待摄入"
       action-label="摄入选中"
+      :action-disabled="readOnly"
       :selected-count="stages.ingest.selectedIds.size"
       :loading="stages.ingest.loading"
       @execute="batchIngest"
@@ -63,7 +64,7 @@
       action-label="解析选中"
       :selected-count="stages.parse.selectedIds.size"
       :loading="stages.parse.loading"
-      :action-disabled="stages.parse.statusFilter !== 'pending'"
+      :action-disabled="readOnly || stages.parse.statusFilter !== 'pending'"
       @execute="batchParse"
     >
       <template #stats>
@@ -106,7 +107,7 @@
           <span class="file-name">{{ item.title || item.work_id }}</span>
           <span class="file-meta">{{ formatDate(item.created_at) }}</span>
           <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.title || item.work_id)">预览</button>
-          <button v-if="stages.parse.statusFilter === 'pending'" class="btn-quarantine-row" @click.stop="openQuarantine(item.work_id || item.id)">隔离</button>
+          <button v-if="stages.parse.statusFilter === 'pending'" class="btn-quarantine-row" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click.stop="openQuarantine(item.work_id || item.id)">隔离</button>
         </template>
       </SelectableFileList>
     </StageCard>
@@ -132,6 +133,7 @@
       :secondary-count="stages.researchStage.stagedWorks"
       secondary-label="已在研究库"
       action-label="送入研究库"
+      :action-disabled="readOnly"
       :selected-count="stages.researchStage.selectedIds.size"
       :loading="stages.researchStage.loading"
       @execute="batchStageResearch"
@@ -163,7 +165,7 @@
           <span class="file-meta">解析完成</span>
           <span class="file-meta">{{ formatDate(item.created_at) }}</span>
           <button class="btn-preview" @click.stop="handlePreview(item.work_id || item.id, item.display_title)">预览</button>
-          <button class="btn-quarantine-row" @click.stop="openQuarantine(item.work_id || item.id)">隔离</button>
+          <button class="btn-quarantine-row" :disabled="readOnly" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click.stop="openQuarantine(item.work_id || item.id)">隔离</button>
         </template>
       </SelectableFileList>
     </StageCard>
@@ -239,7 +241,7 @@
           <button class="btn-cancel" @click="closeQuarantine">取消</button>
           <button
             class="btn-confirm-q"
-            :disabled="!quarantineReason || quarantineLoading"
+            :disabled="readOnly || !quarantineReason || quarantineLoading"
             @click="doQuarantine()"
           >
             {{ quarantineLoading ? '处理中...' : '确认隔离' }}
@@ -251,6 +253,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
 import { parseSummary } from '../utils/storage-feedback'
 import {

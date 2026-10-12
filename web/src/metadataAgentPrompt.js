@@ -55,9 +55,8 @@ ${rows}
 6. 审核获批后核对目录传播、完整作者和书目投影，传播失败按现有重试入口处理。仅实际影响到依赖 A 的 D 时报告影响并安排定向复核，不重写无关 C/D/R。人工采纳一律保持 pending，由用户在页面读完后决定；用户提出质疑时登记反馈，不能直接覆盖旧记录。
 7. 每波 3–4 篇（可按材料难度调整）汇报：keep/create/revise/review/waiting_parse/excluded/conflict、原始证据与外部来源、提交/核查身份、版本状态、反馈和未决项。中高风险争议暂停该篇，不阻塞其他篇；最后逐篇从服务端重新读取状态，不能只信子 Agent 回执。
 
-【材料获取（认证只读；逐项核对 SHA 后使用）】
-契约（Git 树内，按上方代码提交）：https://raw.githubusercontent.com/Bpig-C/literature-library/${codeCommit}/contracts/research-workflow-v1.json
-手册与技能（release 资料闭包，经认证端点，无需 OSS 凭据）：
+【材料获取（认证只读；逐项核对 SHA 后使用；直接 HTTP 请求须带 Authorization: Bearer 头）】
+契约与手册/技能统一经下方清单获取（清单含 contracts/research-workflow-v1.json 的端点定位与 SHA；GitHub raw 按代码提交仅作备选：https://raw.githubusercontent.com/Bpig-C/literature-library/${codeCommit}/contracts/research-workflow-v1.json）：
 ${materialLines(origin, materials)}
 
 【客户端远程执行补充】
@@ -65,7 +64,7 @@ ${materialLines(origin, materials)}
 1. 只读预检：GET ${origin}/api/research/schema 读取 read_only、environment_id 与代码提交/release 绑定；只读部署下一切非 GET 均为 403，属于部署约束，不重试写入，也不将其当作科学流程失败。
 2. 材料：契约从上方 GitHub 原始文件按提交读取；手册/技能按【材料获取】清单经 ${origin}/api/materials/<path> 获取（响应头 X-Litlib-SHA256/X-Litlib-Bytes 必须与清单一致）。
 3. 固定版本材料：用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <上方清单该资产列明的精确版本> --max-bytes <明确预算> --output <本地新路径> 获取；身份/角色/版本严格按清单，不猜、不换版本；核对返回 SHA/大小后再使用。
-4. 认证与传输：LITLIB_REMOTE_TOKEN（≥32 字符）由受控渠道注入进程环境，不写入本工单、代码或命令行；HTTPS 证书须信任服务端提供的 CA；如客户端代理拦截组网地址，需对 100.66.1.3 配置 NO_PROXY 绕行。
+4. 认证与传输：LITLIB_REMOTE_TOKEN（≥32 字符）由受控渠道注入进程环境，不写入本工单、代码或命令行，直接 HTTP 请求（含 /api/materials）须带 Authorization: Bearer 头（litlib_remote 已内置）；litlib_remote.py 本身按代码提交从 https://raw.githubusercontent.com/Bpig-C/literature-library/<提交>/scripts/litlib_remote.py 获取（零第三方依赖，Python ≥3.11）；HTTPS 证书须信任服务端提供的 CA；如客户端代理拦截组网虚拟地址，须对该地址配置 NO_PROXY 绕行（地址见服务端交接说明）。
 5. 完整材料获取与提交步骤以服务端确认的写权限为前提；只读阶段仅做预检、读取与汇报。
 
 【交付】

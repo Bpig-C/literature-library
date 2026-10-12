@@ -150,7 +150,7 @@
         <!-- PDF 操作栏：未下载时提供下载 / 上传入口 -->
         <div class="pdf-action-bar" v-if="!selected.local_pdf_path">
           <div class="pdf-action-buttons">
-            <button class="btn-download-pdf" :disabled="busy || pdfDownloading" @click="doDownloadPdf" title="自动从 arXiv 等来源下载 PDF">
+            <button class="btn-download-pdf" :disabled="readOnly || busy || pdfDownloading" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doDownloadPdf" title="自动从 arXiv 等来源下载 PDF">
               <span v-if="pdfDownloading">⏳ 下载中…</span>
               <span v-else>📥 自动下载 PDF</span>
             </button>
@@ -179,8 +179,8 @@
         </details>
 
         <div class="review-bar">
-          <button class="btn-approve" :disabled="busy || selectedIsDuplicate" @click="onApprove" title="批准后可晋升为正式文献">批准</button>
-          <button class="btn-reject" :disabled="busy" @click="doReview('rejected')">拒绝</button>
+          <button class="btn-approve" :disabled="readOnly || busy || selectedIsDuplicate" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="onApprove" title="批准后可晋升为正式文献">批准</button>
+          <button class="btn-reject" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doReview('rejected')">拒绝</button>
           <button class="btn-promote" :disabled="busy || promotableCount === 0" @click="showPromoteConfirm">
             晋升已批准 ({{ promotableCount }})
           </button>
@@ -204,6 +204,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getIntakeCandidates, getIntakeStats, reviewCandidate, promoteCandidates, resolveIntake, uploadCandidatePdf, getDiscoveryRun, getIntakeTopics } from '../api'
