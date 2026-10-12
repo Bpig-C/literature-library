@@ -1,6 +1,7 @@
 """HTTP adapter for the isolated research workflow."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from ..research_context import get_research_context, REPO_ROOT
@@ -21,6 +22,64 @@ from ..research_schema import migration_plan, verify_schema, compute_environment
 from ..research_service import ResearchConflictError, ResearchService
 
 router = APIRouter()
+
+
+def _release_manifest():
+    """Restored-release manifest next to the app tree, when running from a slot."""
+    path = REPO_ROOT.parent / "release-manifest.json"
+    if path.is_file():
+        try:
+            return {"data": json.loads(path.read_text("utf-8")),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+@router.get("/materials")
+def materials_list():
+    """RWEB-02: versioned runtime-materials closure of the restored release.
+
+    Every entry carries the authenticated fetch URL plus the exact SHA/bytes a
+    clean client must verify; clients need no OSS credentials and no access to
+    server-local paths.
+    """
+    manifest = _release_manifest()
+    if not manifest:
+        return {"available": False,
+                "reason": "release manifest absent; runtime materials closure not published"}
+    entries = [{"path": name,
+                "url": f"/api/materials/{name}",
+                "sha256": entry["sha256"],
+                "bytes": entry["bytes"]}
+               for name, entry in sorted(manifest["data"].get("essentials", {}).items())
+               if name.startswith("library/docs/")]
+    return {"available": True,
+            "release_id": manifest["data"].get("release_id"),
+            "manifest_sha256": manifest["sha256"],
+            "items": entries}
+
+
+@router.get("/materials/{material_path:path}")
+def materials_file(material_path: str):
+    """Serve one runtime material, integrity-checked against the release manifest."""
+    manifest = _release_manifest()
+    if not manifest:
+        raise HTTPException(503, "runtime materials closure not published")
+    entry = manifest["data"].get("essentials", {}).get(material_path)
+    if not entry or not material_path.startswith("library/docs/"):
+        raise HTTPException(404, "material outside published closure")
+    root = Path(os.environ.get("LITLIB_RUNTIME_MATERIALS_ROOT", str(REPO_ROOT))).resolve()
+    target = (root / material_path[len("library/docs/"):]).resolve()
+    if target.is_symlink() or not target.is_file() or not target.is_relative_to(root):
+        raise HTTPException(404, "material absent")
+    from ..storage.core import hash_file
+    digest, size = hash_file(target)
+    if (digest, size) != (entry["sha256"], entry["bytes"]):
+        raise HTTPException(502, "material integrity differs from release manifest")
+    return FileResponse(target, headers={"X-Litlib-SHA256": entry["sha256"],
+                                         "X-Litlib-Bytes": str(entry["bytes"]),
+                                         "Cache-Control": "no-store"})
 
 @router.get('/research/runtime-assets')
 def runtime_presentation_assets():
@@ -356,12 +415,23 @@ class OntologyDraftSave(BaseModel):
 @router.get("/research/schema")
 def schema_status():
     ctx = get_research_context()
+    import subprocess
+    try:
+        code_commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
+                                              cwd=REPO_ROOT, stderr=subprocess.DEVNULL).decode().strip()
+    except (OSError, subprocess.SubprocessError):
+        code_commit = None
+    manifest = _release_manifest()
     return {"plan": migration_plan(ctx), "verify": verify_schema(ctx),
             "code_root": str(REPO_ROOT),
             "runtime_materials_root": os.environ.get("LITLIB_RUNTIME_MATERIALS_ROOT", str(REPO_ROOT)),
             "environment_id": compute_environment_id(ctx.library_root, ctx.db_path),
             "read_only": os.environ.get("LITLIB_RESEARCH_READ_ONLY") == "1",
-            "remote_writes_enabled": os.environ.get("LITLIB_REMOTE_WRITE_ENABLED") == "1"}
+            "remote_writes_enabled": os.environ.get("LITLIB_REMOTE_WRITE_ENABLED") == "1",
+            "code_commit": code_commit,
+            "release_id": manifest["data"].get("release_id") if manifest else None,
+            "manifest_sha256": manifest["sha256"] if manifest else None,
+            "materials_url": "/api/materials"}
 
 
 @router.post("/research/sources/import")

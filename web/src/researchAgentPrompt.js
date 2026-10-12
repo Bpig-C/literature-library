@@ -121,6 +121,9 @@ export function buildResearchAgentPrompt(record, work, schema, origin, options =
   const focus = (options.focus || '').trim()
   const focusBlock = focus ? `我特别关注的问题：${focus}\n` : '我特别关注的问题：（请在这里补充；也可保留为空）\n'
   const parts = []
+  parts.push(`【部署模式与执行位置】
+部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）'}
+执行位置：本工单不要求访问服务器本地路径。客户端 Agent 取材：契约 https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json；手册/技能经 ${origin}/api/materials/<path>（清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes）；固定版本资产用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <服务端登记的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网地址时对 100.66.1.3 配置 NO_PROXY。只读阶段仅做预检、读取与汇报。`)
 
   if (mode === 'organize') {
     parts.push(`请对以下文献开展单篇研究整理，开始前核对任务范围；已有 Agent 正在处理时，不要重复领取或并发改写同一记录。
@@ -205,6 +208,10 @@ export function buildResearchBatchAgentPrompt(batch, rows, schema, origin, optio
     : `界面取得 ${returned}/${total} 条；执行时仍须用正式任务包重新确认。`
 
   return `请作为本研究批次的总控 Agent，按固定快照和当前发布包组织批量处理。先只读预检，再分波执行；已有 Agent 占用的条目不得并发改写。
+
+【部署模式与执行位置】
+部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）'}
+执行位置：本工单不要求访问服务器本地路径。客户端 Agent 取材：契约 https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json；手册/技能经 ${origin}/api/materials/<path>（清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes）；固定版本资产用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <服务端登记的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网地址时对 100.66.1.3 配置 NO_PROXY。只读阶段仅做预检、读取与汇报。
 
 【批次与模式】
 批次名称：${batch?.name || '未取得'}

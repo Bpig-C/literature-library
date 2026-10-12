@@ -116,9 +116,9 @@
           <n-tag v-else size="small" type="warning" :bordered="false" title="无活动书目投影">
             无活动投影（未达导出门槛）
           </n-tag>
-          <n-button v-if="!editing" size="small" quaternary @click="startEdit">编辑</n-button>
+          <n-button v-if="!editing" size="small" quaternary :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="startEdit">编辑</n-button>
           <template v-else>
-            <n-button size="small" type="primary" @click="saveEdit">保存</n-button>
+            <n-button size="small" type="primary" :disabled="readOnly" @click="saveEdit">保存</n-button>
             <n-button size="small" quaternary @click="cancelEdit">取消</n-button>
           </template>
           <template v-if="!editing">

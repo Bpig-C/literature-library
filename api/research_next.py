@@ -1244,6 +1244,23 @@ class ResearchNextService:
                        WHERE status='succeeded' AND COALESCE(content_md_path,'')<>''
                        ORDER BY COALESCE(finished_at,started_at) DESC,id DESC"""):
                     parse_runs.setdefault(run["work_id"], dict(run))
+            # RWEB-02: fixed-version storage locators for the materials an Agent
+            # work order names. PDF binds to the source-file identity, md/json
+            # to the parse-run identity; versions come from the live registry,
+            # never guessed.
+            worklist_assets = {}
+            if parse_runs and catalog.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='storage_bindings'").fetchone():
+                asset_ids = sorted({r["id"] for r in parse_runs.values()} |
+                                   {r["source_file_id"] for r in parse_runs.values()})
+                placeholders = ",".join("?" * len(asset_ids))
+                for binding in catalog.execute(
+                        f"SELECT identity,role,version,sha256,bytes FROM storage_bindings "
+                        f"WHERE identity IN ({placeholders}) AND role IN ('pdf','md','json')", asset_ids):
+                    worklist_assets.setdefault(binding["identity"], {})[binding["role"]] = {
+                        "identity": binding["identity"], "role": binding["role"],
+                        "version": binding["version"], "sha256": binding["sha256"],
+                        "bytes": binding["bytes"]}
         with closing(self.context.connect(read_only=True)) as conn:
             tasks = {r["work_id"]: dict(r) for r in conn.execute(
                 "SELECT * FROM research_metadata_tasks")}
@@ -1276,8 +1293,14 @@ class ResearchNextService:
             else:
                 state = "absent" if parse_ready else "waiting_parse"
             counts[state] += 1
+            item_assets = None
+            if parse:
+                item_assets = {"pdf": worklist_assets.get(parse["source_file_id"], {}).get("pdf"),
+                               "md": worklist_assets.get(parse["id"], {}).get("md"),
+                               "json": worklist_assets.get(parse["id"], {}).get("json")}
             items.append({**work, "status": state, "parse_ready": parse_ready,
                           "parse": parse, "metadata_head": head,
+                          "assets": item_assets,
                           "task_id": task["id"] if task else None,
                           "task_reason": task["reason"] if task else None,
                           "open_feedback_count": feedback.get(work_id, 0)})

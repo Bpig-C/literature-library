@@ -22,8 +22,8 @@
         <div v-if="detail.records.length" class="human-actions">
           <h3>您的判断</h3><p class="hint">反馈只登记问题，Agent 按工单回查并生成修订；采纳只在您读过已稳定且独立核查通过的当前版本后操作。</p>
           <textarea v-model="feedbackText" rows="3" placeholder="指出 A 元数据的具体问题或缺漏"></textarea>
-          <button type="button" :disabled="!feedbackText.trim() || writing" @click="submitFeedback">登记质疑</button>
-          <div class="adoption"><input v-model="actorId" placeholder="您的操作身份（必填）" /><input v-model="adoptionNote" placeholder="判断依据/备注" /><button type="button" :disabled="writing || !actorId.trim() || !currentAdoptable" @click="adopt('adopted')">采纳当前 A</button><button type="button" :disabled="writing || !actorId.trim()" @click="adopt('rejected')">不采纳</button></div>
+          <button type="button" :disabled="readOnly || !feedbackText.trim() || writing" title="只读部署：写操作被服务端禁用" @click="submitFeedback">登记质疑</button>
+          <div class="adoption"><input v-model="actorId" placeholder="您的操作身份（必填）" /><input v-model="adoptionNote" placeholder="判断依据/备注" /><button type="button" :disabled="readOnly || writing || !actorId.trim() || !currentAdoptable" title="只读部署：写操作被服务端禁用" @click="adopt('adopted')">采纳当前 A</button><button type="button" :disabled="readOnly || writing || !actorId.trim()" title="只读部署：写操作被服务端禁用" @click="adopt('rejected')">不采纳</button></div>
           <p v-if="actionMessage">{{ actionMessage }}</p>
         </div>
       </template>
@@ -67,14 +67,17 @@
 <script setup>
 import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getMetadataWorklist, getMetadataWorkDetail, getResearchSchema, openMetadataFeedback, adoptMetadataRecord } from '../api'
+import { getMetadataWorklist, getMetadataWorkDetail, getResearchSchema, getMaterials, openMetadataFeedback, adoptMetadataRecord } from '../api'
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+
+const { readOnly } = useRuntimeMode()
 import { buildMetadataAgentPrompt, METADATA_PROMPT_MODES } from '../metadataAgentPrompt'
 
 const route = useRoute()
 const router = useRouter()
 const detailSection = ref(null)
 let detailRequest = 0
-const data = ref(null), schema = ref(null), loading = ref(false), error = ref('')
+const data = ref(null), schema = ref(null), materialsList = ref(null), loading = ref(false), error = ref('')
 const search = ref(''), filter = ref('all'), includeStable = ref(false), selected = ref([])
 const mode = ref('auto'), focus = ref(''), prompt = ref(''), copied = ref(false)
 const detailItem = ref(null), detail = ref(null), detailLoading = ref(false), detailError = ref('')
@@ -93,7 +96,7 @@ function toggle(id) { selected.value = selected.value.includes(id) ? selected.va
 function selectActionable() { selected.value = [...new Set([...selected.value,...paged.value.filter(canSelect).map(item => item.id)])] }
 async function load() {
   loading.value = true; error.value = ''
-  try { const [list, release] = await Promise.all([getMetadataWorklist(), getResearchSchema()]); data.value = list; schema.value = release;
+  try { const [list, release, materials] = await Promise.all([getMetadataWorklist(), getResearchSchema(), getMaterials()]); data.value = list; schema.value = release; materialsList.value = materials;
     selected.value = selected.value.filter(id => list.items.some(item => item.id === id && canSelect(item)))
     await openRequestedDetail()
   } catch (e) { error.value = `A 清单暂不可用：${e.detail || e.message}` } finally { loading.value = false }
@@ -132,7 +135,7 @@ function returnToWorks() {
   if (/^\/works(?:\?|$)/.test(window.history.state?.back || '')) router.back()
   else router.push('/works')
 }
-function generate() { prompt.value = buildMetadataAgentPrompt(items.value.filter(item => selected.value.includes(item.id)), schema.value, window.location.origin, { mode:mode.value, focus:focus.value }); copied.value = false }
+function generate() { prompt.value = buildMetadataAgentPrompt(items.value.filter(item => selected.value.includes(item.id)), schema.value, window.location.origin, { mode:mode.value, focus:focus.value, materials:materialsList.value }); copied.value = false }
 async function copy() { try { await navigator.clipboard.writeText(prompt.value); copied.value = true } catch { copied.value = false; alert('复制失败，请在文本框中手动全选复制') } }
 function pretty(value) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2) }
 const fieldLabels = { original_title:'原始标题', title_translations:'中文及其他译题', authors:'完整作者', doi:'DOI', arxiv:'arXiv 编号', document_type:'文献类型', language:'语言', date_events:'日期事件', citation_year:'引用年份', original_abstracts:'作者原始摘要', descriptive_overview:'Agent 概述', resources:'主页、代码、数据与补充材料', supports:'字段来源与依据', missing_notes:'缺口与待核查', related_versions:'相关版本', resource_observations:'资源实测', extensions:'扩展记录' }

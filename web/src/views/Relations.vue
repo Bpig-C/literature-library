@@ -14,7 +14,7 @@
           <option value="not_duplicate">非重复</option>
         </select>
         <input v-model="form.work_id_b" placeholder="Work ID B" />
-        <button @click="addRelation" :disabled="!form.work_id_a || !form.work_id_b">添加</button>
+        <button @click="addRelation" :disabled="readOnly || !form.work_id_a || !form.work_id_b" title="只读部署：写操作被服务端禁用">添加</button>
       </div>
     </div>
     <div class="count">{{ relations.length }} 条关系</div>

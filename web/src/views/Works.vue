@@ -109,8 +109,8 @@
             <td :class="'status-' + w.ingestion_state">{{ label(INGESTION_STATE_LABELS, w.ingestion_state) }}</td>
             <td class="actions" @click.stop>
               <router-link class="metadata-action" :to="{ path: '/metadata-workspace', query: { work_id: w.id } }">A 元数据</router-link>
-              <n-button v-if="w.read_status !== 'quarantined'" text type="error" size="small" @click="quarantine(w)">隔离</n-button>
-              <n-button v-else text type="success" size="small" @click="restore(w)">恢复</n-button>
+              <n-button v-if="w.read_status !== 'quarantined'" text type="error" size="small" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="quarantine(w)">隔离</n-button>
+              <n-button v-else text type="success" size="small" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="restore(w)">恢复</n-button>
             </td>
           </tr>
         </tbody>
@@ -125,7 +125,7 @@
       <n-input v-model:value="quarantineReason" placeholder="隔离原因（可选）" />
       <template #action>
         <n-button @click="showQuarantineModal = false">取消</n-button>
-        <n-button type="error" :loading="quarantineLoading" @click="confirmQuarantine">确认隔离</n-button>
+        <n-button type="error" :loading="quarantineLoading" :disabled="readOnly" @click="confirmQuarantine">确认隔离</n-button>
       </template>
     </n-modal>
 
@@ -156,6 +156,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { computed, ref, onMounted, nextTick } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'

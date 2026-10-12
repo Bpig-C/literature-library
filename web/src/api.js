@@ -736,6 +736,8 @@ export function getParseCorrectionImpact(correctionId) {
 
 export function getResearchSchema() { return request("/research/schema") }
 
+export function getMaterials() { return request("/materials") }
+
 
 /** 总览（含 research.batches 列表，用于批次下拉） */
 export function getOverview() {

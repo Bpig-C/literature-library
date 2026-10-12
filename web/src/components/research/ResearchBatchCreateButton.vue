@@ -1,5 +1,5 @@
 <template>
-  <n-button secondary type="primary" data-testid="create-research-batch" @click="openPlanner">
+  <n-button secondary type="primary" data-testid="create-research-batch" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="openPlanner">
     ＋ 新建研究批次
   </n-button>
 
@@ -105,6 +105,9 @@
 </template>
 
 <script setup>
+
+import { useRuntimeMode } from '../../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { computed, reactive, ref } from 'vue'
 import {
   getCurrentResearchRelease,
