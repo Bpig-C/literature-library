@@ -36,7 +36,7 @@ export function buildMetadataAgentPrompt(items, schema, origin, { mode = 'auto',
 用户特别关注：${focus.trim() || '无；按实际缺口逐篇判断'}
 服务：${origin}/api/research
 执行环境：${schema?.environment_id || '未取得；先查询 /api/research/schema 后再写入'}
-部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，生产/提交前必须先确认写权限与权威，403 是部署约束不是流程失败）' : '可写部署（写操作仍须正常任务授权）'}
+部署模式：${schema ? (schema.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，生产/提交前必须先确认写权限与权威，403 是部署约束不是流程失败）' : '可写部署（写操作仍须正常任务授权）') : '未知（schema 未取得；一律按只读处理，先 GET /api/research/schema 确认）'}
 执行位置：本工单不要求访问服务器本地路径；客户端 Agent 按下方【材料获取】与【客户端远程执行补充】取材。
 代码提交：${codeCommit}
 release：${schema?.release_id || '-'}（manifest ${schema?.manifest_sha256 || '-'}；材料闭包清单 GET ${origin}/api/materials）

@@ -104,8 +104,8 @@ JSON：${assetLine('json')}
 固定快照读取（C 层原文）：${source.id && snapshot.id ? `${origin}/api/research/sources/${encodeURIComponent(source.id)}/text?snapshot_id=${encodeURIComponent(snapshot.id)}` : MISSING}
 材料/手册/契约获取：GET ${origin}/api/materials（逐项带 sha256/bytes；响应头 X-Litlib-SHA256/X-Litlib-Bytes 必须与清单一致）
 资产读取：litlib_remote.py --server ${origin} asset <identity> --role <pdf|md|json> --version <上行列明的版本> --max-bytes <预算> --output <本地新路径>（--server 在 asset 子命令之前）；服务器本地路径与 litlib-asset:// 虚拟引用不适用于客户端执行
-证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含 
-；渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。资产未取得时明确报缺口，不自行生成路径。`
+证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含（Unicode 码点偏移，含 CR 字符；
+渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。资产未取得时明确报缺口，不自行生成路径。`
 }
 
 function commonSkills(origin, schema) { return `【通用技能与填写要求】
@@ -191,11 +191,7 @@ function compactBatchRow(row) {
   const describe = value => value
     ? `${value.id} v${value.version ?? '?'} / ${value.content_state || '状态未提供'} / ${value.agent_review_status || '审查状态未提供'} / ${value.validity_status || '有效性未提供'}`
     : '尚未生成'
-  const assets = row?.assets || {}
-  const asset = role => {
-    const b = assets[role]
-    return b ? `${b.identity} role=${role} v${b.version} sha256=${b.sha256} bytes=${b.bytes}` : '未登记（报缺口，不猜版本）'
-  }
+  const asset = role => assetLineOf(row?.assets, role)
   return `- ${source.work_id || 'Work ID 未取得'}；source=${source.id || '未取得'}；snapshot=${snapshot.id || '未取得'}@${snapshot.content_sha256 || 'hash 未取得'}；C原文=${describe(sourceRecord)}；D解释=${describe(interpretation)}；PDF=${asset('pdf')}；Markdown=${asset('md')}；JSON=${asset('json')}；A元数据按 Work 从元数据工作台查询，R参考文献从正式接口查询`
 }
 
