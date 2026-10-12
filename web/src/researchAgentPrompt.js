@@ -104,7 +104,7 @@ JSON：${assetLine('json')}
 固定快照读取（C 层原文）：${source.id && snapshot.id ? `${origin}/api/research/sources/${encodeURIComponent(source.id)}/text?snapshot_id=${encodeURIComponent(snapshot.id)}` : MISSING}
 材料/手册/契约获取：GET ${origin}/api/materials（逐项带 sha256/bytes；响应头 X-Litlib-SHA256/X-Litlib-Bytes 必须与清单一致）
 资产读取：litlib_remote.py --server ${origin} asset <identity> --role <pdf|md|json> --version <上行列明的版本> --max-bytes <预算> --output <本地新路径>（--server 在 asset 子命令之前）；服务器本地路径与 litlib-asset:// 虚拟引用不适用于客户端执行
-证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含（Unicode 码点偏移，含 CR 字符；
+证据 quote/offset 必须对齐固定快照（Unicode 码点偏移，含 CR 字符；
 渲染后的 HTML/DOM 偏移不是原文字符偏移）。不能将另一轮或最新解析静默替换当前绑定。资产未取得时明确报缺口，不自行生成路径。`
 }
 
@@ -128,7 +128,7 @@ export function buildResearchAgentPrompt(record, work, schema, origin, options =
   const focusBlock = focus ? `我特别关注的问题：${focus}\n` : '我特别关注的问题：（请在这里补充；也可保留为空）\n'
   const parts = []
   parts.push(`【部署模式与执行位置】
-部署模式：${schema ? (schema.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）') : '未知（schema 未取得；一律按只读处理，先 GET /api/research/schema 确认）'}
+部署模式：${schema?.read_only === true ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : schema?.read_only === false ? '可写部署（写操作仍须正常任务授权）' : '未知（schema 未取得或缺 read_only；一律按只读处理并停写，先 GET /api/research/schema 确认）'}
 执行位置：本工单不要求访问服务器本地路径。取材通道（全部经 ${origin}，直接 HTTP 请求须带 Authorization: Bearer 头，litlib_remote 已内置）：①契约 GET ${origin}/api/materials/contracts/research-workflow-v1.json（备选：https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json）；②手册/技能 清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes；③固定版本资产用 litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <工单/清单列明的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。litlib_remote.py 本身按 ${schema?.code_commit ? 'https://raw.githubusercontent.com/Bpig-C/literature-library/' + schema.code_commit + '/scripts/litlib_remote.py' : '<先取 schema.code_commit，再从同路径取得>'} 获取（零第三方依赖，Python ≥3.11）。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网虚拟地址时须对该地址配置 NO_PROXY 绕行（地址见服务端交接说明）。只读阶段仅做预检、读取与汇报。`)
 
   if (mode === 'organize') {
@@ -217,7 +217,7 @@ export function buildResearchBatchAgentPrompt(batch, rows, schema, origin, optio
   return `请作为本研究批次的总控 Agent，按固定快照和当前发布包组织批量处理。先只读预检，再分波执行；已有 Agent 占用的条目不得并发改写。
 
 【部署模式与执行位置】
-部署模式：${schema ? (schema.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : '可写部署（写操作仍须正常任务授权）') : '未知（schema 未取得；一律按只读处理，先 GET /api/research/schema 确认）'}
+部署模式：${schema?.read_only === true ? '只读部署（read_only=true；非 GET 会被 403 拒绝，403 是部署约束不是流程失败，不重试写入）' : schema?.read_only === false ? '可写部署（写操作仍须正常任务授权）' : '未知（schema 未取得或缺 read_only；一律按只读处理并停写，先 GET /api/research/schema 确认）'}
 执行位置：本工单不要求访问服务器本地路径。取材通道（全部经 ${origin}，直接 HTTP 请求须带 Authorization: Bearer 头，litlib_remote 已内置）：①契约 GET ${origin}/api/materials/contracts/research-workflow-v1.json（备选：https://raw.githubusercontent.com/Bpig-C/literature-library/${schema?.code_commit || '<先 GET /api/research/schema 取代码提交>'}/contracts/research-workflow-v1.json）；②手册/技能 清单 GET ${origin}/api/materials，逐项核对 X-Litlib-SHA256/X-Litlib-Bytes；③固定版本资产用 litlib_remote.py --server ${origin} asset <identity> --role md|json|pdf --version <工单/清单列明的精确版本> --max-bytes <预算> --output <本地新路径>，身份/版本不猜不换。litlib_remote.py 本身按 ${schema?.code_commit ? 'https://raw.githubusercontent.com/Bpig-C/literature-library/' + schema.code_commit + '/scripts/litlib_remote.py' : '<先取 schema.code_commit，再从同路径取得>'} 获取（零第三方依赖，Python ≥3.11）。认证：LITLIB_REMOTE_TOKEN 由受控渠道注入进程环境；HTTPS 须信任服务端 CA；客户端代理拦截组网虚拟地址时须对该地址配置 NO_PROXY 绕行（地址见服务端交接说明）。只读阶段仅做预检、读取与汇报。
 
 【批次与模式】
