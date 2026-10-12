@@ -2,6 +2,7 @@
 from collections import Counter
 from contextlib import closing
 from pathlib import Path
+import os
 import sqlite3
 
 from fastapi import APIRouter
@@ -42,6 +43,8 @@ def collection_overview(db_path: Path, root: Path) -> dict:
 @router.get('/overview')
 def overview():
     result = collection_overview(DB_PATH, LIBRARY_ROOT)
+    result['read_only'] = os.environ.get('LITLIB_RESEARCH_READ_ONLY') == '1'
+    result['remote_writes_enabled'] = os.environ.get('LITLIB_REMOTE_WRITE_ENABLED') == '1'
     ctx = get_research_context()
     result['research'] = {'available': False, 'batches': []}
     if not ctx.db_path.is_file():

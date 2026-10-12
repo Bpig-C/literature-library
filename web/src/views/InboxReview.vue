@@ -17,7 +17,7 @@
             摄入后保留 _inbox 原文件（默认移至 _archive/ingested_inbox/）
           </label>
           <input ref="uploadInput" type="file" accept=".pdf,application/pdf" multiple style="display:none" @change="onUploadFiles" />
-          <button class="btn-upload" @click="uploadInput?.click()" :disabled="busy || uploadBusy"
+          <button class="btn-upload" @click="uploadInput?.click()" :disabled="busy || uploadBusy || readOnly"
                   title="只摄入本次选中的 PDF；收件箱其他文件保持不变，同名文件保留原件">
             {{ uploadBusy ? '上传中…' : '上传 PDF' }}
           </button>
@@ -95,6 +95,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { getIngestPlan, executeIngest, uploadFiles } from '../api'
 import { showError } from '../error-handler'
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { useNextStep } from '../composables/useNextStep'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import StatusBadge from '../components/StatusBadge.vue'

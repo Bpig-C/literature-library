@@ -90,7 +90,7 @@
               placeholder="仅送入研究库"
               clearable
             />
-            <n-button size="tiny" quaternary :loading="stageLoading" @click="stageToResearch">
+            <n-button size="tiny" quaternary :loading="stageLoading" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="stageToResearch">
               {{ stageBatchChoice ? '加入所选批次（新一轮）' : '送入研究库' }}
             </n-button>
           </template>
@@ -122,8 +122,8 @@
             <n-button size="small" quaternary @click="cancelEdit">取消</n-button>
           </template>
           <template v-if="!editing">
-            <n-button v-if="work.read_status !== 'quarantined'" size="small" text type="error" @click="quarantine">隔离</n-button>
-            <n-button v-else size="small" text type="success" @click="restore">恢复</n-button>
+            <n-button v-if="work.read_status !== 'quarantined'" size="small" text type="error" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="quarantine">隔离</n-button>
+            <n-button v-else size="small" text type="success" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="restore">恢复</n-button>
           </template>
         </div>
         <div class="kv">
@@ -181,8 +181,8 @@
                       @click="triggerParse">触发解析</n-button>
             <n-select v-model:value="parseBackend" size="tiny" style="width:190px"
                       :options="parseBackendOptions" :consistent-menu-width="false" />
-            <n-button size="small" quaternary type="primary" :loading="parseLoading"
-                      @click="reparseWork">重新解析</n-button>
+            <n-button size="small" quaternary type="primary" :loading="parseLoading" :disabled="readOnly"
+                      title="只读部署：写操作被服务端禁用" @click="reparseWork">重新解析</n-button>
           </div>
           <div>阅读状态</div>
           <div>
@@ -486,6 +486,8 @@
 import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import { getWorks, getWork, getOverview, getResearchWork, getResearchWorkProfile, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, workImageUrl, mergedContentUrl, workDetailJsonUrl, parseTrigger, stageWorkToResearch, getMaterialSelection } from '../api'
 import { renderMarkdown } from '../utils/markdown'
 import { readMaterial, freezeMaterialSelection } from '../utils/storage-feedback'

@@ -359,7 +359,9 @@ def schema_status():
     return {"plan": migration_plan(ctx), "verify": verify_schema(ctx),
             "code_root": str(REPO_ROOT),
             "runtime_materials_root": os.environ.get("LITLIB_RUNTIME_MATERIALS_ROOT", str(REPO_ROOT)),
-            "environment_id": compute_environment_id(ctx.library_root, ctx.db_path)}
+            "environment_id": compute_environment_id(ctx.library_root, ctx.db_path),
+            "read_only": os.environ.get("LITLIB_RESEARCH_READ_ONLY") == "1",
+            "remote_writes_enabled": os.environ.get("LITLIB_REMOTE_WRITE_ENABLED") == "1"}
 
 
 @router.post("/research/sources/import")

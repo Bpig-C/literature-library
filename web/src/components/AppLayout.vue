@@ -78,6 +78,9 @@
       </header>
 
       <main class="content">
+        <div v-if="readOnly" class="readonly-banner" role="status">
+          只读模式：当前为远程只读部署，上传 / 重新解析 / 隔离 / 删除 / 提交等写操作已被服务端禁用（403）。读取、检索与导出不受影响；正式写入须先完成权威交接。
+        </div>
         <slot />
       </main>
     </section>
@@ -88,7 +91,9 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppIcon from './AppIcon.vue'
+import { useRuntimeMode } from '../composables/useRuntimeMode'
 
+const { readOnly } = useRuntimeMode()
 const route = useRoute()
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(window.localStorage.getItem('scholar-sidebar-collapsed') === '1')
@@ -334,6 +339,18 @@ a:hover { text-decoration: none; }
 .system-status { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 11px; }
 .system-status i { width: 6px; height: 6px; border-radius: 50%; background: #20a879; box-shadow: 0 0 0 3px rgba(32,168,121,.12); }
 .content { min-width: 0; padding: 30px 34px 48px; }
+
+.readonly-banner {
+  margin: 0 0 14px 0;
+  padding: 8px 12px;
+  border: 1px solid #e8c88a;
+  border-left: 4px solid #b66a18;
+  border-radius: 8px;
+  background: #fdf6e9;
+  color: #7a4b0e;
+  font-size: 13px;
+  line-height: 1.6;
+}
 .mobile-menu, .sidebar-scrim { display: none; }
 
 @media (max-width: 900px) {

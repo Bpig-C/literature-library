@@ -2767,6 +2767,26 @@ class ResearchService:
                     item["validation_status"] = selected["validation_status"]
                     item["mapping_status"] = payload.get("mapping_status") \
                         if isinstance(payload, dict) else None
+            # RWEB-01: surface the catalog title (library DB works table) on
+            # every query item so remote lists never fall back to the virtual
+            # asset URI's trailing version segment as a display name.
+            from .db import DB_PATH as _library_db_path
+            work_ids = sorted({item["source"]["work_id"] for item in items
+                               if item["source"].get("work_id")})
+            catalog_titles = {}
+            if work_ids and _library_db_path.is_file():
+                try:
+                    lib = sqlite3.connect(f"file:{_library_db_path.as_posix()}?mode=ro", uri=True)
+                    try:
+                        placeholders = ",".join("?" * len(work_ids))
+                        catalog_titles = {row[0]: row[1] for row in lib.execute(
+                            f"SELECT id,title FROM works WHERE id IN ({placeholders})", work_ids)}
+                    finally:
+                        lib.close()
+                except sqlite3.Error:
+                    catalog_titles = {}
+            for item in items:
+                item["title"] = catalog_titles.get(item["source"].get("work_id"))
             # All derived fields and every interpretation-side filter consume
             # the same final D object selected above.  Filtering before this
             # point would silently test the batch pointer instead.

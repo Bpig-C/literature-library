@@ -24,6 +24,8 @@ export function buildMetadataAgentPrompt(items, schema, origin, { mode = 'auto',
 用户特别关注：${focus.trim() || '无；按实际缺口逐篇判断'}
 服务：${origin}/api/research
 执行环境：${schema?.environment_id || '未取得；先查询 /api/research/schema 后再写入'}
+部署模式：${schema?.read_only ? '只读部署（read_only=true；非 GET 会被 403 拒绝，生产/提交前必须先确认写权限与权威，403 是部署约束不是流程失败）' : '可写部署（写操作仍须正常任务授权）'}
+执行位置：下方代码目录/材料根目录/Markdown/JSON 路径仅在服务器本地可读；客户端 Agent 执行时必须先读【客户端远程执行补充】，不得把服务器路径或 litlib-asset:// 虚拟引用当本地文件。
 代码目录：${schema?.code_root || '未取得；先查询 /api/research/schema'}
 手册与技能材料根目录：${schema?.runtime_materials_root || '未取得；先查询 /api/research/schema'}
 入口：${origin}/metadata-workspace
@@ -40,6 +42,14 @@ ${rows}
 5. 通过正式 API 或 scripts/litlib.py 提交 work_id 级 metadata record，batch_id 留空，显式记录 submitted_by、environment_id、release_id、expected_head_id/supersedes_id 及关联 feedback_id（如适用）。先做结构检查，再由不同执行上下文的核查者重新阅读材料与外部来源并提交审核；生产者改名不构成独立审核。若无法独立复核，保留待审核，不伪造 approved/stable。版本冲突先重新读取；不直接 SQL 改库。
 6. 审核获批后核对目录传播、完整作者和书目投影，传播失败按现有重试入口处理。仅实际影响到依赖 A 的 D 时报告影响并安排定向复核，不重写无关 C/D/R。人工采纳一律保持 pending，由用户在页面读完后决定；用户提出质疑时登记反馈，不能直接覆盖旧记录。
 7. 每波 3–4 篇（可按材料难度调整）汇报：keep/create/revise/review/waiting_parse/excluded/conflict、原始证据与外部来源、提交/核查身份、版本状态、反馈和未决项。中高风险争议暂停该篇，不阻塞其他篇；最后逐篇从服务端重新读取状态，不能只信子 Agent 回执。
+
+【客户端远程执行补充】
+在非服务器机器上执行本工单时：
+1. 只读预检：GET ${origin}/api/research/schema 读取 read_only 与 environment_id；只读部署下一切非 GET 均为 403，属于部署约束，不重试写入，也不将其当作科学流程失败。
+2. 契约与手册：向服务端索取已评审的精确代码提交，从该提交的 GitHub 原始文件读取 contracts/research-workflow-v1.json、docs/manuals/agent-manual.md、skills/litlib-extract/SKILL.md、skills/litlib-review/SKILL.md（或使用服务端提供的交接包）；不要访问上方服务器本地路径。
+3. 固定版本材料：用 scripts/litlib_remote.py --server ${origin} asset <identity> --role md|pdf --version <上方清单中的精确版本> --max-bytes <明确预算> --output <本地新路径> 获取；核对返回 SHA/大小后再使用，不得改猜其他版本或把虚拟 URI 当普通 PDF。
+4. 认证与传输：LITLIB_REMOTE_TOKEN（≥32 字符）由受控渠道注入进程环境，不写入本工单、代码或命令行；HTTPS 证书须信任服务端提供的 CA。
+5. 完整材料获取与提交步骤以服务端确认的写权限为前提；只读阶段仅做预检、读取与汇报。
 
 【交付】
 逐 Work 的 A 处理矩阵、版本 ID 与状态、独立复核证据、目录传播结果、来源与缺口、需人阅读判断的重点、页面链接。工程通过不等于科学内容正确或用户采纳。`

@@ -42,7 +42,7 @@
           <td><span class="chip">{{ label(RELATION_TYPE_LABELS, r.relation_type) }}</span></td>
           <td>{{ r.confirmed ? '✓' : '' }}</td>
           <td class="note">{{ r.note || '' }}</td>
-          <td><button class="del" @click="remove(r)">删除</button></td>
+          <td><button class="del" :disabled="readOnly" title="只读部署：写操作被服务端禁用" @click="remove(r)">删除</button></td>
         </tr>
       </tbody>
     </table>
@@ -54,6 +54,8 @@
 import { ref, onMounted } from 'vue'
 import { getRelations, createRelation, deleteRelation } from '../api'
 import { RELATION_TYPE_LABELS, label } from '../labels'
+import { useRuntimeMode } from '../composables/useRuntimeMode'
+const { readOnly } = useRuntimeMode()
 import EmptyState from '../components/EmptyState.vue'
 
 const relations = ref([])

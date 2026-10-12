@@ -519,7 +519,12 @@ function statusValue(row, key) {
 }
 function workId(row) { return row?.source?.work_id || row?.work_id || '' }
 function workTitle(row) {
-  const filename = row?.source?.source_path?.split(/[\\/]/).pop()?.replace(/\.pdf$/i, '')
+  // RWEB-01: a litlib-asset:// URI's trailing segment is a version number,
+  // never a filename; only real source paths may donate a display name.
+  const path = row?.source?.source_path || ''
+  const filename = path.startsWith('litlib-asset://')
+    ? ''
+    : path.split(/[\\/]/).pop()?.replace(/\.pdf$/i, '')
   return row?.title || row?.work_title || filename || row?.source?.citation_key || workId(row) || '未命名记录'
 }
 function rowKey(row) { return row?.interpretation?.id || row?.source_record?.id || row?.source?.id || `${workId(row)}-${JSON.stringify(recordOf(row)).slice(0, 80)}` }
