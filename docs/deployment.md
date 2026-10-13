@@ -54,3 +54,25 @@ Code root is app; runtime materials root is data/library/docs and is reported by
 ## Old entrypoint boundary
 
 start_v5_trial.ps1 and fixed-root legacy batch-parse/metadata/classification/judge/sync CLIs now refuse execution in this publication tree. Their importable functions remain for compatibility. They are not migration or recovery entrypoints. No collector expansion is included. The full research workspace continues to use check_docs.py; this reduced code publication uses check_release.py, with different scope. Dated source manuals preserve original evidence dates. Candidate engineering is not formal deployment or scientific/human acceptance.
+
+## Project documentation maintenance
+
+The complete generic skill is versioned in `skills/project-doc-maintenance/`.
+Read its `SKILL.md` and referenced files for Bootstrap, Adopt, Sync and Review.
+Install the complete directory in the host Agent's skill location and give the
+project AGENTS entry a resolvable reference. Use an exact approved code commit.
+
+Installing this skill does not require modifying or restarting a sealed running
+release. Do not pull new code into that slot solely to install a host Agent skill.
+The skill does not grant business writes, authority takeover, or scientific
+approval. Preserve the distinction between code, runtime evidence, research
+review and human adoption; report a documented no-op when sources need no change.
+
+Verify the complete package with:
+
+```console
+python skills/project-doc-maintenance/scripts/package_hash.py
+```
+
+The package contains SKILL.md, agents/openai.yaml, three referenced documents
+and the package hash script; copy all six files together.

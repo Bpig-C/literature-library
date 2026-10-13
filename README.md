@@ -12,3 +12,5 @@ describes the code/data boundary. `python scripts/check_release.py` checks this
 publication scope. The full research workspace's `check_docs.py` checks its
 research governance links; it is a separate check and is not claimed to pass
 on this intentionally smaller deployment repository.
+
+Host Agent documentation workflow: [Project Doc Maintenance](skills/project-doc-maintenance/SKILL.md). Installation and scope: [deployment guide](docs/deployment.md#project-documentation-maintenance).

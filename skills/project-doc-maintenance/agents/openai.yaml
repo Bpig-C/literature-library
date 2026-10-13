@@ -1,0 +1,5 @@
+interface:
+  display_name: "Project Doc Maintenance"
+  short_description: "Maintain authoritative project documentation"
+policy:
+  allow_implicit_invocation: true
