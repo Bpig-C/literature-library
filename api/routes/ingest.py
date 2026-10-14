@@ -16,7 +16,10 @@ from pydantic import BaseModel
 
 from ..db import LIBRARY_ROOT, get_conn
 
-from scripts.literature_ingest import build_ingest_plan, execute_plan
+from scripts.literature_ingest import (
+    build_ingest_plan, execute_plan, save_ingest_notes, query_ingest_notes,
+    validate_purpose, PURPOSE_MAX_LENGTH,
+)
 
 router = APIRouter()
 
@@ -266,12 +269,24 @@ def unstaged_works(per_page: int = Query(100, ge=1, le=200), page: int = Query(1
 
 
 @router.post("/ingest/upload")
-async def ingest_upload(files: list[UploadFile] = File(...)):
+async def ingest_upload(files: list[UploadFile] = File(...),
+                        purpose: str = Form(...),
+                        request_id: str = Form("")):
     """接收前端上传的 PDF 文件，保存到 _inbox/ 并自动执行摄入。
 
     流程：接收 multipart 文件 → 保存到 _inbox/ → 调用 execute_plan 完成摄入
     返回：{ ok: true, uploaded: N, ingested: M, summary: {...} }
+    purpose 为必填入库用途。
     """
+    inbox_dir = os.path.join(LIBRARY_ROOT, '_inbox')
+    os.makedirs(inbox_dir, exist_ok=True)
+
+    # validate purpose before saving files
+    try:
+        purpose = validate_purpose(purpose or "")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    request_id = (request_id or "").strip() or str(uuid.uuid4())
     inbox_dir = os.path.join(LIBRARY_ROOT, '_inbox')
     os.makedirs(inbox_dir, exist_ok=True)
 
@@ -297,26 +312,72 @@ async def ingest_upload(files: list[UploadFile] = File(...)):
     # 自动执行摄入计划
     try:
         plan = build_ingest_plan(LIBRARY_ROOT, dry_run=True, selected_paths=[Path(path) for path in saved_paths])
-        if plan.summary()['ingests'] == 0:
+        has_work = plan.ingests or any(d.existing_work_id for d in plan.exact_duplicates)
+        if not has_work:
             return {
-                'ok': True,
-                'uploaded': len(saved_paths),
-                'ingested': 0,
-                'skipped': skipped,
-                'message': f'已上传 {len(saved_paths)} 个文件到 _inbox/，但无新文件需要摄入',
+                'ok': True, 'uploaded': len(saved_paths), 'ingested': 0, 'skipped': skipped,
+                'message': f'已上传 {len(saved_paths)} 个文件到 _inbox/，但无新文件或重复件需要处理',
                 'summary': plan.summary(),
             }
         backup_dir = execute_plan(plan, no_backup=True, leave_inbox=False)
+        notes_result = save_ingest_notes(Path(LIBRARY_ROOT), plan, purpose, request_id)
         summary = plan.summary()
         return {
-            'ok': True,
-            'uploaded': len(saved_paths),
-            'ingested': summary['ingests'],
-            'skipped': skipped,
-            'summary': summary,
+            'ok': True, 'uploaded': len(saved_paths), 'ingested': summary['ingests'],
+            'skipped': skipped, 'summary': summary,
+            'purpose_notes': notes_result, 'request_id': request_id,
         }
     except Exception as e:
         raise HTTPException(500, f'文件已上传但摄入失败: {str(e)}')
+
+
+@router.get("/works/{work_id}/ingest-notes")
+def work_ingest_notes(work_id: str, limit: int = 50):
+    """查询指定 Work 的入库用途历史。只读，不建表。"""
+    return {"work_id": work_id, "notes": query_ingest_notes(Path(LIBRARY_ROOT), work_id, limit)}
+
+
+class IngestNoteAppend(BaseModel):
+    purpose: str
+    request_id: str = ""
+    source_file_id: str | None = None
+    actor: str = ""
+
+
+@router.post("/works/{work_id}/ingest-notes")
+def append_ingest_note(work_id: str, body: IngestNoteAppend):
+    """对已有 Work 直接追加一条入库用途（无须重新上传 PDF）。"""
+    from ..db import get_conn as _gc
+    try:
+        purpose = validate_purpose(body.purpose)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    import uuid as _uuid
+    request_id = (body.request_id or "").strip() or str(_uuid.uuid4())
+    conn = _gc()
+    try:
+        exists = conn.execute("SELECT 1 FROM works WHERE id=?", (work_id,)).fetchone()
+        if not exists:
+            raise HTTPException(404, f"work {work_id} not found")
+    finally:
+        conn.close()
+    # build a minimal plan-like shim for save_ingest_notes
+    from scripts.literature_ingest import IngestPlan
+    shim = IngestPlan(generated_at="", library_root=LIBRARY_ROOT, inbox_dir="", dry_run=False)
+    shim.ingests = []
+    shim.exact_duplicates = []
+
+    class _Shim:
+        def __init__(self, wid, sfid): self.work_id = wid; self.source_file_id = sfid; self.existing_work_id = wid; self.existing_source_file_id = sfid
+
+    if body.source_file_id:
+        shim.exact_duplicates.append(_Shim(work_id, body.source_file_id))
+    else:
+        shim.ingests.append(_Shim(work_id, None))
+    # save_ingest_notes expects plan.ingests items to have .work_id and .source_file_id
+    # and plan.exact_duplicates items to have .existing_work_id and .existing_source_file_id
+    result = save_ingest_notes(Path(LIBRARY_ROOT), shim, purpose, request_id, body.actor)
+    return {"ok": True, "work_id": work_id, "purpose_notes": result, "request_id": request_id}
 
 
 @router.get("/ingest/plan")
@@ -331,15 +392,28 @@ def ingest_plan(limit: int | None = None):
 
 class ExecuteBody(BaseModel):
     leave_inbox: bool = False  # True=保留 inbox 原文件；默认移走到 _archive/ingested_inbox/
+    purpose: str = ""  # required for execution; blank rejected
+    request_id: str = ""  # stable operation ID for retry dedup; auto-generated if absent
 
 
 @router.post("/ingest/execute")
 def ingest_execute(body: ExecuteBody):
     """执行摄入：_inbox/ → works/{id}/source/，直写 works + 建 parse_runs pending 行。
-    执行前先 dry-run 取计划（无新文件则 400）。"""
+    执行前先 dry-run 取计划（无新文件且无重复件则 400）。purpose 必填。"""
+    # validate purpose BEFORE any side effects
+    try:
+        purpose = validate_purpose(body.purpose)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    import uuid as _uuid
+    request_id = (body.request_id or "").strip() or str(_uuid.uuid4())
+
     plan = build_ingest_plan(LIBRARY_ROOT, dry_run=True)
-    if plan.summary()["ingests"] == 0:
-        raise HTTPException(400, "no new files in _inbox/ to ingest")
+    has_work = plan.ingests or any(d.existing_work_id for d in plan.exact_duplicates)
+    if not has_work:
+        raise HTTPException(400, "no new files or exact duplicates in _inbox/ to ingest")
     backup_dir = execute_plan(plan, no_backup=True, leave_inbox=body.leave_inbox)
+    notes_result = save_ingest_notes(Path(LIBRARY_ROOT), plan, purpose, request_id)
     s = plan.summary()
-    return {"ok": True, "summary": s, "backup_dir": str(backup_dir) if backup_dir else None}
+    return {"ok": True, "summary": s, "backup_dir": str(backup_dir) if backup_dir else None,
+            "purpose_notes": notes_result, "request_id": request_id}
