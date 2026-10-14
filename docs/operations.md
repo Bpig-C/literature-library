@@ -30,6 +30,33 @@ The first authorized write adds both purpose tables; queries/dry-run leave legac
 catalogs untouched. The migration does not backfill historical purposes. Continue
 using the current authentication/authority gates for writes and deployment.
 
+## Client version checks
+
+Publishing Git code does not change a running server or a downloaded client.
+The authenticated `/api/remote/version` endpoint describes the actual running
+commit, whether tracked code is dirty, and its capabilities. This release advertises
+`ingest_purpose_v1` with `purpose` required, a 2000-character limit and the purpose
+history endpoint. It also returns the thin CLI SHA256 and an immutable download
+URL when running tracked code is clean. It describes the deployed server, not a
+newer unpublished branch or the repository's latest default commit.
+
+```powershell
+python scripts/litlib_remote.py --server https://HOST check-version --require-capability ingest_purpose_v1
+python scripts/litlib_remote.py --server https://HOST check-version --expected-commit FULL_SERVER_COMMIT
+```
+
+The commands return exit 2 for unknown/incompatible protocol, a missing capability
+or a commit mismatch. A legacy server with no version endpoint returns an explicit
+upgrade indication. Query `/api/research/schema` for release/manifest/environment
+identity; environment ID alone does not identify a code version.
+
+Clients can run this check at start and before writes, display changed commits,
+and ask the operator to replace their CLI with an exact version after SHA checking.
+No automatic code download, replacement or execution occurs. The separately
+delivered `remote_cli.py` business wrapper is not this thin CLI: its upload/onboard
+commands must be adapted to supply `purpose` and a stable `request_id` before using
+the new server. Preserve DPAPI credentials, CA and local user configuration.
+
 ## Integration recommendation
 
 Use one continuing minimal code history rooted at the reviewed `404b3a7` release.

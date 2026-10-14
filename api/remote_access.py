@@ -28,6 +28,11 @@ class RemoteAuthentication(BaseHTTPMiddleware):
         return await call_next(request)
 
 router=APIRouter()
+@router.get('/remote/version')
+def remote_version():
+    from .remote_version import version_info
+    return JSONResponse(version_info(),headers={'Cache-Control':'no-store'})
+
 @router.get('/remote/backups')
 def backup_versions():
     from .storage.backup_discovery import discover_remote
