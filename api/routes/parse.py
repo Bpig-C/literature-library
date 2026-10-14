@@ -89,9 +89,12 @@ def parse_status(work_id: str | None = None):
         if work_id:
             row = conn.execute(
                 """SELECT pr.work_id, pr.status, pr.content_md_path, pr.backend,
-                          pr.error, pr.finished_at
+                          pr.error, pr.finished_at, pr.id AS parse_run_id
                    FROM literature_parse_runs pr
-                   WHERE pr.work_id=? ORDER BY pr.id LIMIT 1""",
+                   WHERE pr.work_id=?
+                   ORDER BY CASE WHEN pr.status='succeeded' THEN 0 ELSE 1 END,
+                            pr.finished_at DESC, pr.id DESC
+                   LIMIT 1""",
                 (work_id,),
             ).fetchone()
             if not row:
@@ -112,7 +115,8 @@ def parse_status(work_id: str | None = None):
 
 
 class TriggerBody(BaseModel):
-    work_ids: list[str] | None = None
+    work_ids: list[str] | None = None  # select all sources of these works
+    source_file_ids: list[str] | None = None  # S2: select exact source files (SF-… IDs)
     all_pending: bool = False
     backend: str | None = None  # auto/pymupdf/vlm；None=默认双路合并（vlm优先+合并，失败回退pymupdf）
     force: bool = False  # True=对指定 work 的已 succeeded/failed run 强制重解析（需 work_ids）
@@ -171,14 +175,93 @@ def _update_run(conn, run: dict, status: str, *, content_md_path: str = "",
     sync_work_parse_status(conn, run["work_id"])
 
 
+@router.get("/parse/jobs")
+def parse_jobs(work_id: str | None = None, source_file_id: str | None = None,
+               job_id: str | None = None, limit: int = 50):
+    """S3: query producer parse jobs and their durable operation states.
+
+    Returns job_id, source_file_id, work_id, parse_run_id, version, state
+    (preparing/artifacts_ready/registered/failed), backend, error_code, and
+    the associated storage_operations state when a binding was registered.
+    """
+    from ..db import get_conn as _get_lib_conn
+    conn = _get_lib_conn()
+    try:
+        where, params = ["1=1"], []
+        if job_id:
+            where.append("j.id=?"); params.append(job_id)
+        if source_file_id:
+            where.append("j.source_file_id=?"); params.append(source_file_id)
+        if work_id:
+            where.append("pr.work_id=?"); params.append(work_id)
+        rows = conn.execute(
+            f"""SELECT j.id AS job_id, j.kind, j.source_file_id, j.parse_run_id,
+                       j.version, j.state, j.backend, j.task_id, j.error_code,
+                       pr.work_id, pr.status AS parse_status, pr.output_dir
+                FROM storage_producer_jobs j
+                LEFT JOIN literature_parse_runs pr ON pr.id = j.parse_run_id
+                WHERE {' AND '.join(where)}
+                ORDER BY j.rowid DESC
+                LIMIT ?""",
+            [*params, min(limit, 200)],
+        ).fetchall()
+        jobs = []
+        for r in rows:
+            d = dict(r)
+            # look up durable operation state for the binding if registered
+            if d.get("parse_run_id"):
+                op = conn.execute(
+                    """SELECT state, error_code FROM storage_operations
+                       WHERE request LIKE ? ORDER BY rowid DESC LIMIT 1""",
+                    (f'%{d["parse_run_id"]}%',),
+                ).fetchone()
+                if op:
+                    d["operation_state"] = op["state"]
+                    d["operation_error"] = op["error_code"]
+            jobs.append(d)
+        return {"jobs": jobs, "count": len(jobs)}
+    finally:
+        conn.close()
+
+
+class ResumeBody(BaseModel):
+    job_id: str  # the parse producer job to resume (state=artifacts_ready)
+    force: bool = False  # must be true to signal explicit operator intent
+
+
+@router.post("/parse/resume")
+def parse_resume(body: ResumeBody):
+    """S3: finish an artifacts_ready job that already has durable local output.
+
+    The internal pipeline (producers._finish) resumes any interrupted
+    storage_operations by the same operation ID; failed jobs with incomplete
+    output are refused. This does not create a new parse version.
+    """
+    if not body.force:
+        raise HTTPException(400, "resume requires force=true (explicit operator intent)")
+    from ..storage.producers import _finish
+    from ..storage.runtime import enabled
+    from ..storage.core import StorageError
+    if not enabled():
+        raise HTTPException(400, "resume requires the immutable storage service")
+    try:
+        job = _finish(body.job_id)
+    except StorageError as e:
+        raise HTTPException(409 if e.code in {"producer_incomplete", "revision_conflict"} else 422,
+                            f"{e.code}: {e}")
+    return {"job_id": body.job_id, "state": job["state"],
+            "parse_run_id": job.get("parse_run_id"), "version": job.get("version"),
+            "backend": job.get("backend") or ""}
+
+
 @router.post("/parse/trigger")
 def parse_trigger(body: TriggerBody):
-    if not body.work_ids and not body.all_pending:
-        raise HTTPException(400, "provide work_ids or set all_pending=true")
+    if not body.work_ids and not body.source_file_ids and not body.all_pending:
+        raise HTTPException(400, "provide work_ids, source_file_ids, or set all_pending=true")
     if body.backend and body.backend not in _BACKEND_CHOICES:
         raise HTTPException(400, f"backend must be one of {sorted(_BACKEND_CHOICES)}")
-    if body.force and not body.work_ids:
-        raise HTTPException(400, "force re-parse requires explicit work_ids")
+    if body.force and not (body.work_ids or body.source_file_ids):
+        raise HTTPException(400, "force re-parse requires explicit work_ids or source_file_ids")
     from ..storage.runtime import enabled
     if enabled():
         from ..storage.producers import trigger_production

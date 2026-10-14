@@ -161,6 +161,9 @@ class SourceImport(BaseModel):
     work_id: str | None = None
     source_file_id: str | None = None
     parse_run_id: str | None = None
+    # S1: explicit fixed-version asset locator. immutable import requires a
+    # positive integer; absent means the legacy non-asset path (test only).
+    parse_asset_version: int | None = None
     citation_key: str | None = None
     citation_keys: list[str] = Field(default_factory=list)
     parse_quality: str = "unchecked"

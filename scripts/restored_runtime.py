@@ -64,7 +64,22 @@ def check(root,development=False):
         if db.execute('PRAGMA quick_check').fetchone()[0]!='ok' or db.execute('SELECT root FROM storage_settings WHERE id=1').fetchone()[0]!=m['namespace']:raise StorageError('checksum_mismatch','catalog integrity/namespace differs')
     if importlib.metadata.version('alibabacloud-oss-v2')!='1.4.0':raise StorageError('configuration_error','locked OSS SDK 1.4.0 required')
     for module in ('fastapi','uvicorn','pymupdf','python_multipart'):__import__(module)
-    return {'ok':True,'development':development,'restored_root':str(root),'code_commit':head,'schema_version':6,'contract_version':5,'reading_records':len(assets['reading']['records']),'concepts':len(assets['ontology']['concepts']),'environment_applied_in_this_process':True,'fallback_to_source_machine':False,'service_started':False,'cache_downloads':0,'sdk_version':'1.4.0'}
+    # S5: non-sensitive parser runtime configuration preflight. conf.json is a
+    # per-machine file (intentionally not in the sealed manifest); its absence
+    # makes _run_parse raise FileNotFoundError at CloudClient construction.
+    parser_conf=CODE/'parser/conf.json'
+    if not parser_conf.is_file():
+        import warnings;warnings.warn('parser/conf.json absent; parse operations will fail until the {}-byte non-sensitive configuration is placed (see library/docs/docs/manuals/parser-conf-restore.md in the runtime materials closure)',RuntimeWarning)
+    else:
+        import json as _json;_json.loads(parser_conf.read_text('utf-8-sig'))
+    parser_constructors_ok=True
+    try:
+        sys.path.insert(0,str(CODE/'parser'));sys.path.insert(0,str(CODE))
+        from core.mineru.cloud_client import CloudClient as _CC
+        from core.mineru.pymupdf_client import PyMuPDFClient as _PMC
+        _CC();_PMC()
+    except Exception:parser_constructors_ok=False
+    return {'ok':True,'development':development,'restored_root':str(root),'code_commit':head,'schema_version':6,'contract_version':5,'reading_records':len(assets['reading']['records']),'concepts':len(assets['ontology']['concepts']),'environment_applied_in_this_process':True,'fallback_to_source_machine':False,'service_started':False,'cache_downloads':0,'sdk_version':'1.4.0','parser_config_present':parser_conf.is_file(),'parser_constructors_ok':parser_constructors_ok}
 
 def main():
     p=argparse.ArgumentParser();s=p.add_subparsers(dest='command',required=True)

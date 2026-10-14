@@ -162,8 +162,15 @@ def trigger_production(body,runner,service=None):
  service=service or configured_service()
  with service.registry.conn() as c:
   where="sf.status!='quarantined'";args=[]
-  if body.work_ids:where+=' AND sf.work_id IN ('+','.join('?' for _ in body.work_ids)+')';args=list(body.work_ids)
-  elif not body.all_pending:raise StorageError('invalid_request','explicit selector required')
+  # S2: source_file_ids takes precedence for exact source selection; work_ids
+  # selects all sources of those works; both may be combined (OR semantics
+  # at the SQL level is confusing, so source_file_ids filters within the
+  # work selection when both are present).
+  if getattr(body,'source_file_ids',None):
+   where+=' AND sf.id IN ('+','.join('?' for _ in body.source_file_ids)+')';args=list(body.source_file_ids)
+   if body.work_ids:where+=' AND sf.work_id IN ('+','.join('?' for _ in body.work_ids)+')';args.extend(body.work_ids)
+  elif body.work_ids:where+=' AND sf.work_id IN ('+','.join('?' for _ in body.work_ids)+')';args=list(body.work_ids)
+  elif not body.all_pending:raise StorageError('invalid_request','explicit selector required (work_ids, source_file_ids, or all_pending)')
   if not body.force:where+=" AND NOT EXISTS(SELECT 1 FROM storage_producer_jobs j WHERE j.source_file_id=sf.id AND j.kind='parse' AND j.state='registered')"
   sources=list(c.execute('SELECT sf.id,sf.work_id FROM source_files sf WHERE '+where+' ORDER BY sf.id',args))
  results=[]
