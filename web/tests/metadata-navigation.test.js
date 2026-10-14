@@ -6,9 +6,12 @@ import Works from '../src/views/Works.vue'
 import * as api from '../src/api'
 
 vi.mock('../src/api', () => ({ getMetadataWorklist: vi.fn(), getMetadataWorkDetail: vi.fn(),
-  getResearchSchema: vi.fn(), openMetadataFeedback: vi.fn(), adoptMetadataRecord: vi.fn(),
+  getResearchSchema: vi.fn(), getMaterials: vi.fn(), openMetadataFeedback: vi.fn(), adoptMetadataRecord: vi.fn(),
   getWorks: vi.fn(), getResearchRiskVocab: vi.fn(), quarantineWork: vi.fn(), restoreWork: vi.fn(), buildExportUrl: vi.fn() }))
 vi.mock('naive-ui', () => ({ useMessage: () => ({ error: vi.fn(), success: vi.fn() }), useDialog: () => ({ warning: vi.fn() }) }))
+vi.mock('../src/error-handler', () => ({ showError: vi.fn() }))
+vi.mock('../src/composables/useRuntimeMode', () => ({ useRuntimeMode: () => ({ readOnly: { value: false } }) }))
+vi.mock('../src/composables/useNextStep', () => ({ useNextStep: () => ({ notifyNext: vi.fn() }) }))
 let app, router, host
 const items = [{ id: 'W-one', title: 'First paper', status: 'absent', parse_ready: true },
   { id: 'W-two', title: 'Second paper', status: 'absent', parse_ready: true }]
@@ -21,6 +24,7 @@ beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   api.getMetadataWorklist.mockResolvedValue({ items, counts: { absent: 2 } })
   api.getResearchSchema.mockResolvedValue({})
+  api.getMaterials.mockResolvedValue({ available: true, items: [] })
   api.getMetadataWorkDetail.mockImplementation(id => Promise.resolve(empty(id)))
   api.getResearchRiskVocab.mockResolvedValue({ available: true, usable: {} })
   api.getWorks.mockResolvedValue({ works: [{ ...items[0], read_status: 'unread' }], total: 100, total_matching: 100 })
