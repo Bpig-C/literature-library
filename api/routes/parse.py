@@ -239,13 +239,13 @@ def parse_resume(body: ResumeBody):
     """
     if not body.force:
         raise HTTPException(400, "resume requires force=true (explicit operator intent)")
-    from ..storage.producers import _finish
+    from ..storage.producers import resume_producer
     from ..storage.runtime import enabled
     from ..storage.core import StorageError
     if not enabled():
         raise HTTPException(400, "resume requires the immutable storage service")
     try:
-        job = _finish(body.job_id)
+        job = resume_producer(body.job_id)
     except StorageError as e:
         raise HTTPException(409 if e.code in {"producer_incomplete", "revision_conflict"} else 422,
                             f"{e.code}: {e}")
