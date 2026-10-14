@@ -150,7 +150,7 @@ def promote_candidates(body: PromoteBody):
 
     The approved-guard enforces the human review gate: programmatic callers
     cannot bypass A2 by promoting pending/rejected candidates directly."""
-    from ..ingest_notes import validate_purpose, request_id, append, replay
+    from ..ingest_notes import validate_purpose, request_id, append, replay, PurposeConflict
     try:
         purpose = validate_purpose(body.purpose)
         rid = request_id(body.request_id)
@@ -180,8 +180,12 @@ def promote_candidates(body: PromoteBody):
             continue
         # Idempotency: if already ingested with a work_id, return it
         if info["status"] == "ingested" and info.get("ingested_work_id"):
-            if not replay(LIBRARY_ROOT,f'{rid}:{cid}',purpose):
-                append(LIBRARY_ROOT,info['ingested_work_id'],purpose,f'{rid}:{cid}')
+            try:
+                if not replay(LIBRARY_ROOT,f'{rid}:{cid}',purpose):
+                    append(LIBRARY_ROOT,info['ingested_work_id'],purpose,f'{rid}:{cid}')
+            except ValueError as error:
+                failed.append({'id':cid,'error':str(error)})
+                continue
             promoted.append({"id": cid, "work_id": info["ingested_work_id"], "already_ingested": True})
             continue
         if info["status"] == "ingested" and not info.get("ingested_work_id"):
