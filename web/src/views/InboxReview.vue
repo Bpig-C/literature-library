@@ -11,19 +11,23 @@
           <span class="badge cand" v-if="plan.summary.title_duplicate_candidates">疑似重复 {{ plan.summary.title_duplicate_candidates }}</span>
         </div>
 
+        <label class="purpose-field">入库用途（必填）
+          <textarea v-model="purpose" maxlength="2000" rows="3" :disabled="busy || uploadBusy || readOnly" placeholder="例如：用于论文第三章案例分析" />
+        </label>
+        <p class="muted tiny">本次用途应用于所上传的 PDF；确认收件箱时应用于本次扫描的全部新文件及精确重复件。</p>
         <div class="filter-bar">
           <label>
             <input type="checkbox" v-model="leaveInbox" />
             摄入后保留 _inbox 原文件（默认移至 _archive/ingested_inbox/）
           </label>
           <input ref="uploadInput" type="file" accept=".pdf,application/pdf" multiple style="display:none" @change="onUploadFiles" />
-          <button class="btn-upload" @click="uploadInput?.click()" :disabled="busy || uploadBusy || readOnly"
+          <button class="btn-upload" @click="uploadInput?.click()" :disabled="busy || uploadBusy || readOnly || !purpose.trim()"
                   title="只摄入本次选中的 PDF；收件箱其他文件保持不变，同名文件保留原件">
             {{ uploadBusy ? '上传中…' : '上传 PDF' }}
           </button>
           <button @click="reload" :disabled="busy">重新扫描</button>
           <button class="btn-execute" @click="showExecuteConfirm"
-                  :disabled="readOnly || busy || !plan || plan.summary.ingests === 0" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''">
+                  :disabled="readOnly || busy || uploadBusy || !processable || !purpose.trim()" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''">
             确认摄入{{ plan ? ` (${plan.summary.ingests})` : '' }}
           </button>
         </div>
@@ -53,7 +57,7 @@
             <div class="muted tiny">{{ selected.work_id }} · {{ selected.source_file_id }}</div>
           </div>
         </div>
-        <table class="kv">
+          <table class="kv"><tbody>
           <tr><th>work_id</th><td>
             <router-link v-if="selected.existing_work" :to="`/works/${selected.work_id}`">{{ selected.work_id }}</router-link>
             <span v-else>{{ selected.work_id }} <span class="muted tiny">(新建)</span></span>
@@ -68,7 +72,7 @@
           <tr><th>元数据态</th><td>{{ selected.metadata?.metadata_status || '—' }}</td></tr>
           <tr><th>文件大小</th><td>{{ formatSize(selected.file_size) }}</td></tr>
           <tr><th>SHA256</th><td class="mono tiny">{{ selected.content_sha256 }}</td></tr>
-        </table>
+        </tbody></table>
 
         <div class="better-banner" v-if="selected.title_duplicate_candidates?.length">
           ⚠ 标题疑似已有 work：
@@ -108,6 +112,13 @@ const busy = ref(false)
 const leaveInbox = ref(false)
 const uploadInput = ref(null)
 const uploadBusy = ref(false)
+const purpose = ref('')
+const operation = ref(null)
+function operationId(kind, files = []) {
+  const key = JSON.stringify([kind, purpose.value.trim(), files.map(f => [f.name, f.size, f.lastModified])])
+  if (operation.value?.key !== key) operation.value = { key, id: crypto.randomUUID() }
+  return operation.value.id
+}
 const { notifyNext } = useNextStep()
 
 // ConfirmDialog state
@@ -116,7 +127,8 @@ const confirmTitle = ref('')
 const confirmMessage = ref('')
 const confirmAction = ref(null)
 
-const ingests = computed(() => plan.value?.ingests || [])
+const ingests = computed(() => [...(plan.value?.ingests || []), ...(plan.value?.exact_duplicates || []).map(d => ({ ...d, work_id: d.existing_work_id, source_file_id: d.existing_source_file_id, existing_work: true }))])
+const processable = computed(() => (plan.value?.summary.ingests || 0) + (plan.value?.summary.exact_duplicates || 0))
 const selected = computed(() => ingests.value[selectedIdx.value] || null)
 
 function formatSize(bytes) {
@@ -144,7 +156,8 @@ async function reload() {
 async function onUploadFiles(e) {
   const picked = Array.from(e.target?.files || [])
   e.target.value = ''
-  if (!picked.length || uploadBusy.value) return
+  if (!picked.length || uploadBusy.value || busy.value || readOnly.value) return
+  if (!purpose.value.trim()) { showError(new Error('请填写入库用途')); return }
   const pdfs = picked.filter(f => /\.pdf$/i.test(f.name))
   const nonPdf = picked.length - pdfs.length
   if (!pdfs.length) {
@@ -153,8 +166,10 @@ async function onUploadFiles(e) {
   }
   uploadBusy.value = true
   try {
-    const res = await uploadFiles(pdfs)
+    const res = await uploadFiles(pdfs, purpose.value.trim(), operationId('upload', pdfs))
+    operation.value = null
     let msg = `上传 ${res.uploaded ?? pdfs.length} 个 PDF，摄入 ${res.ingested ?? 0} 个新文献`
+    msg += `，新增用途 ${res.purpose_notes?.purposes_saved || 0} 条`
     if (res.skipped?.length) msg += `，跳过 ${res.skipped.length} 个`
     if (nonPdf) msg += `（另有 ${nonPdf} 个非 PDF 未上传）`
     notifyNext(msg, { label: '前往解析', to: '/pipeline' })
@@ -167,10 +182,10 @@ async function onUploadFiles(e) {
 }
 
 function showExecuteConfirm() {
-  if (!plan.value || plan.value.summary.ingests === 0 || busy.value) return
+  if (!processable.value || !purpose.value.trim() || busy.value || uploadBusy.value || readOnly.value) return
   const n = plan.value.summary.ingests
   confirmTitle.value = '确认摄入'
-  confirmMessage.value = `摄入 _inbox/ 中 ${n} 个 PDF？将直写 works 并创建待解析任务。`
+  confirmMessage.value = `摄入 _inbox/ 中 ${n} 个新 PDF，并为 ${plan.value.summary.exact_duplicates || 0} 个精确重复件追加用途。用途：${purpose.value.trim()}`
   confirmAction.value = () => doExecute()
   showConfirmDialog.value = true
 }
@@ -179,14 +194,16 @@ async function doExecute() {
   showConfirmDialog.value = false
   busy.value = true
   try {
-    const res = await executeIngest({ leave_inbox: leaveInbox.value })
+    const res = await executeIngest({ leave_inbox: leaveInbox.value, purpose: purpose.value.trim(), request_id: operationId('inbox') })
+    operation.value = null
     const s = res.summary || {}
     const ingested = s.ingests ?? 0
     const dups = s.exact_duplicates ?? 0
     const skipped = s.skipped ?? 0
 
     let msg = `摄入完成：${ingested} 个新文献`
-    if (dups) msg += `，跳过 ${dups} 个精确重复`
+    if (dups) msg += `，复用 ${dups} 个精确重复件`
+    msg += `，新增用途 ${res.purpose_notes?.purposes_saved || 0} 条`
     if (skipped) msg += `，跳过 ${skipped} 个错误`
 
     // Show links to newly created works
@@ -214,6 +231,8 @@ onMounted(reload)
 
 <style scoped>
 .inbox-layout { display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
+.purpose-field { display: flex; flex-direction: column; gap: 6px; }
+.purpose-field textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .list-panel, .detail-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--space-4); }
 .page-title { font-size: 18px; margin-bottom: 12px; }
 .summary-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }

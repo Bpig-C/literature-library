@@ -16,12 +16,13 @@ from collector.paths import resolve_pdf_path     # local_pdf_path 可能相对 l
 import scripts.literature_ingest as ingest
 
 
-def _do_ingest(candidate_id: str, library_root: Path) -> str:
+def _do_ingest(candidate_id: str, library_root: Path, purpose: str, request_id: str) -> str:
     """地基晋升逻辑：暂存候选 PDF 到临时 inbox，跑 ingest 全链路，清理 inbox。
     返回新 work_id。不更新候选状态——那是 promote 的职责。
 
     （原 promote 的 read+stage+build_ingest_plan+execute_plan+cleanup 逻辑原样保留。）
     """
+    purpose = ingest.validate_purpose(purpose)
     conn = get_conn()
     try:
         row = conn.execute(
@@ -49,9 +50,9 @@ def _do_ingest(candidate_id: str, library_root: Path) -> str:
     shutil.copy2(resolved_pdf, staged)
 
     plan = ingest.build_ingest_plan(library_root, inbox_dir=inbox, dry_run=False)
-    ingest.execute_plan(plan, no_backup=False, leave_inbox=False)
+    ingest.execute_plan(plan, purpose=purpose, request_id=request_id, no_backup=False, leave_inbox=False)
 
-    work_id = plan.ingests[0].work_id if plan.ingests else None
+    work_id = plan.ingests[0].work_id if plan.ingests else next((d.existing_work_id for d in plan.exact_duplicates if d.existing_work_id),None)
     if not work_id:
         raise RuntimeError(f"promote produced no work for {candidate_id}")
 
@@ -62,13 +63,13 @@ def _do_ingest(candidate_id: str, library_root: Path) -> str:
     return work_id
 
 
-def promote(candidate_id: str, *, library_root: Path) -> str:
+def promote(candidate_id: str, *, library_root: Path, purpose: str, request_id: str = '') -> str:
     """晋升候选为正式 work（ingest 全链路 + 候选状态回填）。
 
     LL-DECOUPLE-20260920：不再写旧分类建议标签；解析成功后的材料经
     Pipeline/Works 的"进入研究流程"入口交给 v5 Agent 流程。
     """
-    work_id = _do_ingest(candidate_id, library_root)
+    work_id = _do_ingest(candidate_id, library_root, purpose, request_id)
     conn = get_conn()
     try:
         # 主效果先落：候选翻 ingested。review_status 表示人工审核结论，

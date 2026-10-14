@@ -22,6 +22,9 @@ def db(tmp_path):
         "INSERT INTO works (id, title, parse_status, read_status, created_at, updated_at) "
         "VALUES ('W-test1', 'Test Work', 'pending', 'unread', '2026-01-01', '2026-01-01')")
     conn.commit()
+    for sf in ['SF-abc','SF-old','SF-a','SF-b','SF-test1']:
+        conn.execute("INSERT INTO source_files (id,work_id,content_sha256,source_path,relative_source_path) VALUES (?,'W-test1',?,'synthetic','synthetic')",(sf,sf))
+    conn.commit()
     yield tmp_path
     conn.close()
 
@@ -95,6 +98,8 @@ def test_mixed_batch(db):
     conn.execute("INSERT INTO works (id, title, parse_status, read_status, created_at, updated_at) "
                  "VALUES ('W-test2', 'Second', 'pending', 'unread', '2026-01-01', '2026-01-01')")
     conn.commit()
+    conn.execute("INSERT INTO source_files (id,work_id,content_sha256,source_path,relative_source_path) VALUES ('SF-new','W-test2','new','synthetic','synthetic')")
+    conn.commit()
     conn.close()
     plan = _plan("W-test2", "SF-new")
     plan.exact_duplicates.append(_ShimDup("W-test1", "SF-old"))
@@ -132,10 +137,10 @@ def test_different_request_same_text(db):
 
 
 # 7. missing work is silently skipped
-def test_nonexistent_work_skipped(db):
+def test_nonexistent_work_rejected(db):
     plan = _plan("W-nonexistent", "SF-xyz")
-    r = save_ingest_notes(db, plan, "用途", "req-x")
-    assert r["purposes_saved"] == 0
+    with pytest.raises(ValueError,match='not found'):
+        save_ingest_notes(db, plan, "用途", "req-x")
 
 
 # 8. empty request_id rejected

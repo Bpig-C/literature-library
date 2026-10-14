@@ -296,19 +296,6 @@ def _migrate_source_files_columns(conn: sqlite3.Connection) -> None:
 def ensure_core_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
-        CREATE TABLE IF NOT EXISTS ingest_notes (
-            id TEXT PRIMARY KEY,
-            work_id TEXT NOT NULL,
-            source_file_id TEXT,
-            purpose TEXT NOT NULL,
-            actor TEXT DEFAULT '',
-            created_at TEXT NOT NULL,
-            request_id TEXT NOT NULL,
-            UNIQUE(request_id, work_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_ingest_notes_work
-            ON ingest_notes(work_id, created_at);
-
         CREATE TABLE IF NOT EXISTS works (
             id TEXT PRIMARY KEY,
             title TEXT,
@@ -391,8 +378,13 @@ def ensure_core_schema(conn: sqlite3.Connection) -> None:
     _migrate_source_files_columns(conn)
 
 
+def empty_state():
+    return {'sources':[], 'works':[], 'digest_map':{}, 'arxiv_map':{}, 'doi_map':{},
+            'work_map':{}, 'source_by_work':{}, 'max_source_seq':0}
+
+
 def fetch_existing_state(conn: sqlite3.Connection) -> dict[str, Any]:
-    ensure_core_schema(conn)
+    # Planning must not migrate or create tables.
     sources = [dict(row) for row in conn.execute("SELECT * FROM source_files").fetchall()]
     works = [dict(row) for row in conn.execute("SELECT * FROM works").fetchall()]
 
@@ -570,8 +562,13 @@ def build_ingest_plan(
         dry_run=dry_run,
     )
 
-    with connect_db(db_path) as conn:
-        state = fetch_existing_state(conn)
+    if db_path.is_file():
+        with sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            state = fetch_existing_state(conn) if {'works','source_files'} <= tables else empty_state()
+    else:
+        state = empty_state()
 
     if selected_paths is None:
         pdfs = scan_inbox(inbox_dir)
@@ -762,10 +759,14 @@ def update_index(library_root: Path, plan: IngestPlan, now: str) -> None:
     write_json_atomic(index_path, index)
 
 
-def insert_db_rows(library_root: Path, plan: IngestPlan, now: str) -> None:
+def insert_db_rows(library_root: Path, plan: IngestPlan, now: str, purpose: str, request_id: str) -> dict:
     db_path = library_root / "literature.sqlite"
     with connect_db(db_path) as conn:
         ensure_core_schema(conn)
+        initialize_notes(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        check_request(conn,request_id,purpose,request_targets(plan))
         for action in plan.ingests:
             metadata = action.metadata
             existing = conn.execute(
@@ -921,7 +922,9 @@ def insert_db_rows(library_root: Path, plan: IngestPlan, now: str) -> None:
                     ),
                 )
 
+        notes = save_ingest_notes(library_root, plan, purpose, request_id, conn=conn)
         conn.commit()
+        return notes
 
 
 def copy_planned_files(plan: IngestPlan) -> None:
@@ -959,106 +962,74 @@ def archive_exact_duplicates(plan: IngestPlan) -> None:
         shutil.move(str(source), str(archive))
 
 
-PURPOSE_MAX_LENGTH = 2000
+# Allow ``python scripts/literature_ingest.py`` from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from api.ingest_notes import (PURPOSE_MAX_LENGTH, validate_purpose, initialize as initialize_notes,
+                              write_notes, query as query_ingest_notes, check_request,
+                              validate_targets, request_id as normalize_request_id)
 
 
-def validate_purpose(purpose: str) -> str:
-    """Validate and normalise an ingest purpose string (shared by API and CLI)."""
-    cleaned = purpose.strip()
-    if not cleaned:
-        raise ValueError("ingest purpose is required; blank or whitespace-only is not accepted")
-    if len(cleaned) > PURPOSE_MAX_LENGTH:
-        raise ValueError(f"ingest purpose exceeds {PURPOSE_MAX_LENGTH} characters")
-    return cleaned
+def note_targets(plan):
+    targets = {a.work_id:a.source_file_id for a in plan.ingests}
+    for d in plan.exact_duplicates:
+        if d.existing_work_id:
+            targets.setdefault(d.existing_work_id,d.existing_source_file_id or None)
+    return targets
 
 
-def save_ingest_notes(
-    library_root: Path,
-    plan: IngestPlan,
-    purpose: str,
-    request_id: str,
-    actor: str = "",
-) -> dict:
-    """Persist purpose records for all ingested works and append for exact duplicates.
+def request_targets(plan):
+    return [('sha256',a.content_sha256) for a in [*plan.ingests,*plan.exact_duplicates]]
 
-    Returns counters for the API response. Uses INSERT OR IGNORE on the
-    (request_id, work_id) unique constraint for retry idempotency.
-    """
-    cleaned = validate_purpose(purpose)
+
+def save_ingest_notes(library_root, plan, purpose, request_id, actor='', *, conn=None):
+    purpose = validate_purpose(purpose)
     if not request_id or not request_id.strip():
-        raise ValueError("request_id is required for ingest purpose deduplication")
-    request_id = request_id.strip()
-    db_path = library_root / "literature.sqlite"
-    now = utc_now()
-    inserted, already_existed = 0, 0
-    work_ids = set()
-    for action in plan.ingests:
-        work_ids.add(action.work_id)
-    for dup in plan.exact_duplicates:
-        if dup.existing_work_id:
-            work_ids.add(dup.existing_work_id)
-    with connect_db(db_path) as conn:
-        ensure_core_schema(conn)
-        for wid in sorted(work_ids):
-            # verify work exists
-            exists = conn.execute("SELECT 1 FROM works WHERE id = ?", (wid,)).fetchone()
-            if not exists:
-                continue
-            note_id = "IN-" + hashlib.sha256(f"{request_id}:{wid}".encode()).hexdigest()[:16]
-            source_sf = next(
-                (a.source_file_id for a in plan.ingests if a.work_id == wid), None
-            ) or next(
-                (d.existing_source_file_id for d in plan.exact_duplicates if d.existing_work_id == wid), None
-            )
-            cursor = conn.execute(
-                """INSERT OR IGNORE INTO ingest_notes
-                   (id, work_id, source_file_id, purpose, actor, created_at, request_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (note_id, wid, source_sf, cleaned, actor, now, request_id),
-            )
-            if cursor.rowcount > 0:
-                inserted += 1
-            else:
-                already_existed += 1
-        conn.commit()
-    return {"purposes_saved": inserted, "purposes_already_existed": already_existed,
-            "works_annotated": len(work_ids), "purpose": cleaned}
-
-
-def query_ingest_notes(library_root: Path, work_id: str, limit: int = 50) -> list[dict]:
-    db_path = library_root / "literature.sqlite"
-    if not db_path.is_file():
-        return []
-    with connect_db(db_path) as conn:
-        ensure_core_schema(conn)
-        rows = conn.execute(
-            """SELECT id, work_id, source_file_id, purpose, actor, created_at, request_id
-               FROM ingest_notes WHERE work_id = ? ORDER BY created_at DESC, id DESC LIMIT ?""",
-            (work_id, min(limit, 200)),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        raise ValueError('request_id is required for ingest purpose deduplication')
+    if conn is None:
+        with connect_db(Path(library_root)/'literature.sqlite') as owned:
+            owned.execute('BEGIN IMMEDIATE')
+            return save_ingest_notes(library_root,plan,purpose,request_id,actor,conn=owned)
+    initialize_notes(conn)
+    scope = request_targets(plan) if all(hasattr(a,'content_sha256') for a in [*plan.ingests,*plan.exact_duplicates]) else None
+    return write_notes(conn,note_targets(plan),purpose,request_id,actor,request_targets=scope)
 
 
 def execute_plan(
     plan: IngestPlan,
     *,
+    purpose: str,
+    request_id: str = "",
     no_backup: bool = False,
     leave_inbox: bool = False,
 ) -> Path | None:
+    purpose = validate_purpose(purpose)
+    request_id = normalize_request_id(request_id)
     library_root = Path(plan.library_root)
     from api.storage.runtime import enabled,configured_registry,required_path
     if enabled() and (library_root.resolve()!=required_path('LITLIB_LIBRARY_ROOT') or configured_registry().catalog!=library_root.resolve()/'literature.sqlite'):
         raise ValueError('immutable ingest requires the explicit catalog/data root')
+    database = library_root/'literature.sqlite'
+    if database.is_file():
+        with sqlite3.connect(database.as_uri()+'?mode=ro',uri=True) as conn:
+            check_request(conn,request_id,purpose,request_targets(plan))
+            validate_targets(conn,note_targets(plan),planned=[a.work_id for a in plan.ingests if not a.existing_work])
     now = utc_now()
     backup_dir = None if no_backup else backup_state_files(library_root, timestamp_slug())
     if enabled():
         from api.storage.ingest_lifecycle import prepare_ingest
         prepare_ingest(plan)
     copy_planned_files(plan)
-    insert_db_rows(library_root, plan, now)
+    plan.purpose_notes = insert_db_rows(library_root, plan, now, purpose, request_id)
     if enabled():
         from api.storage.producers import register_ingested_sources
-        register_ingested_sources([a.source_file_id for a in plan.ingests])
+        # Resume only producer-owned unfinished copies. Migrated legacy sources
+        # can already be virtual references without producer jobs.
+        source_ids = {a.source_file_id for a in plan.ingests}
+        with connect_db(library_root/'literature.sqlite') as conn:
+            for sf in note_targets(plan).values():
+                if sf and conn.execute("SELECT 1 FROM storage_producer_jobs WHERE source_file_id=? AND kind='pdf' AND state!='registered'",(sf,)).fetchone():
+                    source_ids.add(sf)
+        register_ingested_sources(sorted(source_ids))
     update_index(library_root, plan, now)
     archive_exact_duplicates(plan)
     archive_inputs(plan, leave_inbox=leave_inbox)
@@ -1088,6 +1059,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    purpose = args.purpose or ''
+    if args.execute:
+        try:
+            purpose = validate_purpose(purpose)
+        except ValueError as error:
+            print(f'ERROR: {error}',file=sys.stderr)
+            return 1
     plan = build_ingest_plan(
         args.library_root,
         inbox_dir=args.inbox,
@@ -1111,14 +1089,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     import uuid
     request_id = args.request_id or str(uuid.uuid4())
+    request_id = normalize_request_id(request_id)
+    print(f'Request ID: {request_id}',flush=True)
 
     has_work = plan.ingests or any(d.existing_work_id for d in plan.exact_duplicates)
     if not has_work:
+        from api.ingest_notes import replay
+        prior = replay(args.library_root,request_id,purpose)
+        if prior:
+            print(json.dumps(prior,ensure_ascii=False))
+            return 0
         print("No new files or exact duplicates to ingest; purpose not recorded.", file=sys.stderr)
         return 0
 
-    backup_dir = execute_plan(plan, no_backup=args.no_backup, leave_inbox=args.leave_inbox)
-    notes_result = save_ingest_notes(args.library_root, plan, purpose, request_id)
+    backup_dir = execute_plan(plan, purpose=purpose, request_id=request_id, no_backup=args.no_backup, leave_inbox=args.leave_inbox)
+    notes_result = plan.purpose_notes
     if backup_dir:
         print(f"Backed up state files to: {backup_dir}")
     print(f"Ingest execution complete. Purpose notes: {json.dumps(notes_result, ensure_ascii=False)}")

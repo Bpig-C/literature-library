@@ -96,6 +96,8 @@ _collector_cache/
 
 # Codex/agent temp working directory
 .codex_tmp/
+.test-tmp*/
+.verification/
 
 # Parser archive large files (diffs, binary docs)
 parser/docs/archive/latest_changes.diff

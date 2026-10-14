@@ -7,6 +7,10 @@ This repository contains the application, dependency locks, machine contracts,
 and a small deployment guide. Research assets and mutable runtime state are
 restored from private OSS snapshots; they do not belong in this Git tree.
 
+PDF ingestion requires an explicit purpose through the UI, API or CLI. Exact
+duplicates append purpose history to the existing Work. See the
+[operation and retry rules](docs/operations.md#required-ingest-purpose).
+
 Use the [unified recovery entry](docs/deployment.md). The [architecture](docs/architecture.md)
 describes the code/data boundary. `python scripts/check_release.py` checks this
 publication scope. The full research workspace's `check_docs.py` checks its

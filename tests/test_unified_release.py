@@ -38,7 +38,7 @@ def release(tmp_path,monkeypatch):
     for k,v in env.items():monkeypatch.setenv(k,v)
     import pymupdf
     doc=pymupdf.open();p=doc.new_page();p.insert_text((40,40),'Synthetic unified recovery');doc.save(library/'_inbox/synthetic.pdf');doc.close()
-    plan=build_ingest_plan(library);execute_plan(plan,no_backup=True);action=plan.ingests[0];service=configured_service()
+    plan=build_ingest_plan(library);execute_plan(plan,purpose='Synthetic storage lifecycle verification',no_backup=True);action=plan.ingests[0];service=configured_service()
     release_ingested_pdf(job_id('pdf',action.source_file_id),service)
     def parser(pdf,out,*args,**kwargs):
         (out/'content.md').write_text('# synthetic immutable text','utf-8');(out/'content.json').write_text('{"synthetic":true}','utf-8')
@@ -68,6 +68,8 @@ def test_unified_cold_restore_essential_only_and_fixed_consumption(release,tmp_p
     assert not any(p['sha256']==action.content_sha256 for p in published['manifest']['essentials'].values())
     assert Namespace(ns).key(action.content_sha256) not in downloads
     assert receipt['credentials_copied'] is False and published['long_term_asset_objects_reuploaded']==0
+    with sqlite3.connect(target/'data/library/literature.sqlite') as restored_catalog:
+        assert restored_catalog.execute('SELECT purpose FROM ingest_notes WHERE work_id=?',(action.work_id,)).fetchone()[0]=='Synthetic storage lifecycle verification'
     for k,v in json.loads((target/'environment.json').read_text('utf-8')).items():monkeypatch.setenv(k,v)
     assert presentation_assets()['ontology']['concepts'][0]['zh']=='合成概念'
     service=configured_service()

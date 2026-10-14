@@ -97,6 +97,7 @@
         </div>
       </div>
       <p class="muted tiny">A 可不建研究批次独立抽取；研究批次也可先规划，D 解释提交时再核对其 A 依赖。</p>
+      <IngestPurposeHistory :work-id="work.id" />
 
       <!-- 元数据 -->
       <div class="section">
@@ -483,6 +484,7 @@
 </template>
 
 <script setup>
+import IngestPurposeHistory from '../components/IngestPurposeHistory.vue'
 import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'

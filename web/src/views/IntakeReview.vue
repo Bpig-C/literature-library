@@ -179,9 +179,10 @@
         </details>
 
         <div class="review-bar">
+          <label>入库用途（必填，应用于本次晋升）<input v-model="promotePurpose" maxlength="2000" :disabled="readOnly || busy" /></label>
           <button class="btn-approve" :disabled="readOnly || busy || selectedIsDuplicate" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="onApprove" title="批准后可晋升为正式文献">批准</button>
           <button class="btn-reject" :disabled="readOnly || busy" :title="readOnly ? '只读部署：写操作被服务端禁用' : ''" @click="doReview('rejected')">拒绝</button>
-          <button class="btn-promote" :disabled="busy || promotableCount === 0" @click="showPromoteConfirm">
+          <button class="btn-promote" :disabled="readOnly || busy || promotableCount === 0 || !promotePurpose.trim()" @click="showPromoteConfirm">
             晋升已批准 ({{ promotableCount }})
           </button>
         </div>
@@ -383,7 +384,10 @@ async function doReview(status) {
   }
 }
 
+const promotePurpose = ref('')
+let promoteRequest = null
 function showPromoteConfirm() {
+  if (readOnly.value || !promotePurpose.value.trim()) return
   const targets = candidates.value
     .filter(c => c.review_status === 'approved' && c.resolution === 'new' && !c.ingested_work_id)
     .map(c => c.id)
@@ -398,7 +402,10 @@ async function doPromote(targets) {
   showConfirmDialog.value = false
   busy.value = true
   try {
-    const res = await promoteCandidates(targets)
+    const key = JSON.stringify([targets.slice().sort(), promotePurpose.value.trim()])
+    if (promoteRequest?.key !== key) promoteRequest = { key, id: crypto.randomUUID() }
+    const res = await promoteCandidates(targets, promotePurpose.value.trim(), promoteRequest.id)
+    if (!res.failed?.length) promoteRequest = null
     const failed = res.failed?.length || 0
     window.__naive_message?.success(`晋升 ${res.promoted?.length || 0} 个${failed ? `，失败 ${failed} 个` : ''}`)
     await reload()

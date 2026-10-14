@@ -138,6 +138,8 @@ def review_candidate(candidate_id: str, body: ReviewBody):
 
 class PromoteBody(BaseModel):
     ids: list[str]
+    purpose: str
+    request_id: str = ''
 
 
 @router.post("/intake/promote")
@@ -148,6 +150,12 @@ def promote_candidates(body: PromoteBody):
 
     The approved-guard enforces the human review gate: programmatic callers
     cannot bypass A2 by promoting pending/rejected candidates directly."""
+    from ..ingest_notes import validate_purpose, request_id, append, replay
+    try:
+        purpose = validate_purpose(body.purpose)
+        rid = request_id(body.request_id)
+    except ValueError as error:
+        raise HTTPException(400,str(error))
     if not body.ids:
         raise HTTPException(400, "ids is required and must be non-empty")
     # A2 guard: resolve which of the requested ids are actually approved.
@@ -172,6 +180,8 @@ def promote_candidates(body: PromoteBody):
             continue
         # Idempotency: if already ingested with a work_id, return it
         if info["status"] == "ingested" and info.get("ingested_work_id"):
+            if not replay(LIBRARY_ROOT,f'{rid}:{cid}',purpose):
+                append(LIBRARY_ROOT,info['ingested_work_id'],purpose,f'{rid}:{cid}')
             promoted.append({"id": cid, "work_id": info["ingested_work_id"], "already_ingested": True})
             continue
         if info["status"] == "ingested" and not info.get("ingested_work_id"):
@@ -227,7 +237,7 @@ def promote_candidates(body: PromoteBody):
                 })
             continue
         try:
-            work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT)
+            work_id = ingest_bridge.promote(cid, library_root=LIBRARY_ROOT, purpose=purpose, request_id=f'{rid}:{cid}')
             promoted.append({"id": cid, "work_id": work_id})
         except Exception as e:  # noqa: BLE001 — batch must not abort on one failure
             failed.append({"id": cid, "error": str(e)})

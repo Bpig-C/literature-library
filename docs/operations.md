@@ -1,5 +1,35 @@
 # Single maintained code line and target operations
 
+## Required ingest purpose
+
+Upload, inbox confirmation, selected pipeline files and candidate promotion now
+require an explicit purpose. The form applies one purpose to that operation's
+files. A Work detail page shows paginated history and permits direct append.
+Old Works do not require retroactive placeholder purposes. Older API clients must
+send `purpose`; missing fields return 422, blank/overlong text returns 400.
+
+```powershell
+python scripts/literature_ingest.py --library-root C:/explicit/library --execute --purpose "用于论文第三章案例分析" --request-id review-chapter3-001
+```
+
+Use the existing restored-runtime write wrapper on an immutable production slot.
+Retain the request ID and purpose when retrying; change the ID for a new operation.
+Dry-run omits `--execute` and needs no purpose. API uploads accept multipart
+`purpose` and `request_id`; `/api/ingest/execute` accepts the same JSON fields plus
+`leave_inbox` and optional SHA `file_ids`. Upload affects only its submitted files;
+execute without selectors scans the entire inbox. UI forms retain the request ID
+on failure within the same page session; callers should record it for later retry.
+
+`GET /api/works/{id}/ingest-notes?limit=50&offset=0` reads history.
+`POST /api/works/{id}/ingest-notes` accepts `purpose`, `request_id`, and an optional
+`source_file_id` owned by the Work. Responses include new/already-existing purpose
+counts and target Work IDs. Ingest `ingested`/`summary.ingests` counts source files,
+not distinct Works. Pure duplicates return success with zero new source files.
+
+The first authorized write adds both purpose tables; queries/dry-run leave legacy
+catalogs untouched. The migration does not backfill historical purposes. Continue
+using the current authentication/authority gates for writes and deployment.
+
 ## Integration recommendation
 
 Use one continuing minimal code history rooted at the reviewed `404b3a7` release.

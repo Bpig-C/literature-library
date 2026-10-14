@@ -366,8 +366,8 @@ export function reviewCandidate(id, review_status, note = '') {
   })
 }
 
-export function promoteCandidates(ids) {
-  return request('/intake/promote', { method: 'POST', body: JSON.stringify({ ids }) })
+export function promoteCandidates(ids, purpose, request_id) {
+  return request('/intake/promote', { method: 'POST', body: JSON.stringify({ ids, purpose, request_id }) })
 }
 
 export function getIntakeTopics(params = {}) {
@@ -418,9 +418,11 @@ export function executeIngest(body = {}) {
  * @param {File[]} files - 浏览器 File 对象数组
  * @returns {Promise<object>} { ok, uploaded, ingested, summary }
  */
-export async function uploadFiles(files) {
+export async function uploadFiles(files, purpose, requestId = '') {
   const formData = new FormData()
   files.forEach(f => formData.append('files', f))
+  formData.append('purpose', purpose)
+  if (requestId) formData.append('request_id', requestId)
 
   // multipart 不设置 Content-Type，让浏览器自动加 boundary
   const res = await fetch(`${BASE}/ingest/upload`, {
@@ -440,6 +442,13 @@ export async function uploadFiles(files) {
   }
 
   return res.json()
+}
+
+export function getIngestNotes(workId, offset = 0) {
+  return request(`/works/${encodeURIComponent(workId)}/ingest-notes?offset=${offset}`)
+}
+export function appendIngestNote(workId, body) {
+  return request(`/works/${encodeURIComponent(workId)}/ingest-notes`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 /** Pipeline 流程管理页专用统计 */

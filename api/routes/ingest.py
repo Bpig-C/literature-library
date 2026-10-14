@@ -17,9 +17,10 @@ from pydantic import BaseModel
 from ..db import LIBRARY_ROOT, get_conn
 
 from scripts.literature_ingest import (
-    build_ingest_plan, execute_plan, save_ingest_notes, query_ingest_notes,
-    validate_purpose, PURPOSE_MAX_LENGTH,
+    build_ingest_plan, execute_plan, query_ingest_notes, validate_purpose,
 )
+
+from ..ingest_notes import PurposeConflict, append as append_note, request_id as normalize_request_id, replay
 
 router = APIRouter()
 
@@ -278,15 +279,18 @@ async def ingest_upload(files: list[UploadFile] = File(...),
     返回：{ ok: true, uploaded: N, ingested: M, summary: {...} }
     purpose 为必填入库用途。
     """
-    inbox_dir = os.path.join(LIBRARY_ROOT, '_inbox')
-    os.makedirs(inbox_dir, exist_ok=True)
-
     # validate purpose before saving files
     try:
         purpose = validate_purpose(purpose or "")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    request_id = (request_id or "").strip() or str(uuid.uuid4())
+    try:
+        request_id = normalize_request_id(request_id)
+        replay(LIBRARY_ROOT,request_id,purpose)  # reject changed-purpose retries before saving files
+    except PurposeConflict as error:
+        raise HTTPException(409,str(error))
+    except ValueError as error:
+        raise HTTPException(400,str(error))
     inbox_dir = os.path.join(LIBRARY_ROOT, '_inbox')
     os.makedirs(inbox_dir, exist_ok=True)
 
@@ -319,65 +323,43 @@ async def ingest_upload(files: list[UploadFile] = File(...),
                 'message': f'已上传 {len(saved_paths)} 个文件到 _inbox/，但无新文件或重复件需要处理',
                 'summary': plan.summary(),
             }
-        backup_dir = execute_plan(plan, no_backup=True, leave_inbox=False)
-        notes_result = save_ingest_notes(Path(LIBRARY_ROOT), plan, purpose, request_id)
+        backup_dir = execute_plan(plan, purpose=purpose, request_id=request_id, no_backup=True, leave_inbox=False)
+        notes_result = plan.purpose_notes
         summary = plan.summary()
         return {
             'ok': True, 'uploaded': len(saved_paths), 'ingested': summary['ingests'],
             'skipped': skipped, 'summary': summary,
             'purpose_notes': notes_result, 'request_id': request_id,
         }
+    except PurposeConflict as e:
+        raise HTTPException(409,str(e))
+    except ValueError as e:
+        raise HTTPException(400,str(e))
     except Exception as e:
         raise HTTPException(500, f'文件已上传但摄入失败: {str(e)}')
 
 
-@router.get("/works/{work_id}/ingest-notes")
-def work_ingest_notes(work_id: str, limit: int = 50):
-    """查询指定 Work 的入库用途历史。只读，不建表。"""
-    return {"work_id": work_id, "notes": query_ingest_notes(Path(LIBRARY_ROOT), work_id, limit)}
+@router.get('/works/{work_id}/ingest-notes')
+def work_ingest_notes(work_id: str, limit: int = Query(50,ge=1,le=200), offset: int = Query(0,ge=0)):
+    return {'work_id':work_id,'notes':query_ingest_notes(Path(LIBRARY_ROOT),work_id,limit,offset)}
 
 
 class IngestNoteAppend(BaseModel):
     purpose: str
-    request_id: str = ""
+    request_id: str = ''
     source_file_id: str | None = None
-    actor: str = ""
 
 
-@router.post("/works/{work_id}/ingest-notes")
+@router.post('/works/{work_id}/ingest-notes')
 def append_ingest_note(work_id: str, body: IngestNoteAppend):
-    """对已有 Work 直接追加一条入库用途（无须重新上传 PDF）。"""
-    from ..db import get_conn as _gc
     try:
-        purpose = validate_purpose(body.purpose)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    import uuid as _uuid
-    request_id = (body.request_id or "").strip() or str(_uuid.uuid4())
-    conn = _gc()
-    try:
-        exists = conn.execute("SELECT 1 FROM works WHERE id=?", (work_id,)).fetchone()
-        if not exists:
-            raise HTTPException(404, f"work {work_id} not found")
-    finally:
-        conn.close()
-    # build a minimal plan-like shim for save_ingest_notes
-    from scripts.literature_ingest import IngestPlan
-    shim = IngestPlan(generated_at="", library_root=LIBRARY_ROOT, inbox_dir="", dry_run=False)
-    shim.ingests = []
-    shim.exact_duplicates = []
-
-    class _Shim:
-        def __init__(self, wid, sfid): self.work_id = wid; self.source_file_id = sfid; self.existing_work_id = wid; self.existing_source_file_id = sfid
-
-    if body.source_file_id:
-        shim.exact_duplicates.append(_Shim(work_id, body.source_file_id))
-    else:
-        shim.ingests.append(_Shim(work_id, None))
-    # save_ingest_notes expects plan.ingests items to have .work_id and .source_file_id
-    # and plan.exact_duplicates items to have .existing_work_id and .existing_source_file_id
-    result = save_ingest_notes(Path(LIBRARY_ROOT), shim, purpose, request_id, body.actor)
-    return {"ok": True, "work_id": work_id, "purpose_notes": result, "request_id": request_id}
+        rid = normalize_request_id(body.request_id)
+        result = append_note(LIBRARY_ROOT,work_id,body.purpose,rid,body.source_file_id)
+        return {'ok':True,'work_id':work_id,'purpose_notes':result,'request_id':rid}
+    except PurposeConflict as error:
+        raise HTTPException(409,str(error))
+    except ValueError as error:
+        raise HTTPException(404 if 'not found' in str(error) else 400,str(error))
 
 
 @router.get("/ingest/plan")
@@ -392,8 +374,9 @@ def ingest_plan(limit: int | None = None):
 
 class ExecuteBody(BaseModel):
     leave_inbox: bool = False  # True=保留 inbox 原文件；默认移走到 _archive/ingested_inbox/
-    purpose: str = ""  # required for execution; blank rejected
+    purpose: str  # required for execution; blank rejected
     request_id: str = ""  # stable operation ID for retry dedup; auto-generated if absent
+    file_ids: list[str] | None = None  # exact SHA selectors from the displayed plan
 
 
 @router.post("/ingest/execute")
@@ -405,15 +388,48 @@ def ingest_execute(body: ExecuteBody):
         purpose = validate_purpose(body.purpose)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    import uuid as _uuid
-    request_id = (body.request_id or "").strip() or str(_uuid.uuid4())
+    try:
+        request_id = normalize_request_id(body.request_id)
+    except ValueError as error:
+        raise HTTPException(400,str(error))
 
     plan = build_ingest_plan(LIBRARY_ROOT, dry_run=True)
+    try:
+        prior = replay(LIBRARY_ROOT,request_id,purpose)
+    except PurposeConflict as error:
+        raise HTTPException(409,str(error))
+    if body.file_ids is not None:
+        chosen = set(body.file_ids)
+        available = {a.content_sha256 for a in [*plan.ingests,*plan.exact_duplicates]}
+        if not chosen or not chosen <= available:
+            if prior and chosen:
+                from ..ingest_notes import check_request
+                import sqlite3
+                with sqlite3.connect((Path(LIBRARY_ROOT)/'literature.sqlite').as_uri()+'?mode=ro',uri=True) as conn:
+                    try:
+                        check_request(conn,request_id,purpose,[('sha256',digest) for digest in chosen])
+                    except PurposeConflict as error:
+                        raise HTTPException(409,str(error))
+                return {'ok':True,'summary':{'ingests':0,'exact_duplicates':0},'purpose_notes':prior,'request_id':request_id,'replayed':True}
+            raise HTTPException(409,'selected inbox files changed; rescan before retrying')
+        plan.ingests = [a for a in plan.ingests if a.content_sha256 in chosen]
+        plan.exact_duplicates = [a for a in plan.exact_duplicates if a.content_sha256 in chosen]
     has_work = plan.ingests or any(d.existing_work_id for d in plan.exact_duplicates)
     if not has_work:
+        try:
+            prior = replay(LIBRARY_ROOT,request_id,purpose)
+        except PurposeConflict as error:
+            raise HTTPException(409,str(error))
+        if prior:
+            return {'ok':True,'summary':plan.summary(),'backup_dir':None,'purpose_notes':prior,'request_id':request_id,'replayed':True}
         raise HTTPException(400, "no new files or exact duplicates in _inbox/ to ingest")
-    backup_dir = execute_plan(plan, no_backup=True, leave_inbox=body.leave_inbox)
-    notes_result = save_ingest_notes(Path(LIBRARY_ROOT), plan, purpose, request_id)
+    try:
+        backup_dir = execute_plan(plan,purpose=purpose,request_id=request_id,no_backup=True,leave_inbox=body.leave_inbox)
+    except PurposeConflict as error:
+        raise HTTPException(409,str(error))
+    except ValueError as error:
+        raise HTTPException(400,str(error))
+    notes_result = plan.purpose_notes
     s = plan.summary()
     return {"ok": True, "summary": s, "backup_dir": str(backup_dir) if backup_dir else None,
             "purpose_notes": notes_result, "request_id": request_id}

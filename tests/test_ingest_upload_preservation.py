@@ -35,7 +35,7 @@ def test_preexisting_same_name_preserved(isolated):
     root, client = isolated
     old, new = b'%PDF old synthetic', b'%PDF new synthetic'
     (root / '_inbox/same.pdf').write_bytes(old)
-    response = client.post('/api/ingest/upload', files={'files': ('same.pdf', new)})
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files={'files': ('same.pdf', new)})
     assert response.status_code == 200, response.text
     assert {old, new} <= contents(root)
     assert response.json()['ingested'] == 1
@@ -45,7 +45,7 @@ def test_preexisting_same_name_preserved(isolated):
 def test_same_request_same_name_preserved(isolated):
     root, client = isolated
     first, second = b'%PDF first synthetic', b'%PDF second synthetic'
-    response = client.post('/api/ingest/upload', files=[('files', ('same.pdf', first)), ('files', ('same.pdf', second))])
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files=[('files', ('same.pdf', first)), ('files', ('same.pdf', second))])
     assert response.status_code == 200, response.text
     assert {first, second} <= contents(root)
     assert response.json()['uploaded'] == response.json()['ingested'] == 2
@@ -55,7 +55,7 @@ def test_exact_repeat_still_deduplicated(isolated):
     root, client = isolated
     data = b'%PDF repeat synthetic'
     for expected in (1, 0):
-        response = client.post('/api/ingest/upload', files={'files': ('same.pdf', data)})
+        response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files={'files': ('same.pdf', data)})
         assert response.status_code == 200, response.text
         assert response.json()['ingested'] == expected
     conn = sqlite3.connect(root / 'literature.sqlite')
@@ -73,7 +73,7 @@ def test_read_failure_preserves_existing_and_other_upload(isolated, monkeypatch)
             raise OSError('synthetic read failure')
         return await original(self, size)
     monkeypatch.setattr(UploadFile, 'read', fail_read)
-    response = client.post('/api/ingest/upload', files=[('files', ('same.pdf', b'bad')), ('files', ('good.pdf', good))])
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files=[('files', ('same.pdf', b'bad')), ('files', ('good.pdf', good))])
     assert response.status_code == 200, response.text
     assert {old, good} <= contents(root)
     assert len(response.json()['skipped']) == 1
@@ -86,13 +86,13 @@ def test_unselected_inbox_is_untouched_and_explicit_execute_still_scans_all(isol
     root, client = isolated
     old = b'%PDF unselected synthetic'
     (root / '_inbox/unselected.pdf').write_bytes(old)
-    response = client.post('/api/ingest/upload', files={'files': ('selected.pdf', b'%PDF selected synthetic')})
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files={'files': ('selected.pdf', b'%PDF selected synthetic')})
     assert response.status_code == 200
     assert response.json()['ingested'] == 1
     assert (root / '_inbox/unselected.pdf').read_bytes() == old
     preview = client.get('/api/ingest/plan').json()
     assert preview['summary']['ingests'] == 1
-    response = client.post('/api/ingest/execute', json={})
+    response = client.post('/api/ingest/execute', json={'purpose': 'test purpose'})
     assert response.status_code == 200
     assert response.json()['summary']['ingests'] == 1
     assert old in contents(root)
@@ -105,7 +105,7 @@ def test_publication_failure_never_removes_original(isolated, monkeypatch):
     def fail_link(*args):
         raise OSError('synthetic publication failure')
     monkeypatch.setattr(route.os, 'link', fail_link)
-    response = client.post('/api/ingest/upload', files={'files': ('same.pdf', b'new')})
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files={'files': ('same.pdf', b'new')})
     assert response.status_code == 400
     assert (root / '_inbox/same.pdf').read_bytes() == old
     assert not list((root / '_inbox').glob('*.part'))
@@ -143,7 +143,7 @@ def test_partial_staging_is_not_scanned(isolated):
 def test_upload_filename_cannot_escape_inbox(isolated):
     root, client = isolated
     data = b'%PDF synthetic boundary'
-    response = client.post('/api/ingest/upload', files={'files': ('../../escape.pdf', data)})
+    response = client.post('/api/ingest/upload', data={'purpose': 'test'}, files={'files': ('../../escape.pdf', data)})
     assert response.status_code == 200, response.text
     assert data in contents(root)
     assert not (root.parent / 'escape.pdf').exists()

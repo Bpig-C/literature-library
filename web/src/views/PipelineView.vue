@@ -13,12 +13,13 @@
       :count="stages.ingest.count"
       stat-label="待摄入"
       action-label="摄入选中"
-      :action-disabled="readOnly"
+      :action-disabled="readOnly || !ingestPurpose.trim()"
       :selected-count="stages.ingest.selectedIds.size"
       :loading="stages.ingest.loading"
       @execute="batchIngest"
     >
       <template #filters>
+        <label>入库用途（必填，应用于选中文件）<input v-model="ingestPurpose" maxlength="2000" :disabled="readOnly || stages.ingest.loading" /></label>
         <router-link to="/inbox" class="goto-upload" target="_blank">
           前往 收件箱 页面（扫描 / 确认摄入）→
         </router-link>
@@ -406,7 +407,7 @@ async function loadIngest() {
   try {
     const res = await getIngestPlan()
     stages.value.ingest.count = res.summary?.ingests || 0
-    stages.value.ingest.files = res.files || res.ingests || []
+    stages.value.ingest.files = (res.ingests || []).map(f => ({ ...f, id: f.content_sha256, filename: f.original_name, size: f.file_size }))
   } catch (e) {
     console.error('Failed to load ingest:', e)
     showError(new Error(`收件箱加载失败: ${e.message}`))
@@ -445,14 +446,19 @@ async function loadResearchStage() {
 }
 
 // 批量操作
+const ingestPurpose = ref('')
+let ingestRequest = null
 async function batchIngest() {
   const ids = Array.from(stages.value.ingest.selectedIds)
-  if (!ids.length) return
+  if (!ids.length || !ingestPurpose.value.trim() || readOnly.value) return
+  const key = JSON.stringify([ids.sort(), ingestPurpose.value.trim()])
+  if (ingestRequest?.key !== key) ingestRequest = { key, id: crypto.randomUUID() }
   showConfirm('批量摄入', `即将摄入选中的 ${ids.length} 个文件，确定继续？`, async () => {
     confirm.value.show = false
     stages.value.ingest.loading = true
     try {
-      await executeIngest({ file_ids: ids })
+      await executeIngest({ file_ids: ids, purpose: ingestPurpose.value.trim(), request_id: ingestRequest.id })
+      ingestRequest = null
       clearAllSelections()
       await loadAll()
       // 下一步（文档解析）就在本页下一阶段，接力提示不跳转
