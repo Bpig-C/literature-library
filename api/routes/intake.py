@@ -150,7 +150,7 @@ def promote_candidates(body: PromoteBody):
 
     The approved-guard enforces the human review gate: programmatic callers
     cannot bypass A2 by promoting pending/rejected candidates directly."""
-    from ..ingest_notes import validate_purpose, request_id, append, replay, PurposeConflict
+    from ..ingest_notes import validate_purpose, request_id, append, replay
     try:
         purpose = validate_purpose(body.purpose)
         rid = request_id(body.request_id)

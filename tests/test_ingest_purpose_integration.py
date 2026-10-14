@@ -129,3 +129,22 @@ def test_collect_promotion_requires_purpose_before_candidate_db(isolated):
     client.app.include_router(intake.router,prefix='/api')
     assert client.post('/api/intake/promote',json={'ids':['IC-absent']}).status_code==422
     assert client.post('/api/intake/promote',json={'ids':['IC-absent'],'purpose':' '}).status_code==400
+
+
+def test_already_promoted_candidate_purpose_conflict_is_per_item(isolated,monkeypatch):
+    from api.routes import intake
+    from api.ingest_notes import append
+    root,client=isolated
+    wid=upload(client).json()['purpose_notes']['items'][0]['work_id']
+    append(root,wid,'original purpose','batch:IC-test')
+    with sqlite3.connect(root/'literature.sqlite') as conn:
+        conn.execute('CREATE TABLE intake_candidates(id TEXT,status TEXT,review_status TEXT,resolution TEXT,matched_work_id TEXT,ingested_work_id TEXT,local_pdf_path TEXT)')
+        conn.execute("INSERT INTO intake_candidates VALUES ('IC-test','ingested','approved','new',NULL,?,NULL)",(wid,))
+    def connect():
+        conn=sqlite3.connect(root/'literature.sqlite');conn.row_factory=sqlite3.Row;return conn
+    monkeypatch.setattr(intake,'get_conn',connect)
+    monkeypatch.setattr(intake,'LIBRARY_ROOT',root)
+    result=intake.promote_candidates(intake.PromoteBody(ids=['IC-test'],purpose='changed',request_id='batch'))
+    assert not result['promoted']
+    assert result['failed'][0]['id']=='IC-test'
+    assert 'different purpose' in result['failed'][0]['error']
