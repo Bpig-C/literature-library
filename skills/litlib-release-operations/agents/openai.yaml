@@ -1,0 +1,4 @@
+interface:
+  display_name: "LitLib 发布操作"
+  short_description: "核实修复并完成授权推送、快照发布、写者交接与客户端验证"
+  default_prompt: "使用 $litlib-release-operations 核实本次修复，准备可审查的发布计划，并在已有授权范围内完成推送及正式部署。"

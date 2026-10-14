@@ -1,5 +1,7 @@
 # Single maintained code line and target operations
 
+发布和 epoch 交接使用 [LitLib Release Operations](../skills/litlib-release-operations/SKILL.md)。它区分产品版本与不可变发布身份，并要求人工授权后才执行推送和线上写者切换。
+
 ## Required ingest purpose
 
 Upload, inbox confirmation, selected pipeline files and candidate promotion now
