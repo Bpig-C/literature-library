@@ -45,7 +45,14 @@ class Authority:
         return v
     @contextmanager
     def write_guard(self):
-        with file_lock(self.lock,timeout=0):
+        # Phase 2: uniform busy contract — include a retry hint on contention
+        try:
+            lock=file_lock(self.lock,timeout=0)
+        except StorageError as e:
+            if e.code=='busy':
+                raise StorageError('busy','authority write_guard contended; retry after brief delay') from None
+            raise
+        with lock:
             if self.marker.exists():raise StorageError('permission_denied','Source authority is frozen')
             self.check_remote();yield
     def handover(self,target_owner_sha256,release):

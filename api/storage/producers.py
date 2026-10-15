@@ -2,8 +2,10 @@
 
 Durable job precedes filesystem work; registrations use deterministic operation
 IDs. Explicit resume completes artifacts_ready without running the parser again.
+Phase 1 bounded concurrency: per-source locks + configurable semaphore.
 """
-import hashlib,json,sqlite3,zipfile
+import hashlib,json,os,sqlite3,threading,zipfile
+from concurrent.futures import ThreadPoolExecutor,as_completed
 from pathlib import Path
 from datetime import datetime,timezone
 from .core import StorageError,file_lock,hash_file
@@ -12,6 +14,15 @@ from .runtime import configured_service,required_path
 def now():return datetime.now(timezone.utc).isoformat()
 def job_id(kind,identity):return kind+'-'+hashlib.sha256(identity.encode()).hexdigest()
 def lock_path(service):return service.registry.catalog.with_suffix('.producer.lock')
+
+def _source_lock_path(service,source_id):
+ """Phase 1: per-source lock file; different sources can proceed in parallel."""
+ return service.registry.catalog.with_suffix(f'.producer-{source_id}.lock')
+
+def _parse_concurrency():
+ """Configurable bounded concurrency (default 1 = backward compatible serial)."""
+ try:return max(1,int(os.environ.get('LITLIB_PARSE_CONCURRENCY','1')))
+ except (ValueError,TypeError):return 1
 
 def register_ingested_sources(source_ids,service=None):
  service=service or configured_service();results=[]
@@ -66,7 +77,7 @@ def resume_producer(jid,service=None):
 
 def parse_source(source_id,runner,*,force=False,backend=None,service=None):
  service=service or configured_service()
- with file_lock(lock_path(service)):
+ with file_lock(_source_lock_path(service,source_id)):
   with service.registry.conn(write=True) as c:
    source=c.execute('SELECT sf.*,w.language FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(source_id,)).fetchone()
    if not source or source['status']=='quarantined':raise StorageError('invalid_request','active source required')
@@ -174,9 +185,22 @@ def trigger_production(body,runner,service=None):
   if not body.force:where+=" AND NOT EXISTS(SELECT 1 FROM storage_producer_jobs j WHERE j.source_file_id=sf.id AND j.kind='parse' AND j.state='registered')"
   sources=list(c.execute('SELECT sf.id,sf.work_id FROM source_files sf WHERE '+where+' ORDER BY sf.id',args))
  results=[]
- for source in sources:
-  try:
-   job=parse_source(source['id'],runner,force=body.force,backend=body.backend,service=service)
-   results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
-  except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
+ if len(sources)==1 or _parse_concurrency()<=1:
+  # Serial path: backward compatible, no thread overhead
+  for source in sources:
+   try:
+    job=parse_source(source['id'],runner,force=body.force,backend=body.backend,service=service)
+    results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
+   except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
+ else:
+  # Phase 1: bounded concurrent dispatch; per-source lock prevents same-source races
+  with ThreadPoolExecutor(max_workers=_parse_concurrency()) as pool:
+   futures={pool.submit(parse_source,s['id'],runner,force=body.force,backend=body.backend,service=service):s for s in sources}
+   for future in as_completed(futures):
+    source=futures[future]
+    try:
+     job=future.result()
+     results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
+    except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
+  results.sort(key=lambda r:r['source_file_id'])
  return {'triggered':len(results),'succeeded':sum(r['status']=='succeeded' for r in results),'failed':sum(r['status']=='failed' for r in results),'results':results}

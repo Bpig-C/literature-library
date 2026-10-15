@@ -24,7 +24,14 @@ class RemoteAuthentication(BaseHTTPMiddleware):
             from .storage.core import StorageError
             try:
                 with configured_authority().write_guard():return await call_next(request)
-            except StorageError as e:return JSONResponse({'code':e.code,'detail':str(e)},status_code=409 if e.code in {'busy','revision_conflict'} else 503)
+            except StorageError as e:
+                if e.code=='busy':
+                    # Phase 2: uniform busy contract with retry guidance
+                    return JSONResponse(
+                        {'code':'busy','detail':str(e),'retry_after':5},
+                        status_code=409,
+                        headers={'Retry-After':'5'})
+                return JSONResponse({'code':e.code,'detail':str(e)},status_code=409 if e.code=='revision_conflict' else 503)
         return await call_next(request)
 
 router=APIRouter()
