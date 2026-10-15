@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from ..db import get_conn, LIBRARY_ROOT
 from ..models import DuplicateReview
@@ -18,6 +19,116 @@ RELATION_TYPES = {
     "same_work", "not_duplicate", "version_of",
     "translation_of", "supersedes", "part_of",
 }
+
+
+class DuplicateLookupBody(BaseModel):
+    """Pure lookup: no side effects, no PDF upload, no Work/Source creation."""
+    content_sha256: str | None = Field(default=None, description="SHA256 hex of the local PDF")
+    doi: str | None = None
+    arxiv_id: str | None = None
+    title: str | None = Field(default=None, description="Exact or fuzzy title for candidate-level matches")
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+@router.post("/duplicates/lookup")
+def duplicates_lookup(body: DuplicateLookupBody):
+    """Check if a local PDF is already in the library without uploading it.
+
+    Returns tiered results:
+    - exact_sha: same file (SHA256 match on source_files)
+    - same_work: same paper, different version (DOI/arXiv match on works)
+    - title_candidates: similar titles (NOT auto-confirmed)
+    - unmatched: nothing found (or incomplete query)
+
+    Read-only: creates no Work/Source/Parse/A/R, no purpose notes, no locks,
+    no producer jobs, no OSS operations.
+    """
+    if not body.content_sha256 and not body.doi and not body.arxiv_id and not body.title:
+        raise HTTPException(400, "at least one of content_sha256, doi, arxiv_id, or title is required")
+
+    results = {"exact_sha": [], "same_work": [], "title_candidates": [], "status": "unmatched"}
+    conn = get_conn()
+    try:
+        # Tier 1: exact SHA match
+        if body.content_sha256:
+            sha = body.content_sha256.strip().lower()
+            if len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha):
+                raise HTTPException(400, "content_sha256 must be a 64-character hex string")
+            rows = conn.execute(
+                """SELECT sf.id AS source_file_id, sf.work_id, sf.original_name, sf.status,
+                          w.title, w.read_status, w.parse_status, w.arxiv_id, w.doi
+                   FROM source_files sf LEFT JOIN works w ON w.id = sf.work_id
+                   WHERE sf.content_sha256 = ?""",
+                (sha,),
+            ).fetchall()
+            for r in rows:
+                results["exact_sha"].append(dict(r))
+
+        # Tier 2: same work via DOI or arXiv (different file = different version)
+        if body.doi or body.arxiv_id:
+            where, params = [], []
+            if body.doi:
+                where.append("w.doi = ?")
+                params.append(body.doi.strip())
+            if body.arxiv_id:
+                where.append("w.arxiv_id = ?")
+                params.append(body.arxiv_id.strip())
+            query = f"""
+                SELECT w.id AS work_id, w.title, w.arxiv_id, w.doi, w.read_status, w.parse_status,
+                       (SELECT COUNT(*) FROM source_files sf WHERE sf.work_id = w.id) AS source_count
+                FROM works w WHERE {' OR '.join(where)} LIMIT ?
+            """
+            rows = conn.execute(query, [*params, body.limit]).fetchall()
+            for r in rows:
+                results["same_work"].append(dict(r))
+
+        # Tier 3: title candidates (fuzzy, NOT confirmed)
+        if body.title:
+            title = body.title.strip()
+            if len(title) >= 3:
+                rows = conn.execute(
+                    """SELECT w.id AS work_id, w.title, w.arxiv_id, w.doi, w.read_status
+                       FROM works w
+                       WHERE w.title LIKE ? COLLATE NOCASE
+                       LIMIT ?""",
+                    (f"%{title}%", body.limit),
+                ).fetchall()
+                for r in rows:
+                    # Don't duplicate entries already in same_work
+                    if not any(sw["work_id"] == r["work_id"] for sw in results["same_work"]):
+                        results["title_candidates"].append(dict(r))
+
+        # Determine overall status
+        if results["exact_sha"]:
+            results["status"] = "exact_match"
+        elif results["same_work"]:
+            results["status"] = "same_work_different_version"
+        elif results["title_candidates"]:
+            results["status"] = "title_candidates_only"
+        else:
+            results["status"] = "not_found"
+
+        # Add quarantined/archived visibility note
+        all_works = {r["work_id"] for r in results["exact_sha"] if r.get("work_id")}
+        all_works |= {r["work_id"] for r in results["same_work"]}
+        all_works |= {r["work_id"] for r in results["title_candidates"]}
+        if all_works:
+            qmarks = ",".join("?" * len(all_works))
+            archived = {
+                r["id"]: r["read_status"]
+                for r in conn.execute(
+                    f"SELECT id, read_status FROM works WHERE id IN ({qmarks})",
+                    list(all_works),
+                ).fetchall()
+            }
+            results["work_statuses"] = {
+                wid: {"read_status": status, "available": status not in ("quarantined", "archived")}
+                for wid, status in archived.items()
+            }
+
+        return results
+    finally:
+        conn.close()
 
 
 @router.get("/duplicates")

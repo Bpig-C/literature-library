@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 if enabled(): validate_startup()  # explicit roots, both schemas and registry; fail before serving
 
-from .routes import duplicates, export, files, ingest, intake, metadata, parse, relations, works, classification, discovery, templates, research
+from .routes import duplicates, export, files, ingest, intake, metadata, parse, relations, works, classification, discovery, templates, research, provenance
 from .remote_access import RemoteAuthentication, router as remote_router
 
 app = FastAPI(title="Literature Library API", version="0.1.0")
@@ -48,6 +48,7 @@ app.include_router(templates.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(research.router, prefix="/api")
 app.include_router(overview.router, prefix="/api")
+app.include_router(provenance.router, prefix="/api")
 
 # Serve Vue build in production
 DIST = Path(__file__).resolve().parents[1] / "web" / "dist"

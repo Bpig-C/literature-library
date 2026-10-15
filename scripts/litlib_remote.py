@@ -51,6 +51,11 @@ def main(argv=None):
     q.add_argument('--expected-commit');q.add_argument('--require-capability',action='append',default=[])
     q=s.add_parser('request');q.add_argument('path');q.add_argument('--method',choices=['GET','POST','PUT','PATCH','DELETE'],default='GET');q.add_argument('--json-file');q.add_argument('--allow-write',action='store_true')
     q=s.add_parser('asset');q.add_argument('identity');q.add_argument('--role',required=True);q.add_argument('--version',required=True,type=int);q.add_argument('--output');q.add_argument('--max-bytes',required=True,type=int)
+    q=s.add_parser('lookup',help='Check if a local PDF is already ingested (pure query, no upload)')
+    q.add_argument('--file',type=Path,help='Local PDF to hash and look up')
+    q.add_argument('--sha256',help='Pre-computed SHA256 hex')
+    q.add_argument('--doi');q.add_argument('--arxiv-id');q.add_argument('--title')
+    q.add_argument('--limit',type=int,default=10)
     a=p.parse_args(argv);base=base_url(a.server);token=os.environ.get('LITLIB_REMOTE_TOKEN','')
     if len(token)<32:raise ValueError('LITLIB_REMOTE_TOKEN must be supplied in process environment')
     headers={'Authorization':'Bearer '+token};opener=build_opener(NoRedirect,HTTPSHandler(context=tls_context(a.ca_file)))
@@ -68,6 +73,30 @@ def main(argv=None):
             body=r.read(8*1024*1024+1)
             if len(body)>8*1024*1024:raise ValueError('JSON response exceeds client budget')
             sys.stdout.buffer.write(body)
+        return 0
+    if a.command=='lookup':
+        payload={}
+        if a.file:
+            if not a.file.is_file():raise ValueError(f'file not found: {a.file}')
+            h=hashlib.sha256()
+            with a.file.open('rb') as f:
+                while b:=f.read(1<<20):h.update(b)
+            payload['content_sha256']=h.hexdigest()
+        elif a.sha256:
+            payload['content_sha256']=a.sha256.strip().lower()
+        if a.doi:payload['doi']=a.doi.strip()
+        if a.arxiv_id:payload['arxiv_id']=a.arxiv_id.strip()
+        if a.title:payload['title']=a.title.strip()
+        payload['limit']=a.limit
+        if not any(k in payload for k in ('content_sha256','doi','arxiv_id','title')):
+            raise ValueError('provide --file, --sha256, --doi, --arxiv-id, or --title')
+        data=json.dumps(payload).encode();headers['Content-Type']='application/json'
+        req=Request(base+'/api/duplicates/lookup',data=data,headers=headers,method='POST')
+        with opener.open(req,timeout=a.timeout) as r:
+            result=json.loads(r.read(1*1024*1024))
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        # exit code: 0=found (any tier), 1=not found, 2=error
+        if result.get('status')=='not_found':return 1
         return 0
     if a.version<1 or a.max_bytes<1:raise ValueError('Positive fixed version and explicit transfer budget required')
     path='/api/remote/assets/'+quote(a.identity,safe='')+'?'+urlencode({'role':a.role,'version':a.version})
