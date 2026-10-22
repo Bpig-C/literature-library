@@ -44,6 +44,11 @@ def release(tmp_path,monkeypatch):
         (out/'content.md').write_text('# synthetic immutable text','utf-8');(out/'content.json').write_text('{"synthetic":true}','utf-8')
         return True,'','synthetic','synthetic-task'
     job=parse_source(action.source_file_id,parser,service=service)
+    # Frozen selections/remaining budgets are part of catalog recovery too.
+    from api.parse_plans import Selection,preview,accept
+    with service.registry.conn(read_only=True) as read:
+        frozen_plan=preview(read,Selection(source_file_ids=[action.source_file_id],backend='vlm'))
+    accept(service.registry,frozen_plan,'synthetic-queued-recovery-plan',1,1,100)
     snap=ResearchService(ctx).import_registered_source(work_id=action.work_id,source_file_id=action.source_file_id,parse_run_id=job['parse_run_id'],version=1)
     editing=root/'research/editing/working.md';editing.parent.mkdir();editing.write_text('synthetic unaccepted draft','utf-8')
     files={'research/assets/'+name:path for name,path in asset_files.items()};files['research/editing/working.md']=editing
@@ -70,6 +75,9 @@ def test_unified_cold_restore_essential_only_and_fixed_consumption(release,tmp_p
     assert receipt['credentials_copied'] is False and published['long_term_asset_objects_reuploaded']==0
     with sqlite3.connect(target/'data/library/literature.sqlite') as restored_catalog:
         assert restored_catalog.execute('SELECT purpose FROM ingest_notes WHERE work_id=?',(action.work_id,)).fetchone()[0]=='Synthetic storage lifecycle verification'
+        assert restored_catalog.execute('SELECT max_submissions FROM parse_plans WHERE request_id=?',('synthetic-queued-recovery-plan',)).fetchone()[0]==1
+        assert restored_catalog.execute('SELECT state,reserved FROM parse_plan_items').fetchone()==('queued',0)
+        assert restored_catalog.execute('SELECT count(*) FROM producer_diagnostics').fetchone()[0]==1
     for k,v in json.loads((target/'environment.json').read_text('utf-8')).items():monkeypatch.setenv(k,v)
     assert presentation_assets()['ontology']['concepts'][0]['zh']=='合成概念'
     service=configured_service()

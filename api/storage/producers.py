@@ -2,10 +2,9 @@
 
 Durable job precedes filesystem work; registrations use deterministic operation
 IDs. Explicit resume completes artifacts_ready without running the parser again.
-Phase 1 bounded concurrency: per-source locks + configurable semaphore.
+Foundation execution is globally serial across parse/resume/release.
 """
-import hashlib,json,os,sqlite3,threading,zipfile
-from concurrent.futures import ThreadPoolExecutor,as_completed
+import hashlib,json,os,re,sqlite3,zipfile
 from pathlib import Path
 from datetime import datetime,timezone
 from .core import StorageError,file_lock,hash_file
@@ -16,11 +15,12 @@ def job_id(kind,identity):return kind+'-'+hashlib.sha256(identity.encode()).hexd
 def lock_path(service):return service.registry.catalog.with_suffix('.producer.lock')
 
 def _source_lock_path(service,source_id):
- """Phase 1: per-source lock file; different sources can proceed in parallel."""
- return service.registry.catalog.with_suffix(f'.producer-{source_id}.lock')
+ """Canonical safe lock key; the global ownership guard remains authoritative."""
+ key=source_id if re.fullmatch(r'[A-Za-z0-9_.-]{1,160}',source_id) else hashlib.sha256(source_id.encode()).hexdigest()
+ return service.registry.catalog.with_suffix(f'.producer-{key}.lock')
 
 def _parse_concurrency():
- """Configurable bounded concurrency (default 1 = backward compatible serial)."""
+ """Legacy setting reader; foundation producer execution remains serial."""
  try:return max(1,int(os.environ.get('LITLIB_PARSE_CONCURRENCY','1')))
  except (ValueError,TypeError):return 1
 
@@ -75,9 +75,11 @@ def resume_producer(jid,service=None):
  service=service or configured_service()
  with file_lock(lock_path(service)):return _finish(service,jid)
 
-def parse_source(source_id,runner,*,force=False,backend=None,service=None):
+def parse_source(source_id,runner,*,force=False,backend=None,service=None,on_registered=None):
  service=service or configured_service()
- with file_lock(_source_lock_path(service,source_id)):
+ # Foundation release retains global serialization across parse/resume/release.
+ # A request-local thread pool must not bypass shared ownership or maintenance.
+ with file_lock(lock_path(service)),file_lock(_source_lock_path(service,source_id)):
   with service.registry.conn(write=True) as c:
    source=c.execute('SELECT sf.*,w.language FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(source_id,)).fetchone()
    if not source or source['status']=='quarantined':raise StorageError('invalid_request','active source required')
@@ -99,34 +101,83 @@ def parse_source(source_id,runner,*,force=False,backend=None,service=None):
     c.execute("UPDATE literature_parse_runs SET status='running',output_dir=?,started_at=?,content_md_path='',content_json_path='',package_path='',error='' WHERE id=?",(str(out),now(),rid))
    else:c.execute("INSERT INTO literature_parse_runs(id,work_id,source_file_id,source_path,status,output_dir,started_at,error) VALUES(?,?,?,?,'running',?,?,'')",(rid,source['work_id'],source_id,source['source_path'],str(out),now()))
    c.execute("INSERT INTO storage_producer_jobs(id,kind,source_file_id,parse_run_id,version,state) VALUES(?,'parse',?,?,?,'preparing')",(jid,source_id,rid,version))
+  if on_registered:on_registered(jid)
   try:
    out.mkdir(parents=True,exist_ok=False)
    owner={'job_id':jid,'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'}
    (out/'.litlib-producer-owned.json').write_text(json.dumps(owner),'utf-8')
    # Pin verified PDF for parser input; never fallback to original machine path.
-   with service.read(source_id,'pdf',1) as pdf:ok,msg,used,task=runner(str(pdf),out,source['language'] or '',backend=backend)
-   if not ok:raise StorageError('producer_failed','parser reported failure: '+str(msg))
-   files=sorted(p for p in out.rglob('*') if p.is_file() and p.name!='.litlib-producer-owned.json')
-   if not (out/'content.md').is_file():raise StorageError('producer_incomplete','parser produced no content.md')
-   package=out/'immutable-assets.zip'
-   if package.exists() or any(p.is_symlink() for p in out.rglob('*')):raise StorageError('unsafe_package','unexpected parser package or symlink')
-   with zipfile.ZipFile(package,'x',zipfile.ZIP_DEFLATED) as z:
-    for p in files:z.write(p,p.relative_to(out).as_posix())
-   owner['files']={p.relative_to(out).as_posix():list(hash_file(p)) for p in files+[package]}
-   owner['release_state']='ready'
-   (out/'.litlib-producer-owned.json').write_text(json.dumps(owner),'utf-8')
-   assets=[]
-   for p in files:
-    rel=p.relative_to(out).as_posix()
-    role={'content.md':'md','content.merged.md':'merged','content.json':'json','detail.json':'detail'}.get(rel)
-    if rel.startswith('images/') and len(Path(rel).parts)==2:role='image:'+p.name
-    if role:assets.append({'identity':rid,'role':role,'version':version,'source':str(package),'member':rel,'virtual_path':str(p)})
-   assets[0]['owned_files']=owner['files']
-   with service.registry.conn(write=True) as c:c.execute("UPDATE storage_producer_jobs SET state='artifacts_ready',artifacts=?,backend=?,task_id=? WHERE id=?",(json.dumps(assets),used,task,jid))
+   from ..producer_events import capture
+   with capture(service.registry,jid) as event:
+    event('parser_start',backend=backend or 'auto')
+    try:
+     with service.read(source_id,'pdf',1) as pdf:ok,msg,used,task=runner(str(pdf),out,source['language'] or '',backend=backend)
+     event('parser_returned',backend=used,task_id=task)
+     if not ok:raise StorageError('producer_failed','parser failed; inspect job diagnostics')
+    except Exception as error:
+     event('failed',error_code=getattr(error,'code','producer_failed'))
+     raise
+   _stage_parse_assets(service,jid,out,used,task,owner)
   except Exception as error:
    with service.registry.conn(write=True) as c:
     c.execute("UPDATE storage_producer_jobs SET state='failed',error_code=? WHERE id=?",(getattr(error,'code','producer_failed'),jid))
     c.execute("UPDATE literature_parse_runs SET status='failed',error=?,finished_at=? WHERE id=?",(getattr(error,'code','producer_failed'),now(),rid))
+   raise
+  return _finish(service,jid)
+
+def _stage_parse_assets(service,jid,out,used,task,owner):
+ with service.registry.conn() as c:job=c.execute('SELECT parse_run_id,version FROM storage_producer_jobs WHERE id=?',(jid,)).fetchone()
+ rid,version=job['parse_run_id'],job['version']
+ files=sorted(p for p in out.rglob('*') if p.is_file() and p.name!='.litlib-producer-owned.json')
+ if not (out/'content.md').is_file():raise StorageError('producer_incomplete','parser produced no content.md')
+ package=out/'immutable-assets.zip'
+ if package.exists() or any(p.is_symlink() for p in out.rglob('*')):raise StorageError('unsafe_package','unexpected parser package or symlink')
+ with zipfile.ZipFile(package,'x',zipfile.ZIP_DEFLATED) as z:
+  for p in files:z.write(p,p.relative_to(out).as_posix())
+ owner['files']={p.relative_to(out).as_posix():list(hash_file(p)) for p in files+[package]}
+ owner['release_state']='ready'
+ (out/'.litlib-producer-owned.json').write_text(json.dumps(owner),'utf-8')
+ assets=[]
+ for p in files:
+  rel=p.relative_to(out).as_posix()
+  role={'content.md':'md','content.merged.md':'merged','content.json':'json','detail.json':'detail'}.get(rel)
+  if rel.startswith('images/') and len(Path(rel).parts)==2:role='image:'+p.name
+  if role:assets.append({'identity':rid,'role':role,'version':version,'source':str(package),'member':rel,'virtual_path':str(p)})
+ assets[0]['owned_files']=owner['files']
+ with service.registry.conn(write=True) as c:c.execute("UPDATE storage_producer_jobs SET state='artifacts_ready',artifacts=?,backend=?,task_id=? WHERE id=?",(json.dumps(assets),used,task,jid))
+
+def recover_cloud_producer(jid,runner,service=None):
+ """Query/download an existing cloud task; never submit another task/version."""
+ service=service or configured_service()
+ with file_lock(lock_path(service)):
+  with service.registry.conn() as c:
+   job=dict(c.execute('SELECT * FROM storage_producer_jobs WHERE id=?',(jid,)).fetchone() or {})
+   if not job:raise StorageError('not_found','producer not found')
+   if job['state'] in ('registered','artifacts_ready'):return _finish(service,jid)
+   if job['kind']!='parse' or job['backend']!='vlm' or not job['task_id']:raise StorageError('producer_incomplete','known VLM task required; never resubmit unknown tasks')
+   latest=c.execute("SELECT id FROM storage_producer_jobs WHERE kind='parse' AND source_file_id=? ORDER BY version DESC LIMIT 1",(job['source_file_id'],)).fetchone()
+   if latest[0]!=jid:raise StorageError('revision_conflict','later parse exists; inspect historical job before recovery')
+   run=c.execute('SELECT work_id,output_dir FROM literature_parse_runs WHERE id=?',(job['parse_run_id'],)).fetchone()
+   source=c.execute('SELECT sf.status,w.read_status FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(job['source_file_id'],)).fetchone()
+   if not source or source[0]!='active' or source[1] in ('quarantined','archived'):raise StorageError('revision_conflict','source is not active')
+  out=Path(run['output_dir']);library=required_path('LITLIB_LIBRARY_ROOT')
+  expected=library/'works'/run['work_id']/'parsed'/'immutable'/job['source_file_id']/('v'+str(job['version']))
+  if out.resolve()!=expected.resolve() or not out.resolve().is_relative_to(library) or out.is_symlink() or (hasattr(out,'is_junction') and out.is_junction()):raise StorageError('configuration_error','recovery output outside owned path')
+  if any(p.is_symlink() or (hasattr(p,'is_junction') and p.is_junction()) for p in out.rglob('*')):raise StorageError('configuration_error','linked recovery output refused')
+  marker=out/'.litlib-producer-owned.json'
+  if not marker.is_file():raise StorageError('producer_incomplete','owned output marker unavailable')
+  owner=json.loads(marker.read_text('utf-8'))
+  if owner.get('job_id')!=jid or owner.get('catalog')!=str(service.registry.catalog) or owner.get('output')!=str(out) or owner.get('release_state')!='producing' or (out/'immutable-assets.zip').exists():raise StorageError('producer_incomplete','partial package requires inspection; do not overwrite')
+  from ..producer_events import capture
+  try:
+   with capture(service.registry,jid) as event:
+    event('recover_existing_task',task_id=job['task_id'],backend='vlm')
+    with service.read(job['source_file_id'],'pdf',1) as pdf:ok,msg,used,task=runner(str(pdf),out,job['task_id'])
+    if not ok:raise StorageError('producer_incomplete','existing cloud result not ready; inspect diagnostics')
+    if task!=job['task_id'] or used!='vlm':raise StorageError('revision_conflict','recovery changed task or backend')
+   _stage_parse_assets(service,jid,out,used,task,owner)
+  except Exception as error:
+   with service.registry.conn(write=True) as c:c.execute("UPDATE storage_producer_jobs SET state='failed',error_code=? WHERE id=?",(getattr(error,'code','producer_failed'),jid))
    raise
   return _finish(service,jid)
 
@@ -185,22 +236,9 @@ def trigger_production(body,runner,service=None):
   if not body.force:where+=" AND NOT EXISTS(SELECT 1 FROM storage_producer_jobs j WHERE j.source_file_id=sf.id AND j.kind='parse' AND j.state='registered')"
   sources=list(c.execute('SELECT sf.id,sf.work_id FROM source_files sf WHERE '+where+' ORDER BY sf.id',args))
  results=[]
- if len(sources)==1 or _parse_concurrency()<=1:
-  # Serial path: backward compatible, no thread overhead
-  for source in sources:
-   try:
-    job=parse_source(source['id'],runner,force=body.force,backend=body.backend,service=service)
-    results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
-   except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
- else:
-  # Phase 1: bounded concurrent dispatch; per-source lock prevents same-source races
-  with ThreadPoolExecutor(max_workers=_parse_concurrency()) as pool:
-   futures={pool.submit(parse_source,s['id'],runner,force=body.force,backend=body.backend,service=service):s for s in sources}
-   for future in as_completed(futures):
-    source=futures[future]
-    try:
-     job=future.result()
-     results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
-    except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
-  results.sort(key=lambda r:r['source_file_id'])
+ for source in sources:
+  try:
+   job=parse_source(source['id'],runner,force=body.force,backend=body.backend,service=service)
+   results.append({'work_id':source['work_id'],'source_file_id':source['id'],'parse_run_id':job['parse_run_id'],'version':job['version'],'status':'succeeded','job_id':job['id']})
+  except Exception as error:results.append({'work_id':source['work_id'],'source_file_id':source['id'],'status':'failed','error':getattr(error,'code','producer_failed')})
  return {'triggered':len(results),'succeeded':sum(r['status']=='succeeded' for r in results),'failed':sum(r['status']=='failed' for r in results),'results':results}

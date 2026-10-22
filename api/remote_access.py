@@ -6,10 +6,10 @@ from starlette.responses import JSONResponse
 from .storage.runtime import configured_service
 from .storage.response import PinnedFileResponse
 
-# Issue #9: read-only POST endpoints that must bypass the write gate and
+# Issue #9 and foundation pure queries bypass the write gate and
 # authority write_guard. Only exact paths are exempted; query params and
 # trailing slashes are normalised before matching.
-_READ_ONLY_POST_PATHS = frozenset({'/api/duplicates/lookup'})
+_READ_ONLY_POST_PATHS = frozenset({'/api/duplicates/lookup', '/api/parse/plan', '/api/intake/reconcile'})
 
 class RemoteAuthentication(BaseHTTPMiddleware):
     async def dispatch(self,request,call_next):

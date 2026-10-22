@@ -56,9 +56,81 @@ def main(argv=None):
     q.add_argument('--sha256',help='Pre-computed SHA256 hex')
     q.add_argument('--doi');q.add_argument('--arxiv-id');q.add_argument('--title')
     q.add_argument('--limit',type=int,default=10)
+    q=s.add_parser('guide',help='Read the versioned foundation client guide')
+    q=s.add_parser('intake');sub=q.add_subparsers(dest='action',required=True)
+    r=sub.add_parser('reconcile');r.add_argument('--manifest',type=Path,required=True)
+    q=s.add_parser('backup');sub=q.add_subparsers(dest='action',required=True)
+    sub.add_parser('status')
+    r=sub.add_parser('request');r.add_argument('--request-id',required=True);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('job');r.add_argument('--job-id',required=True)
+    q=s.add_parser('parse');sub=q.add_subparsers(dest='action',required=True)
+    r=sub.add_parser('plan');r.add_argument('--backend',choices=['vlm','pymupdf'],required=True)
+    r.add_argument('--work-id',action='append',default=[]);r.add_argument('--source-file-id',action='append',default=[])
+    r.add_argument('--request-id',action='append',default=[]);r.add_argument('--purpose')
+    r.add_argument('--from-time');r.add_argument('--to-time')
+    r.add_argument('--time-field',choices=['work_created','source_imported','purpose_created'],default='source_imported')
+    r.add_argument('--source-policy',choices=['single','all'],default='single')
+    r.add_argument('--reparse-completed',action='store_true');r.add_argument('--output',type=Path,required=True)
+    r=sub.add_parser('run');r.add_argument('--plan',type=Path,required=True);r.add_argument('--request-id',required=True)
+    r.add_argument('--max-items',type=int,required=True);r.add_argument('--max-submissions',type=int,required=True)
+    r.add_argument('--max-pages',type=int);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('continue');r.add_argument('--plan-id',required=True);r.add_argument('--steps',type=int,default=1);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('status');g=r.add_mutually_exclusive_group(required=True);g.add_argument('--plan-id');g.add_argument('--job-id')
+    r=sub.add_parser('resume');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('recover');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
     a=p.parse_args(argv);base=base_url(a.server);token=os.environ.get('LITLIB_REMOTE_TOKEN','')
     if len(token)<32:raise ValueError('LITLIB_REMOTE_TOKEN must be supplied in process environment')
     headers={'Authorization':'Bearer '+token};opener=build_opener(NoRedirect,HTTPSHandler(context=tls_context(a.ca_file)))
+    if a.command in ('parse','backup','intake','guide'):
+        def request(path,body=None,*,extra=None):
+            h={**headers,**(extra or {})}
+            if body is not None:h['Content-Type']='application/json'
+            with opener.open(Request(base+path,data=json.dumps(body).encode() if body is not None else None,headers=h),timeout=a.timeout) as response:
+                data=response.read(8*1024*1024+1)
+                if len(data)>8*1024*1024:raise ValueError('response exceeds client budget')
+                return json.loads(data)
+        needed={'parse':'parse_plans_v1','intake':'intake_reconcile_v1','backup':'backup_jobs_v1','guide':'foundation_guide_v1'}[a.command]
+        version,code=check_version(opener,base,headers,a.timeout,required=[needed])
+        if code:print(json.dumps(version,ensure_ascii=False));return code
+        def output(value):print(json.dumps(value,ensure_ascii=False,indent=2),flush=True)
+        if a.command=='guide':
+            result=request('/api/remote/foundation-guide')
+            if hashlib.sha256(result['text'].encode()).hexdigest()!=result['sha256']:raise ValueError('guide SHA differs')
+            print(result['text']);return 0
+        if a.command=='intake':output(request('/api/intake/reconcile',json.loads(a.manifest.read_text('utf-8-sig'))));return 0
+        if a.command=='backup':
+            if a.action=='status':result=request('/api/remote/backup-status')
+            elif a.action=='job':result=request('/api/remote/backup-jobs/'+quote(a.job_id,safe=''))
+            else:
+                if not a.execute:raise ValueError('backup request requires --execute; host worker performs maintenance')
+                admin=os.environ.get('LITLIB_BACKUP_ADMIN_TOKEN','')
+                if len(admin)<32:raise ValueError('dedicated LITLIB_BACKUP_ADMIN_TOKEN required')
+                result=request('/api/remote/backup-jobs',{'request_id':a.request_id},extra={'X-Litlib-Backup-Token':admin})
+            output(result);return 0
+        if a.action=='plan':
+            if a.output.exists():raise ValueError('output already exists; refusing overwrite')
+            result=request('/api/parse/plan',dict(backend=a.backend,work_ids=a.work_id,source_file_ids=a.source_file_id,
+                request_ids=a.request_id,purpose=a.purpose,from_time=a.from_time,to_time=a.to_time,time_field=a.time_field,
+                source_policy=a.source_policy,reparse_completed=a.reparse_completed))
+            with a.output.open('x',encoding='utf-8') as f:json.dump(result,f,ensure_ascii=False,indent=2)
+            output({'plan_file':str(a.output),'sha256':result['sha256'],'counts':result['counts'],'excluded':result['excluded']});return 0
+        if a.action=='status':
+            path='/api/parse/plans/'+quote(a.plan_id,safe='') if a.plan_id else '/api/parse/jobs?'+urlencode({'job_id':a.job_id})
+            output(request(path));return 0
+        if not a.execute:raise ValueError('explicit --execute required')
+        if a.action in ('resume','recover'):output(request('/api/parse/'+a.action,{'job_id':a.job_id,'force':True}));return 0
+        if a.action=='run':
+            result=request('/api/parse/plans',dict(plan=json.loads(a.plan.read_text('utf-8-sig')),request_id=a.request_id,
+                           max_items=a.max_items,max_submissions=a.max_submissions,max_pages=a.max_pages))
+            pid=result['plan_id'];steps=a.max_items
+            output(result)  # Durable plan ID is printed before any long parse request.
+        else:pid=a.plan_id;steps=a.steps
+        if not 1<=steps<=1000:raise ValueError('steps must be 1..1000')
+        for _ in range(steps):
+            result=request('/api/parse/plans/'+quote(pid,safe='')+'/step',{})
+            output(result)
+            if result['action']!='progress':return 0 if result['action']=='complete' else 3
+        return 0
     if a.command=='check-version':
         result,status=check_version(opener,base,headers,a.timeout,expected_commit=a.expected_commit,required=a.require_capability)
         print(json.dumps(result,ensure_ascii=False))

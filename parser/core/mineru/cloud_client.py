@@ -106,6 +106,10 @@ def _extract_json_from_text(text: str) -> dict | None:
     return None
 
 
+class MissingMarkdown(RuntimeError):
+    code = 'missing_content_md'
+
+
 class CloudClient(PdfParseClient):
     """官网精准解析 API 客户端。"""
 
@@ -114,6 +118,7 @@ class CloudClient(PdfParseClient):
         self._config = config
         # 最近一次解析的 batch_id（供调用方记录为 task_id，便于回溯/重试）
         self.last_batch_id = ""
+        self.on_progress = None
         cloud = getattr(config, "cloud", {}) or {}
         self.api_base = (cloud.get("api_base") or "https://mineru.net").rstrip("/")
         self.model_version = cloud.get("model_version", "vlm")
@@ -126,6 +131,10 @@ class CloudClient(PdfParseClient):
         self._last_submit = 0.0
 
     # ---- 内部 HTTP 工具 ----
+    def _event(self, stage, **fields):
+        if self.on_progress:
+            self.on_progress(stage, **fields)
+
     def _headers(self) -> dict[str, str]:
         token = _load_token()
         if not token:
@@ -146,17 +155,29 @@ class CloudClient(PdfParseClient):
     def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
         """带指数退避的请求；对队列满(-60009)/网络错重试，对日上限(-60018)/token 错不重试。"""
         attempts = kwargs.pop("retries", 3)
+        # A lost POST response may already have created a billable task.
+        # Read retries are safe; submission retries require a new explicit decision.
+        if method.upper() == 'POST': attempts = 1
+        timeout = kwargs.pop('timeout', 120)
         last_exc: Exception | None = None
         for i in range(attempts):
             try:
-                resp = requests.request(method, url, timeout=kwargs.pop("timeout", 120), **kwargs)
+                resp = requests.request(method, url, timeout=timeout, **kwargs)
             except Exception as exc:
                 last_exc = exc
-                logger.warning("请求异常 (%s/%s)：%s", i + 1, attempts, exc)
+                if method.upper() == 'POST':
+                    self._event('submission_unknown', error_code='response_lost')
+                    raise RuntimeError('submission_unknown: inspect provider before retry') from None
+                logger.warning("Read request failed (%s/%s): %s", i + 1, attempts, type(exc).__name__)
                 time.sleep(2 ** i)
                 continue
             # 识别业务层限流码（响应体里 code != 0）
             code = self._safe_code(resp)
+            if method.upper() == 'POST':
+                if resp.status_code != 200 or code != 0:
+                    self._event('submission_rejected' if resp.status_code < 500 and code is not None else 'submission_unknown',
+                                http_status=resp.status_code, provider_code=code)
+                return resp
             if code == -60009:  # 任务提交队列已满 → 退避重试
                 logger.warning("队列已满，退避重试 (%s/%s)", i + 1, attempts)
                 time.sleep(2 ** i)
@@ -165,7 +186,7 @@ class CloudClient(PdfParseClient):
                 logger.error("每日解析任务数已达上限（-60018），不重试")
                 return resp
             return resp
-        raise RuntimeError(f"请求多次失败：{url} last_error={last_exc}")
+        raise RuntimeError('read retries exhausted: '+type(last_exc).__name__)
 
     @staticmethod
     def _safe_code(resp: requests.Response) -> int | None:
@@ -187,35 +208,39 @@ class CloudClient(PdfParseClient):
             return False, f"源文件不存在：{req.pdf_path}"
 
         # 1. 申请上传链接
+        self._event('configuration', backend='vlm')
         try:
             self._apply_rate_limit()
             batch_id, upload_url = self._create_batch(req)
         except Exception as exc:
-            msg = f"申请上传链接失败：{exc}"
+            msg = 'create_batch failed: ' + type(exc).__name__
             logger.error(msg)
             return False, msg
         logger.info("cloud: batch_id=%s file=%s", batch_id, req.pdf_path.name)
 
         # 2. 上传文件（不设 Content-Type）
         try:
+            self._event('upload', task_id=batch_id)
             self._upload_file(upload_url, req.pdf_path)
         except Exception as exc:
-            msg = f"文件上传失败：{exc}"
+            msg = 'upload failed: ' + type(exc).__name__
             logger.error(msg)
             return False, msg
 
         # 3. 轮询结果
         try:
+            self._event('poll', task_id=batch_id)
             result = self._poll_batch(batch_id, file_name=req.pdf_path.with_suffix('.pdf').name)
         except Exception as exc:
-            msg = f"轮询失败：{exc}"
+            msg = 'poll failed: ' + type(exc).__name__
             logger.error(msg)
             return False, msg
 
         state = result.get("state")
         if state != "done":
             err = result.get("err_msg") or f"state={state}"
-            return False, f"解析未完成：{err}"
+            self._event('upstream_failed', task_id=batch_id)
+            return False, 'upstream result not complete'
 
         zip_url = result.get("full_zip_url")
         if not zip_url:
@@ -223,10 +248,12 @@ class CloudClient(PdfParseClient):
 
         # 4. 下载 + 解压 + 产出 content.md / content.json
         try:
+            self._event('download', task_id=batch_id)
             self._materialize(zip_url, output_dir, stem)
         except Exception as exc:
-            msg = f"下载/解压/落地产物失败：{exc}"
-            logger.exception(msg)
+            self._event('materialize_failed', error_code=getattr(exc,'code','materialize_failed'), task_id=batch_id)
+            msg = 'materialize failed: ' + ('missing full.md' if isinstance(exc,MissingMarkdown) else type(exc).__name__)
+            logger.error(msg)
             return False, msg
 
         msg = f"✅ 官网 API 解析完成，输出目录：{output_dir}"
@@ -234,6 +261,22 @@ class CloudClient(PdfParseClient):
         return True, msg
 
     # ---- 步骤实现 ----
+    def recover_pdf(self, req: ParseRequest, batch_id: str) -> tuple[bool, str]:
+        """Read an existing provider task and materialize it, without POST/PUT."""
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', batch_id):
+            raise ValueError('invalid upstream task ID')
+        self.last_batch_id = batch_id
+        try:
+            self._event('poll', task_id=batch_id)
+            result=self._poll_batch(batch_id, file_name=req.pdf_path.with_suffix('.pdf').name)
+            if result.get('state')!='done' or not result.get('full_zip_url'):
+                return False, 'existing cloud result not ready'
+            self._event('download', task_id=batch_id)
+            self._materialize(result['full_zip_url'],req.output_dir,req.pdf_path.stem)
+            return True, 'existing task recovered'
+        except Exception as error:
+            return False, 'existing task recovery failed: '+type(error).__name__
+
     def _resolve_model_version(self, req: ParseRequest) -> str:
         backend = (req.backend or "").strip()
         if backend in _VALID_MODEL_VERSIONS:
@@ -257,26 +300,35 @@ class CloudClient(PdfParseClient):
             "enable_formula": bool(req.formula_enable),
             "enable_table": bool(req.table_enable),
         }
+        headers = self._headers()  # validate configuration before marking submission
+        self._event('submitting', backend='vlm')
         resp = self._request_with_retry(
             "POST",
             f"{self.api_base}/api/v4/file-urls/batch",
-            headers=self._headers(),
+            headers=headers,
             json=payload,
             retries=3,
         )
         if resp.status_code != 200:
             return self._raise_for_response(resp)
-        data = resp.json()
+        try:
+            data = resp.json()
+            if not isinstance(data, dict): raise ValueError('object required')
+        except (ValueError, TypeError):
+            self._event('submission_unknown', error_code='invalid_json')
+            raise RuntimeError('submission response invalid; inspect before retry') from None
         code = data.get("code")
         if code != 0:
             # -60018 日上限：不重试，直接抛
-            raise RuntimeError(f"创建批次失败 code={code} msg={data.get('msg')} (trace_id={data.get('trace_id')})")
+            raise RuntimeError(f'provider rejected submission: code={code}')
         d = data.get("data") or {}
         batch_id = d.get("batch_id")
         file_urls = d.get("file_urls") or []
         if not batch_id or not file_urls:
-            raise RuntimeError(f"返回缺字段：{data}")
+            self._event('submission_unknown', error_code='invalid_response')
+            raise RuntimeError('submission response missing fields')
         self.last_batch_id = batch_id
+        self._event('upstream_submitted', task_id=batch_id)
         return batch_id, file_urls[0]
 
     def _upload_file(self, upload_url: str, pdf_path: Path) -> None:
@@ -326,7 +378,7 @@ class CloudClient(PdfParseClient):
         content_list = self._find(raw_dir, "content_list.json")
 
         if not full_md:
-            raise RuntimeError(f"结果包中找不到 full.md（已保留原始 zip: {package_zip}）")
+            raise MissingMarkdown('missing full.md; original package retained')
 
         # content.md / content.json 写到契约位置 output_dir 根
         (output_dir / "content.md").write_text(full_md.read_text(encoding="utf-8"), encoding="utf-8")
@@ -379,8 +431,7 @@ class CloudClient(PdfParseClient):
 
     @staticmethod
     def _raise_for_response(resp: requests.Response) -> Any:
-        body = resp.text[:500]
-        raise RuntimeError(f"HTTP {resp.status_code}: {body}")
+        raise RuntimeError(f'provider HTTP {resp.status_code}')
 
     def is_parsed(self, folder_path: Path) -> bool:
         return self._check_parsed(folder_path)

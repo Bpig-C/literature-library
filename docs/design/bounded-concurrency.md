@@ -1,85 +1,85 @@
-# Bounded Concurrency Design: Ingest / Parse / Asset Persistence (Issue #7)
+# 生产任务有界并发与恢复设计（Issue #7）
 
-Status: **Design Draft** — for review; no code changes proposed yet.
+状态：**2026-10-22 审查修订，尚未完成实现/容量验收**。承接 [#7](https://github.com/Bpig-C/literature-library/issues/7)，纳入[整体更新方案 U04/U05](system-update-plan-20261022.md)。旧三阶段方案保留于 Git 历史，不再作为直接实施依据。
 
-## Problem
+用户本轮明确以科研功能规划为主，其他功能做到基础闭环：下述幂等、额度、恢复和维护保障纳入必要基础，高并发提速与跨进程容量优化作为后续设计，不阻塞科研规划。基础解析先保持并发 1。
 
-The current producer pipeline serializes ALL ingest/parse operations behind a
-single global `.producer.lock`, and the HTTP write gate wraps each request in
-an authority `write_guard` with `timeout=0`. A batch of 22 files takes
-~22× individual parse time. Different sources cannot proceed in parallel.
+2026-10-22 基础实现补充（候选，尚未部署）：新增持久计划、预算预留、分步执行和已知云任务恢复；保留整请求 authority guard，并将 parse/resume/release 重新统一在全局 producer 锁下，旧请求内线程池停止用于生产提速。下表仍是审查基线 d538f92 的事实，后续短锁/多 worker 方案仍未实施。可用接口见[客户端手册](../foundation-client.md)。
 
-## Observed Constraints (from issue #7 + code review)
+## 审查结论与当前实现
 
-1. `file_lock(lock_path(service))` — single lock for the entire catalog;
-   `parse_source` holds it for the full prepare→parse→package→upload→register
-   cycle (~30-120s per source)
-2. `trigger_production` iterates sources synchronously within one request
-3. `file_lock` default timeout 30s → `busy` error, but authority `write_guard`
-   uses `timeout=0` → immediate 409 for concurrent HTTP writes
-4. `busy` mapping to HTTP is inconsistent: authority 409 vs parse-trigger
-   returning 200 with per-item failed status
+基于 `d538f9248ce73ce1e4b831037dd0c3b16e0c13fb`：
 
-## Proposed Design
-
-### Phase 1: Per-Source Locking (backward-compatible, low risk)
-
-Replace the single `.producer.lock` with a per-source lock file:
-```
-.producer-{source_file_id}.lock
-```
-
-- `parse_source(source_id)` acquires only its own source's lock
-- Different sources can parse concurrently (bounded by a configurable semaphore)
-- Same source still fully serialized (immutable version chain preserved)
-- `trigger_production` can dispatch sources to a thread pool
-
-Concurrency limit: `LITLIB_PARSE_CONCURRENCY` env var (default 1 for
-backward compat; production recommendation 2-4 based on CPU/RAM).
-
-### Phase 2: Unified Busy Contract
-
-Standardize all lock-conflict responses:
-
-| Layer | Current | Proposed |
+| 项目 | 已有实现 | 尚未解决 |
 |---|---|---|
-| authority write_guard | 409 immediate | 409 with `Retry-After` header + JSON body `{"code":"busy","detail":"...","retry_after":N}` |
-| producer file_lock | `StorageError('busy')` after 30s | Same 409 + Retry-After |
-| parse trigger per-item | 200 with `failed` status | Unchanged (batch result), but each item carries `{"code":"busy"}` for retry |
+| 解析锁 | parse_source 已按 Source 加文件锁 | ingest/resume/release 仍走另一全局锁，互斥范围未统一 |
+| 批量执行 | 每次 trigger 创建 ThreadPoolExecutor，默认并发 1 | 不是跨请求/进程 semaphore，也不控制 provider 账户额度 |
+| authority | 写请求外层持锁至 call_next 完成 | 长解析占用全局写权限；不同 HTTP 写请求仍竞争同一锁 |
+| busy | 外层 409 已带 Retry-After | 各入口/批内条目契约仍不一致；等待提示不等于重放幂等 |
+| 持久状态 | producer job、storage operation、artifacts_ready 后 resume 已有 | 上游提交阶段、预算预留、请求幂等与跨进程调度尚不完整 |
+| force | 可创建新 Parse 版本 | 响应丢失后重复 force 可能创建新任务，不能当重试使用 |
 
-Client guidance: on 409 busy, wait `Retry-After` seconds, retry same
-operation ID (idempotent by design).
+因此，“拆 Source 锁 → 增大线程池 → 超过 50 篇才做队列”的旧实施顺序不通过。队列与幂等是断线恢复、限额和维护的基础，小批也需要。当前实现可作为迁移基础，不能据此承诺跨 HTTP 并发或默认推荐 2—4。
 
-### Phase 3: Asynchronous Batch Queue (future)
+证据入口：[producers.py](../../api/storage/producers.py)、[remote_access.py](../../api/remote_access.py)、[authority.py](../../api/storage/authority.py)、[parse routes](../../api/routes/parse.py)。本次未提高生产并发或进行压力测试。
 
-For very large batches (>50 files):
-- `POST /api/parse/trigger` returns `202 Accepted` with a batch job ID
-- Client polls `GET /api/parse/jobs?batch_id=X` for progress
-- Server-side worker pool processes at bounded concurrency
-- Each item retains individual retry/resume semantics
+## 1. 兼容与身份
 
-This requires a durable job queue table; defer until Phase 1+2 are
-validated with real concurrent load.
+扩展既有 producer/operation，不建立互不相认的平行队列。保留固定 Work/Source/Parse/资产身份与原历史。跨进程统一规范化 catalog/锁根；Source ID 从目录校验后转为安全锁键，路径别名不能生成两套锁。
 
-## Implementation Estimate
+同 Source 的版本分配、活动任务、resume、release 共用所有权规则。事务内检查活动意图并预留版本，以唯一约束抵抗竞争；不得仅靠读取 MAX(version)+1。请求幂等键绑定 Source、目标后端、参数及基线版本摘要：重放返回原 job，换参数则冲突。
 
-| Phase | Scope | Est. Lines | Risk |
-|---|---|---|---|
-| Phase 1 | producers.py lock refactor + semaphore | ~80 | Low |
-| Phase 2 | authority.py + remote_access.py + parse.py | ~60 | Medium |
-| Phase 3 | New batch queue + async handler | ~200 | Higher |
+采用版本化能力/新入口或显式协商异步模式，不能把现有同步 200 批结果悄悄换成 202。旧客户端在迁移期保持明确契约。查询复用并扩展现有 `/api/parse/jobs`，支持按精确 job/Parse 查询；Work 级最近成功摘要不代表当前新作业状态。
 
-## What Does NOT Change
+## 2. 临界区与执行阶段
 
-- Immutable storage mode and SHA-addressed object integrity
-- Authority epoch chain and write_guard (still enforced per request)
-- Version chain per source (still serialized within a source)
-- Client retry semantics (same operation ID)
-- Read operations (already concurrent, no lock)
+1. **接受任务**：认证及写权限检查后，在短 authority guard + SQLite 事务内检查冻结/epoch、请求幂等、Source 状态、版本、活动占用与预算；登记 queued，提交后返回可查询 job。
+2. **领取任务**：原子领取持久执行租约及代次，记录 epoch/worker/截止时间；取得 Source 所有权和必要 pin。租约过期不等于可立即重复云提交，须先核对上游阶段。
+3. **执行解析**：长 CPU、上传、轮询、下载和打包不持全局 authority 锁。外部任务 ID 一旦可得立即落库；所有 job/operation 状态写入仍经过短 authority 检查，不能只保护最终业务表。
+4. **准备产物**：保留 staging 归属、清单、SHA/bytes、包成员与目标绑定。不可变对象上传可先完成，尚未登记的对象不是可用成果；失败保留受控恢复材料。
+5. **最终登记**：在同一短 authority 保护区内复核当前 epoch、冻结标记、租约代次、Source/版本、预期任务状态、资产摘要与绑定；再提交目录状态。检查后释放锁再提交存在竞态，不允许。
+6. **完成/恢复**：已注册重放只回读；artifacts_ready 仅恢复发布登记。没有完整产物的历史失败须显式决定新解析意图，不伪装为旧 job resume。
 
-## Open Questions (for user decision)
+中间件不能简单移除 authority 检查。只对已迁移到上述协议的入口调整长请求锁范围；普通写接口保留原保护，后台 worker/脚本必须走相同短写入口。研究库业务仍按既有跨库一致性边界处理，不假设 SQLite 两库天然原子。
 
-1. Default concurrency limit: 1 (safe) vs 2 (moderate speedup) vs 4 (aggressive)?
-2. Memory budget for concurrent PyMuPDF parsing? (Each instance ~50-200MB)
-3. Should Phase 2's `Retry-After` be respected by `litlib_remote.py` automatically?
-4. Priority: implement Phase 1 only first, or Phase 1+2 together?
+authority 临界区内不得等待长 Source 锁、网络解析或任务排空；长等待在进入临界区前完成，区内用可失败的所有权检查，避免维护线程与 producer 互相等待。SQLite 事务内不做远端网络操作。
+
+当前只设计单权威主机内多进程调度，共用锁根和持久队列；多主机 worker 不由本机文件锁自动保护，需要另外的协调/原子 fencing 方案，不在首版开放。
+
+## 3. 上游与不确定结果
+
+持久阶段至少区分 queued、submitting、upstream_submitted、artifacts_ready、registered，以及 failed、submission_unknown、blocked_budget 和取消状态。最终枚举与迁移映射在实现中统一。
+
+本地先写 submitting 无法保证上游“恰好一次”：上游接受后响应丢失仍可能没有 task_id。若 provider 有幂等键/查询能力则复用；否则标 submission_unknown，保留预算和可核查请求指纹，禁止自动重提交。轮询、结果下载、登记失败分别恢复，不重跑已完成解析。
+
+失败响应需有 job/operation、stage、error_code、retryable/recovery_action、已知上游 task_id 及有限脱敏摘要。`Retry-After` 仅表明何时重新查询/尝试允许的步骤，不授权盲重放产生新版本。批结果保留每项状态；全局接受失败、队列满、预算不足、版本冲突分别表达。
+
+## 4. 全局容量与预算
+
+- 按后端分别限运行任务、外部提交、轮询、下载、对象上传，以及内存/临时盘/缓存 pin 的占用。
+- 限制由持久队列和跨进程领取事务执行，不能每个请求各建一个自认为全局的 semaphore。
+- 账户额度、一次计划预算、已预留、已确认使用、未知使用分列。预算单位按 provider 实际计费/限制定义，不能只限制线程数或假定每篇同价。
+- 领取/提交前原子预留，未知上游结果不释放；只有确认未消费时才回收。额度不足暂停剩余项，可导出明确剩余清单。
+- 首版执行并发 1；隔离测试和获准有限样本测量后再调节。优先级规则须防止低优先级无限饥饿，运行中不无故抢占会收费的云任务。
+
+## 5. 维护、取消与回收
+
+维护状态必须持久化并阻止新接收/领取。排空正在提交的事务；对执行中的云任务选择等待完成或持久暂停查询，记录 task_id/预算/恢复动作。只有已知所有写路径静默后才能取两库一致快照。管理作业运行于业务 API 之外，API 被停止后仍可完成备份并恢复服务。
+
+handover 后旧 worker 的最终登记及所有状态写入均被 fencing；新 worker 根据持久记录核对上游，再接续安全步骤。旧进程迟到产物不能覆盖已登记版本。短锁方案必须证明这一点后才能替代整请求锁。
+
+取消表示停止后续可停止步骤，不保证上游已经停止或退款；已创建任务仍跟踪结果与消耗。release/cache 清理必须核查活动租约、pin、staging 归属和固定资产已验证可取回，不能用超时或文件年龄直接删除。
+
+## 6. 实施分段和验收
+
+| 顺序 | 交付 | 必须通过 |
+|---|---|---|
+| 1 | 错误阶段、精确任务查询、幂等与持久队列 | 响应丢失返回原 job；同键换参冲突；旧状态可迁移 |
+| 2 | 固定清单、额度预留、并发 1 恢复 | 超预算停止；未知提交不重复；artifacts_ready 不重跑 |
+| 3 | 短 authority 临界区、统一 Source 所有权 | 冻结/交接/迟到 worker 故障测试；无重复版本/覆盖 |
+| 4 | 跨进程资源限流、维护/取消联动 | 总并发不超限；维护能排空；清理不抢占资源 |
+| 5 | 获准小样本容量验证 | 两不同 Source 实际重叠；报告吞吐、尾延迟、资源/错误率和额度 |
+
+故障矩阵必须覆盖：接受后断线、提交响应丢失、上游成功后进程退出、上传中断、最终登记前冻结、旧 epoch worker 复活、同 Source 并发 force、resume 与 release 竞争、多个进程同时领取、维护进程退出。先用本地 fake provider 和隔离数据库，不以生产收费故障注入代替测试。
+
+观测分别记录排队/提交/上游/下载/登记耗时和 active/queued/unknown/blocked 数，区分客户端查询并发与生产并发。只有容量验收后才调整默认值；只通过线程池测试不能关闭 #7。

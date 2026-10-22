@@ -123,13 +123,15 @@ def test_daily_limit_not_retried(monkeypatch, tmp_path):
 
     client = cc.CloudClient()
     client.poll_interval = 0
+    events = []
+    client.on_progress = lambda stage, **fields: events.append((stage, fields))
     ok, msg = client.parse_pdf(ParseRequest(pdf_path=pdf, output_dir=tmp_path / "o"))
     assert not ok
-    assert "-60018" in msg or "每日" in msg
+    assert any(fields.get('provider_code') == -60018 for stage, fields in events)
 
 
-def test_queue_full_retried(monkeypatch, tmp_path):
-    """code=-60009 队列已满：应退避重试，最终成功。"""
+def test_queue_full_submission_not_retried(monkeypatch, tmp_path):
+    """Each submission consumes one local reservation; no implicit POST retries."""
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4")
     attempts = {"n": 0}
@@ -152,12 +154,53 @@ def test_queue_full_retried(monkeypatch, tmp_path):
     client = cc.CloudClient()
     client.poll_interval = 0
     ok, msg = client.parse_pdf(ParseRequest(pdf_path=pdf, output_dir=tmp_path / "o"))
-    assert ok, msg
-    assert attempts["n"] >= 2  # 至少重试过一次
+    assert not ok
+    assert attempts["n"] == 1
+
+
+def test_lost_post_response_is_unknown_not_retried(monkeypatch, tmp_path):
+    pdf=tmp_path/'x.asset';pdf.write_bytes(b'%PDF')
+    calls=[];events=[]
+    def lost(*a,**k):
+        calls.append(1);raise TimeoutError('https://signed.invalid/?private-token')
+    monkeypatch.setattr(cc.requests,'request',lost)
+    monkeypatch.setattr(cc,'_detect_is_ocr',lambda *a:False)
+    client=cc.CloudClient();client.on_progress=lambda stage,**fields:events.append((stage,fields))
+    ok,msg=client.parse_pdf(ParseRequest(pdf_path=pdf,output_dir=tmp_path/'out'))
+    assert not ok and len(calls)==1
+    assert any(stage=='submission_unknown' for stage,fields in events)
+    assert 'private-token' not in msg
+
+
+def test_task_id_is_reported_before_upload(monkeypatch,tmp_path):
+    pdf=tmp_path/'x.pdf';pdf.write_bytes(b'%PDF');events=[]
+    monkeypatch.setattr(cc,'_detect_is_ocr',lambda *a:False)
+    monkeypatch.setattr(cc.requests,'request',lambda *a,**k:_FakeResp(200,{'code':0,'data':{'batch_id':'upstream-1','file_urls':['secret-url']}}))
+    client=cc.CloudClient();client.on_progress=lambda stage,**fields:events.append((stage,fields))
+    def fail_upload(*a):
+        assert any(stage=='upstream_submitted' and fields['task_id']=='upstream-1' for stage,fields in events)
+        raise OSError('signed URL must not be returned')
+    monkeypatch.setattr(client,'_upload_file',fail_upload)
+    ok,msg=client.parse_pdf(ParseRequest(pdf_path=pdf,output_dir=tmp_path/'out'))
+    assert not ok and client.last_batch_id=='upstream-1' and 'signed URL' not in msg
 
 
 def test_helpers():
     assert cc._sanitize_data_id("2406.10162v3 / foo:bar") == "2406.10162v3---foo-bar"
+
+
+def test_recover_existing_task_only_reads(monkeypatch,tmp_path):
+    pdf=tmp_path/'cached.asset';pdf.write_bytes(b'%PDF')
+    out=tmp_path/'out';out.mkdir();calls=[]
+    def get_result(method,url,**kwargs):
+        calls.append(method)
+        assert method=='GET'
+        return _FakeResp(200,{'code':0,'data':{'extract_result':[{'file_name':'cached.pdf','state':'done','full_zip_url':'https://example.invalid/result'}]}})
+    monkeypatch.setattr(cc.requests,'request',get_result)
+    monkeypatch.setattr(cc.requests,'get',lambda *a,**k:_FakeResp(200,content=_make_result_zip()))
+    monkeypatch.setattr(cc.requests,'put',lambda *a,**k:pytest.fail('re-uploaded'))
+    ok,msg=cc.CloudClient().recover_pdf(ParseRequest(pdf_path=pdf,output_dir=out),'existing-task')
+    assert ok and calls==['GET'] and (out/'content.md').is_file()
     assert cc._normalize_language(["en", "ch"]) == "en"
     assert cc._normalize_language("") == "ch"
     assert cc._extract_json_from_text('noise ```json\n{"a":1}\n``` end') == {"a": 1}

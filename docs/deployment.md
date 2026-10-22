@@ -1,5 +1,12 @@
 # Controlled backup and complete recovery
 
+The [foundation client and host guide](foundation-client.md) describes the
+additive backup queue, independent worker configuration, parse plan tables and
+client capabilities. The worker must survive API maintenance and use a clean,
+full-history code checkout at the live commit. Its scheduler is not installed
+by publishing code. Validate the host adapter and cold recovery before enabling
+remote backup requests in production.
+
 ## Continuous operation candidate
 
 New-machine examples use the restored wrapper so roots are applied only within the subprocess: `restored_runtime.py run-cli --root <B> --authority-control storage_authority.py initialize`, then `freeze` before the final migration backup. Backup scheduling uses `run-cli --root <B> --authority-control storage_backup.py --catalog <absolute-catalog> tick ... --writers-stopped`. Administrative control is separate from business write permissions. Inject authority and transport tokens in the process environment; do not place them in environment.json. Without the authority's local catalog, `storage_backup.py discover-remote --namespace <exact-namespace>` uses standard OSS process credentials to fetch the retained verified choices; an authenticated running authority also exposes `/api/remote/backups`. Discovery indexes are small immutable objects published before local registration, and each returned manifest SHA/identity/code commit is verified. Neither a failed index publication nor an old snapshot replay completes a due backup.

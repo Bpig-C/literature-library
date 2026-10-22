@@ -155,6 +155,8 @@ def _run_parse(source_path: str, output_dir, language: str,
     from core.mineru.cloud_client import CloudClient  # noqa: PLC0415（惰性）
     from core.mineru.pymupdf_client import PyMuPDFClient  # noqa: PLC0415（惰性）
     cloud = CloudClient()
+    from ..producer_events import emit
+    cloud.on_progress = emit
     pymupdf = PyMuPDFClient()
     ok, msg, backend_used = route_and_parse(cloud, pymupdf, source_path, Path(output_dir),
                                             language, backend=backend)
@@ -184,7 +186,7 @@ def parse_jobs(work_id: str | None = None, source_file_id: str | None = None,
     (preparing/artifacts_ready/registered/failed), backend, error_code, and
     the associated storage_operations state when a binding was registered.
     """
-    from ..db import get_conn as _get_lib_conn
+    from ..db import get_read_conn as _get_lib_conn
     conn = _get_lib_conn()
     try:
         where, params = ["1=1"], []
@@ -208,6 +210,9 @@ def parse_jobs(work_id: str | None = None, source_file_id: str | None = None,
         jobs = []
         for r in rows:
             d = dict(r)
+            from ..producer_events import read as read_diagnostics
+            d['diagnostics'] = read_diagnostics(conn, d['job_id'])
+            d.pop('output_dir', None)
             # look up durable operation state for the binding if registered
             if d.get("parse_run_id"):
                 op = conn.execute(
@@ -227,6 +232,31 @@ def parse_jobs(work_id: str | None = None, source_file_id: str | None = None,
 class ResumeBody(BaseModel):
     job_id: str  # the parse producer job to resume (state=artifacts_ready)
     force: bool = False  # must be true to signal explicit operator intent
+
+
+def _recover_parse(source_path, output_dir, task_id):
+    _load_env_file()
+    from core.mineru.cloud_client import CloudClient
+    from core.mineru.base_client import ParseRequest
+    from core.mineru.router import _maybe_build_detail_assets
+    from ..producer_events import emit
+    cloud=CloudClient();cloud.on_progress=emit
+    ok,msg=cloud.recover_pdf(ParseRequest(pdf_path=Path(source_path),output_dir=Path(output_dir)),task_id)
+    if ok:_maybe_build_detail_assets(Path(source_path),Path(output_dir))
+    return ok,msg,'vlm',task_id
+
+
+@router.post('/parse/recover')
+def parse_recover(body: ResumeBody):
+    from ..storage.producers import recover_cloud_producer
+    from ..storage.runtime import enabled
+    from ..storage.core import StorageError
+    if not body.force: raise HTTPException(400,'recover requires force=true (query existing cloud task only)')
+    if not enabled(): raise HTTPException(400,'immutable storage required')
+    try:job=recover_cloud_producer(body.job_id,_recover_parse)
+    except StorageError as error:
+        raise HTTPException(409 if error.code in ('producer_incomplete','revision_conflict') else 422, error.code)
+    return {'job_id':job['id'],'state':job['state'],'parse_run_id':job['parse_run_id'],'task_id':job['task_id'],'version':job['version']}
 
 
 @router.post("/parse/resume")

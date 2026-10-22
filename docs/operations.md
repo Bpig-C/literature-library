@@ -32,6 +32,23 @@ The first authorized write adds both purpose tables; queries/dry-run leave legac
 catalogs untouched. The migration does not backfill historical purposes. Continue
 using the current authentication/authority gates for writes and deployment.
 
+## Planned system update
+
+The foundation implementation and deploy-time configuration are described in the
+[client guide](foundation-client.md). It adds frozen parse plans, conservative
+budgets, exact intake reconciliation, persistent diagnostics and a separate host
+backup worker. These capabilities require deploying the corresponding commit;
+Git publication alone does not enable them on an existing server.
+
+The [2026-10-22 system update plan](design/system-update-plan-20261022.md)
+maps open GitHub and local issues to staged implementation and acceptance tickets.
+It covers backup access, intake reconciliation, quota-aware parsing, concurrency,
+versioned metadata, export and research workflows. Proposed CLI commands in that
+plan are not available capabilities until implemented and published. The
+[concurrency review](design/bounded-concurrency.md) replaces the earlier draft;
+existing per-source locks and a request-local thread pool do not establish global
+scheduling, quota control or safe retry semantics.
+
 ## Snapshot and recovery safety
 
 Weekly policy does not install a scheduler. Check the actual host task and its
@@ -67,8 +84,9 @@ uses the same name. No unmanaged cache sibling copy is needed.
 
 ## Read-only lookup and source provenance
 
-`POST /api/duplicates/lookup` remains an authenticated query. Only this exact
-path (including its trailing-slash redirect) with method POST bypasses the
+`POST /api/duplicates/lookup` remains an authenticated query. Its exact path,
+`/api/parse/plan` and `/api/intake/reconcile` (including their trailing-slash
+redirects) with method POST bypass the
 remote write gate and authority write guard. Other methods and mutating routes
 keep their existing gates. Lookup opens the catalog with SQLite `mode=ro` and
 `query_only`; registry validation also uses read-only connections. It does not
