@@ -34,6 +34,9 @@ using the current authentication/authority gates for writes and deployment.
 
 ## Planned system update
 
+See the [foundation implementation report](foundation-implementation-20261022.md)
+for the completed candidate scope, validation and deployment prerequisites.
+
 The foundation implementation and deploy-time configuration are described in the
 [client guide](foundation-client.md). It adds frozen parse plans, conservative
 budgets, exact intake reconciliation, persistent diagnostics and a separate host
