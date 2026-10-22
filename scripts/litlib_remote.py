@@ -78,6 +78,8 @@ def main(argv=None):
     r=sub.add_parser('status');g=r.add_mutually_exclusive_group(required=True);g.add_argument('--plan-id');g.add_argument('--job-id')
     r=sub.add_parser('resume');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
     r=sub.add_parser('recover');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('abandon');r.add_argument('--plan-id',required=True);r.add_argument('--position',type=int,required=True)
+    r.add_argument('--reason',required=True);r.add_argument('--job-id');r.add_argument('--execute',action='store_true')
     a=p.parse_args(argv);base=base_url(a.server);token=os.environ.get('LITLIB_REMOTE_TOKEN','')
     if len(token)<32:raise ValueError('LITLIB_REMOTE_TOKEN must be supplied in process environment')
     headers={'Authorization':'Bearer '+token};opener=build_opener(NoRedirect,HTTPSHandler(context=tls_context(a.ca_file)))
@@ -90,6 +92,7 @@ def main(argv=None):
                 if len(data)>8*1024*1024:raise ValueError('response exceeds client budget')
                 return json.loads(data)
         needed={'parse':'parse_plans_v1','intake':'intake_reconcile_v1','backup':'backup_jobs_v1','guide':'foundation_guide_v1'}[a.command]
+        if a.command=='parse' and a.action=='abandon':needed='parse_resolution_v1'
         version,code=check_version(opener,base,headers,a.timeout,required=[needed])
         if code:print(json.dumps(version,ensure_ascii=False));return code
         def output(value):print(json.dumps(value,ensure_ascii=False,indent=2),flush=True)
@@ -118,6 +121,9 @@ def main(argv=None):
             path='/api/parse/plans/'+quote(a.plan_id,safe='') if a.plan_id else '/api/parse/jobs?'+urlencode({'job_id':a.job_id})
             output(request(path));return 0
         if not a.execute:raise ValueError('explicit --execute required')
+        if a.action=='abandon':
+            output(request('/api/parse/plans/'+quote(a.plan_id,safe='')+'/abandon',
+                           dict(position=a.position,reason=a.reason,job_id=a.job_id,force=True)));return 0
         if a.action in ('resume','recover'):output(request('/api/parse/'+a.action,{'job_id':a.job_id,'force':True}));return 0
         if a.action=='run':
             result=request('/api/parse/plans',dict(plan=json.loads(a.plan.read_text('utf-8-sig')),request_id=a.request_id,

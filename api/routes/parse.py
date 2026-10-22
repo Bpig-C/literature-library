@@ -212,6 +212,8 @@ def parse_jobs(work_id: str | None = None, source_file_id: str | None = None,
             d = dict(r)
             from ..producer_events import read as read_diagnostics
             d['diagnostics'] = read_diagnostics(conn, d['job_id'])
+            from ..producer_recovery import read as read_recovery
+            d['recovery'] = read_recovery(conn, d['job_id'])
             d.pop('output_dir', None)
             # look up durable operation state for the binding if registered
             if d.get("parse_run_id"):

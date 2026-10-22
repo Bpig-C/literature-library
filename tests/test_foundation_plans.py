@@ -170,3 +170,93 @@ def test_tampered_plan_and_unknown_fields_rejected(service):
     plan['sha256']=plans.digest({k:plan[k] for k in ('format','selection','items')})
     with pytest.raises(StorageError,match='selection changed'):plans.accept(service.registry,plan,'tampered',1,1)
     with pytest.raises(ValueError):plans.Selection(backend='vlm',purpose='x',ignore_unknown=True)
+
+
+def test_reconcile_receipts_match_exact_source_or_work_scope(service,monkeypatch):
+    monkeypatch.setattr(foundation,'get_read_conn',lambda:sqlite_read(service.registry.catalog))
+    with service.registry.conn(write=True) as conn:
+        conn.execute("INSERT INTO source_files VALUES('SF1b','W1','unused',?,10,'active','2026-10-22T00:00:00Z')",('b'*64,))
+    body=foundation.Reconcile(items=[foundation.IntakeItem(client_id='b',sha256='b'*64,work_id='W1',request_id='R1',purpose='deception')])
+    assert foundation.reconcile(body)['items'][0]['purpose_state']=='missing'
+    assert preview(service,source_file_ids=['SF1b'],request_ids=['R1'])['items']==[]
+    with service.registry.conn(write=True) as conn:
+        conn.execute("UPDATE ingest_notes SET source_file_id=NULL WHERE request_id='R1'")
+    assert foundation.reconcile(body)['items'][0]['purpose_state']=='confirmed'
+    assert len(preview(service,source_file_ids=['SF1b'],request_ids=['R1'])['items'])==1
+
+
+def test_crash_during_registration_rolls_back_job_and_plan_link(service,monkeypatch):
+    plan=preview(service);pid=plans.accept(service.registry,plan,'atomic-link',2,2)['plan_id']
+    original=producers.parse_source
+    def crash(*args,**kwargs):
+        callback=kwargs['on_registered']
+        def link(conn,jid):
+            callback(conn,jid)
+            raise KeyboardInterrupt('simulated process death before commit')
+        kwargs['on_registered']=link
+        return original(*args,**kwargs)
+    monkeypatch.setattr(producers,'parse_source',crash)
+    with pytest.raises(KeyboardInterrupt):plans.step(service,pid,runner([]),count_pages=lambda p:1)
+    state=plans.status(service.registry,pid)
+    assert state['items'][0]['state']=='running' and state['items'][0]['job_id'] is None
+    with service.registry.conn(read_only=True) as conn:
+        assert conn.execute("SELECT count(*) FROM storage_producer_jobs WHERE kind='parse'").fetchone()[0]==0
+    resolved=plans.abandon(service,pid,0,'Inspected before submission')
+    assert resolved['items'][0]['state']=='abandoned' and resolved['budget']['reserved_submissions']==1
+    assert resolved['resolutions'][0]['reason']=='Inspected before submission'
+    monkeypatch.setattr(producers,'parse_source',original)
+    assert plans.step(service,pid,runner([]),count_pages=lambda p:1)['items'][1]['state']=='succeeded'
+
+
+def test_committed_crash_and_legacy_orphan_have_audited_exit(service,monkeypatch):
+    from api import producer_events
+    plan=preview(service);pid=plans.accept(service.registry,plan,'committed-crash',2,2)['plan_id']
+    @contextmanager
+    def crash(*args):raise KeyboardInterrupt('death after commit');yield
+    monkeypatch.setattr(producer_events,'capture',crash)
+    with pytest.raises(KeyboardInterrupt):plans.step(service,pid,runner([]),count_pages=lambda p:1)
+    state=plans.status(service.registry,pid);jid=state['items'][0]['job_id']
+    assert jid and state['items'][0]['producer']['state']=='preparing'
+    # A legacy pre-fix orphan is deliberately identified by the operator.
+    with service.registry.conn(write=True) as conn:
+        conn.execute('UPDATE parse_plan_items SET job_id=NULL WHERE plan_id=? AND position=0',(pid,))
+    with pytest.raises(StorageError,match='exact orphan'):plans.abandon(service,pid,0,'Inspected')
+    with pytest.raises(StorageError):plans.abandon(service,pid,0,'Inspected','unrelated-job')
+    resolved=plans.abandon(service,pid,0,'Confirmed interrupted before runner',jid)
+    assert resolved['items'][0]['producer']['state']=='failed'
+    with service.registry.conn(read_only=True) as conn:
+        assert conn.execute("SELECT count(*) FROM literature_parse_runs WHERE status='running'").fetchone()[0]==0
+        assert conn.execute("SELECT count(*) FROM parse_plan_items WHERE state='running'").fetchone()[0]==0
+    assert len(plans.abandon(service,pid,0,'Retry same request',jid)['resolutions'])==1
+
+
+def test_abandon_unknown_keeps_budget_and_prevents_fresh_submission(service):
+    from api.producer_events import emit
+    plan=preview(service);pid=plans.accept(service.registry,plan,'abandon-unknown',2,2)['plan_id']
+    def unknown(*args,**kwargs):
+        emit('submitting',backend='vlm');emit('submission_unknown')
+        raise TimeoutError()
+    result=plans.step(service,pid,unknown,count_pages=lambda p:2)
+    resolved=plans.abandon(service,pid,0,'Provider outcome still unknown; stop this item')
+    assert resolved['budget']==result['budget']
+    assert preview(service,source_file_ids=['SF1'])['excluded'][0]['reason']=='upstream_inspection_required'
+    assert plans.step(service,pid,runner([]),count_pages=lambda p:1)['items'][1]['state']=='succeeded'
+
+
+@pytest.mark.parametrize('unsafe',['foreign_file','bad_receipt','missing_receipt'])
+def test_portable_recovery_never_adopts_unowned_or_mismatched_output(service,unsafe):
+    from api.producer_events import emit
+    def interrupted(*args,**kwargs):
+        emit('upstream_submitted',task_id='known-task',backend='vlm')
+        raise TimeoutError()
+    with pytest.raises(TimeoutError):producers.parse_source('SF1',interrupted,backend='vlm',service=service)
+    with service.registry.conn(write=True) as conn:
+        job=conn.execute("SELECT * FROM storage_producer_jobs WHERE kind='parse'").fetchone()
+        out=Path(conn.execute('SELECT output_dir FROM literature_parse_runs WHERE id=?',(job['parse_run_id'],)).fetchone()[0])
+        if unsafe=='bad_receipt':conn.execute("UPDATE producer_recovery SET sha256=?",('f'*64,))
+        if unsafe=='missing_receipt':conn.execute('DELETE FROM producer_recovery')
+    assert out.resolve().is_relative_to(service.registry.catalog.parent.resolve())
+    (out/'.litlib-producer-owned.json').unlink()
+    if unsafe=='foreign_file':(out/'foreign.txt').write_text('preserve this')
+    with pytest.raises(StorageError):producers.recover_cloud_producer(job['id'],lambda *a:pytest.fail('unsafe cloud call'),service)
+    if unsafe=='foreign_file':assert (out/'foreign.txt').read_text()=='preserve this'

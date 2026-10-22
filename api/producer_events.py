@@ -22,6 +22,8 @@ def capture(registry, job_id):
             if value is not None and re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}', str(value)):
                 event[key] = value
         with registry.conn(write=True) as conn:
+            from .producer_recovery import record_stage
+            record_stage(conn, job_id, stage)
             conn.execute('CREATE TABLE IF NOT EXISTS producer_diagnostics(job_id TEXT PRIMARY KEY, detail TEXT NOT NULL)')
             prior = conn.execute('SELECT detail FROM producer_diagnostics WHERE job_id=?', (job_id,)).fetchone()
             history = json.loads(prior[0]) if prior else []

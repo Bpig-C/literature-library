@@ -16,7 +16,7 @@ from .authority import Authority
 from .backends import oss_from_environment
 from .release_control import prepare, stage, publish, digest, write, bindings
 from .backup_catalog import run_due, record_verified
-from ..backup_jobs import now, root as control_root
+from ..backup_jobs import BackupPreflightError, now, root as control_root
 
 
 def require(condition, message):
@@ -24,6 +24,17 @@ def require(condition, message):
 
 
 def execute(config, job_id, *, preview=False):
+    phase = {'entered': False}
+    try:
+        return _execute(config, job_id, preview=preview, phase=phase)
+    except Exception as error:
+        if not phase['entered']:
+            raise BackupPreflightError(getattr(error, 'code', 'backup_preflight_failed'),
+                                       'backup preflight failed before maintenance') from error
+        raise
+
+
+def _execute(config, job_id, *, preview, phase):
     from scripts.snapshot_inputs import refresh
     from scripts.litlib_remote import base_url, NoRedirect, tls_context
     from urllib.request import HTTPSHandler
@@ -67,12 +78,18 @@ def execute(config, job_id, *, preview=False):
         def quiet():
             with closing(sqlite3.connect(Path(environment['LITLIB_DB_PATH']).as_uri()+'?mode=ro',uri=True)) as conn:
                 conn.execute('PRAGMA query_only=ON')
-                for query in ("SELECT count(*) FROM literature_parse_runs WHERE status IN ('running','pending')",
+                for query in ("SELECT count(*) FROM literature_parse_runs WHERE status='running'",
                               "SELECT count(*) FROM storage_operations WHERE state!='registered'",
                               "SELECT count(*) FROM storage_producer_jobs WHERE state NOT IN ('registered','failed')"):
                     require(conn.execute(query).fetchone()[0]==0,'active work; complete or reconcile before maintenance')
                 if conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plan_items'").fetchone():
                     require(conn.execute("SELECT count(*) FROM parse_plan_items WHERE state='running'").fetchone()[0]==0,'interrupted parse plan requires inspection')
+                # Legacy failed cloud jobs have no portable output ownership.
+                # Do not call their snapshot recoverable until coordinated.
+                from ..producer_recovery import read
+                conn.row_factory=sqlite3.Row
+                for job in conn.execute("SELECT id FROM storage_producer_jobs WHERE kind='parse' AND state='failed' AND backend='vlm' AND task_id IS NOT NULL AND task_id!=''"):
+                    require(read(conn,job['id']) is not None,'legacy cloud job requires recovery before snapshot')
         def command(name):
             argv=config[name]
             require(isinstance(argv,list) and argv and all(isinstance(v,str) for v in argv),'maintenance argv required')
@@ -84,7 +101,7 @@ def execute(config, job_id, *, preview=False):
             with authority.write_guard():
                 quiet(); require(schema()['manifest_sha256']==live['manifest_sha256'],'runtime changed')
                 # Mark before invoking: a command may stop the service and then fail.
-                entered=True; command('maintenance_enter')
+                entered=True; phase['entered']=True; command('maintenance_enter')
             command('maintenance_verify_stopped')
             quiet(); authority.check_remote()
             final_inputs=refresh(template,slot)

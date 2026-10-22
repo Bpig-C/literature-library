@@ -15,6 +15,10 @@ from .storage.backup_catalog import read_catalog
 def now(): return datetime.now(timezone.utc).isoformat()
 
 
+class BackupPreflightError(StorageError):
+    """Executor proves maintenance was never entered; no recovery is needed."""
+
+
 def root():
     value = os.environ.get('LITLIB_BACKUP_CONTROL')
     if not value or not Path(value).is_absolute():
@@ -101,8 +105,11 @@ def run_one(execute):
         except Exception as error:
             # The executor may have entered maintenance: stop subsequent jobs
             # until its recovery receipt has been inspected by the host operator.
-            job.update(state='needs_attention',finished_at=now(),error_code=getattr(error,'code','backup_failed'),
-                       message='inspect host maintenance and receipt before resolving this job')
+            before_maintenance = isinstance(error, BackupPreflightError)
+            job.update(state='failed' if before_maintenance else 'needs_attention',finished_at=now(),
+                       error_code=getattr(error,'code','backup_failed'),
+                       message=('preflight failed before maintenance; correct the cause and use a new request'
+                                if before_maintenance else 'inspect host maintenance and receipt before resolving this job'))
         write(job_path(job['job_id']),job)
         write(directory/'worker.json',{'at':now(),'state':job['state']})
         return job

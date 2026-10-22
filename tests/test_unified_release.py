@@ -115,3 +115,41 @@ def test_restore_rejects_schema_contract_mismatch(release,tmp_path):
     with pytest.raises(StorageError,match='schema/contract'):
         restore_release(backend,manifest_key=key,manifest_sha256=sha,destination=tmp_path/'wrong-version',namespace=ns)
     assert not (tmp_path/'wrong-version').exists()
+
+
+def test_failed_cloud_task_recovers_after_full_cold_restore(release,tmp_path,monkeypatch):
+    from api import parse_plans
+    from api.producer_events import emit
+    from api.storage.producers import recover_cloud_producer
+    root,backend,ns,published,action,old_job,snap,config,code,files,frontend=release
+    service=configured_service()
+    with service.registry.conn(read_only=True) as conn:
+        pid=conn.execute('SELECT id FROM parse_plans').fetchone()[0]
+    def interrupted(*args,**kwargs):
+        emit('submitting',backend='vlm')
+        emit('upstream_submitted',task_id='existing-cloud-task')
+        raise TimeoutError('download interrupted')
+    failed=parse_plans.step(service,pid,interrupted,count_pages=lambda p:1)
+    jid=failed['items'][0]['job_id']
+    assert failed['items'][0]['producer']['state']=='failed'
+    receipt=publish_snapshot(tmp_path/'failed-cloud-snapshot',catalog=service.registry.catalog,
+        research=root/'research/research.sqlite',files=files,config=config,code=code,frontend=frontend,
+        namespace=ns,backend=backend,asset_index=published['manifest']['asset_index'])
+    entry=receipt['manifest_object'];target=tmp_path/'cold-cloud-client'
+    gc.collect();assert root.resolve().is_relative_to(tmp_path.resolve())
+    root.rename(tmp_path/'old-cloud-root-unavailable')
+    restore_release(backend,manifest_key=entry['key'],manifest_sha256=entry['sha256'],
+        destination=target,namespace=ns,expected_git_url=str(CODE))
+    assert not list(target.rglob('.litlib-producer-owned.json'))
+    for k,v in json.loads((target/'environment.json').read_text('utf-8')).items():monkeypatch.setenv(k,v)
+    restored=configured_service();calls=[]
+    def recover(pdf,out,task):
+        assert task=='existing-cloud-task';calls.append(task)
+        (out/'content.md').write_text('Recovered existing cloud output','utf-8')
+        return True,'ok','vlm',task
+    recovered=recover_cloud_producer(jid,recover,restored)
+    assert recovered['id']==jid and recovered['version']==2 and calls==['existing-cloud-task']
+    complete=parse_plans.step(restored,pid,lambda *a,**k:pytest.fail('must not submit again'))
+    assert complete['action']=='complete' and complete['budget']==failed['budget']
+    with restored.read(recovered['parse_run_id'],'md',2) as md:
+        assert md.read_text()=='Recovered existing cloud output'

@@ -76,6 +76,16 @@ MinerU POST 创建任务不自动重试；响应丢失或格式不明标为 `sub
 
 进程崩溃后如果 plan 显示 running，但 producer 未登记完成，会阻止自动重跑并要求检查。无需为恢复创建新 Work/Source；未获确认的结果保留原记录。新的解析意图和科研审核/采纳彼此独立。
 
+2026-10-23 起，producer 创建、可迁移恢复凭据和计划 job 关联在同一事务内提交。凭据 `producer_recovery` 保存 Source/Parse/版本、固定 PDF SHA/大小及提交阶段，随目录数据库快照保留，不含私有路径或凭证。已知云任务冷恢复后可在核对固定身份后重建空输出目录，继续读取同一 task；不接管有不明文件的目录，不覆盖部分不可变包。旧任务若没有该凭据，须在原 slot 恢复完成后再备份，备份预检会明确拒绝这类已知云任务。
+
+确认中断项无法按 resume/recover 完成、决定停止该项时，可使用以下入口（要求 `parse_resolution_v1` 能力和原有写权限）：
+
+```powershell
+python scripts/litlib_remote.py --server $server parse abandon --plan-id PP-实际ID --position 0 --reason "已核对中断阶段，停止本项并保留额度预留" --execute
+```
+
+`position` 是 status 返回的零起始编号。旧版本遗留的无关联 producer 必须核对 source/baseline 后额外提供 `--job-id`，服务拒绝猜测或关联别的计划。操作留存原因、时间、job 和结果，**不取消上游任务、不退还预留额度、不提交新任务**。已有完整产物必须 resume；已注册成功的项只协调成 succeeded。未知提交/已知未完成 task 的 Source 仍被新计划排除，不因 abandon 放行重复消费。之后可 continue 处理其余项目；含终止项的计划返回 `complete_with_abandoned`，CLI 退出码 3，不能当成全部解析成功。
+
 ## 6. 备份查询和请求
 
 ```powershell
@@ -105,4 +115,6 @@ worker 运行于与线上同提交的、干净且有完整 Git 历史的受管�
 
 worker 异常或断电遗留 running 时标为 needs_attention 并停止后续任务；不自动重跑维护。主机操作者核对维护 lease、实际写者和回执、恢复服务后，可用 `--resolve-job BK-... --service-verified` 确认该次失败已处理；该命令不把失败伪装成备份成功。后续另用新 request_id。
 
-新表 `parse_plans`、`parse_plan_items`、`producer_diagnostics` 在首次授权写入时增量创建，只读入口不迁移；既有研究 schema/contract 不变。切换前在恢复副本验证新表进入两库快照；代码回退不删除这些记录，也不重放未知解析。线上发布和真实 MinerU/维护窗口验证另行执行。
+未开始的 `pending` 解析可以随快照备份，因此可以先补录、备份，再按额度解析。真正 running 的解析/计划以及未登记完成的资产仍须协调。执行器明确证明尚未进入维护的预检失败记为 `failed`，后续请求可继续；修正原因后使用新 request_id。已调用维护入口（即使入口随后报错）或断电导致阶段不明的任务仍为 `needs_attention`，不能按普通预检失败处理。
+
+新表 `parse_plans`、`parse_plan_items`、`producer_diagnostics`、`producer_recovery`、`parse_plan_resolutions` 在首次授权写入时增量创建，只读入口不迁移；既有研究 schema/contract 不变。切换前在恢复副本验证新表进入两库快照；代码回退不删除这些记录，也不重放未知解析。线上发布和真实 MinerU/维护窗口验证另行执行。

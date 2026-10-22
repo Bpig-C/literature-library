@@ -120,12 +120,14 @@ def preview(conn, selection: Selection):
         successful = [r for r in runs if r['status'] == 'succeeded' and r['backend'] == selection.backend and conn.execute("SELECT 1 FROM storage_bindings WHERE identity=? AND role='md'", (r['id'],)).fetchone()]
         reason = None
         from .producer_events import read as diagnostics
+        from .producer_recovery import read as recovery
         events = diagnostics(conn,jobs[0]['id']) if jobs else []
+        receipt = recovery(conn,jobs[0]['id']) if jobs else None
         stages = {e['stage'] for e in events}
         uncertain = bool(jobs and jobs[0]['state']=='failed' and
-                         (jobs[0]['task_id'] or 'submission_unknown' in stages or
+                         (jobs[0]['task_id'] or (receipt and receipt['submission'] in ('unknown','known')) or 'submission_unknown' in stages or
                           ('submitting' in stages and 'submission_rejected' not in stages) or
-                          (jobs[0]['backend']=='vlm' and not events)))
+                          (jobs[0]['backend']=='vlm' and not events and not receipt)))
         if row['source_status'] != 'active' or row['read_status'] in ('quarantined', 'archived'): reason = 'inactive'
         elif any(j['state'] in ('preparing', 'artifacts_ready') for j in jobs): reason = 'unfinished_job'
         elif uncertain: reason = 'upstream_inspection_required'
@@ -218,10 +220,13 @@ def status(registry, pid):
                 job = conn.execute('SELECT state,parse_run_id,version,backend,task_id,error_code FROM storage_producer_jobs WHERE id=?', (item['job_id'],)).fetchone()
                 item['producer'] = dict(job) if job else None
         used = sum(i['reserved'] for i in items)
+        resolutions = []
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plan_resolutions'").fetchone():
+            resolutions = [dict(r) for r in conn.execute('SELECT position,job_id,reason,resolved_at,outcome FROM parse_plan_resolutions WHERE plan_id=? ORDER BY rowid',(pid,))]
         return dict(plan_id=pid, request_id=plan['request_id'], selection=payload['selection'],
                     budget=dict(max_items=plan['max_items'], max_submissions=plan['max_submissions'], max_pages=plan['max_pages'],
                                 reserved_items=used, reserved_submissions=used if payload['selection']['backend']=='vlm' else 0,
-                                reserved_pages=sum(i['pages'] for i in items if i['reserved'])), items=items,
+                                reserved_pages=sum(i['pages'] for i in items if i['reserved'])), items=items, resolutions=resolutions,
                     remaining=[i['source_file_id'] for i in items if i['state']=='queued'])
 
 
@@ -250,7 +255,9 @@ def step(service, pid, runner, *, count_pages=None):
                 return {**current, 'action': 'inspect_or_resume', 'blocked_item': item['position']}
         current = status(registry, pid)
         item = next((i for i in current['items'] if i['state']=='queued'), None)
-        if not item: return {**current, 'action': 'complete'}
+        if not item:
+            action='complete_with_abandoned' if any(i['state']=='abandoned' for i in current['items']) else 'complete'
+            return {**current, 'action': action}
         budget = current['budget']; backend = current['selection']['backend']
         if budget['reserved_items'] >= budget['max_items'] or (backend=='vlm' and budget['reserved_submissions'] >= budget['max_submissions']):
             return {**current, 'action': 'budget_exhausted'}
@@ -270,9 +277,8 @@ def step(service, pid, runner, *, count_pages=None):
             return {**current, 'action': 'budget_exhausted', 'next_pages': pages}
         with registry.conn(write=True) as conn:
             conn.execute("UPDATE parse_plan_items SET state='running',reserved=1,pages=? WHERE plan_id=? AND position=?", (pages,pid,item['position']))
-        def registered(jid):
-            with registry.conn(write=True) as conn:
-                conn.execute('UPDATE parse_plan_items SET job_id=? WHERE plan_id=? AND position=?', (jid,pid,item['position']))
+        def registered(conn,jid):
+            conn.execute('UPDATE parse_plan_items SET job_id=? WHERE plan_id=? AND position=?', (jid,pid,item['position']))
         try:
             job = producers.parse_source(sid, runner, force=True, backend=backend, service=service, on_registered=registered)
             with registry.conn(write=True) as conn:
@@ -283,3 +289,52 @@ def step(service, pid, runner, *, count_pages=None):
                 conn.execute("UPDATE parse_plan_items SET state='failed',error_code=? WHERE plan_id=? AND position=?", (getattr(error,'code','producer_failed'),pid,item['position']))
             return {**status(registry,pid), 'action': 'inspect_failure'}
         return {**status(registry,pid), 'action': 'progress'}
+
+
+def abandon(service, pid, position, reason, job_id=None):
+    """Explicitly close an interrupted item without submitting or refunding.
+
+    Caller holds authority. Global locks prove no parser is currently executing.
+    Legacy orphan jobs require an exact operator-supplied ID; never guess a job.
+    Unknown/known upstream evidence remains on the producer and still blocks
+    fresh plans for that source until reconciled. This is not provider cancellation.
+    """
+    from .storage import producers
+    if not isinstance(reason,str) or not reason.strip() or len(reason)>500:
+        raise StorageError('invalid_request','inspection reason required, at most 500 characters')
+    registry=service.registry
+    with file_lock(registry.catalog.with_suffix('.parse-plans.lock'),timeout=0), file_lock(producers.lock_path(service),timeout=0):
+        current=status(registry,pid)
+        item=next((i for i in current['items'] if i['position']==position),None)
+        if not item:raise StorageError('not_found','plan item not found')
+        if job_id and item['job_id'] and item['job_id']!=job_id:
+            raise StorageError('revision_conflict','job does not match plan item')
+        if item['state']=='abandoned':return current
+        if item['state'] not in ('running','failed'):
+            raise StorageError('revision_conflict','only interrupted items may be abandoned')
+        jid=item['job_id'] or job_id
+        with registry.conn(write=True) as conn:
+            baseline=item['source']['baseline_job']
+            prior=conn.execute('SELECT version FROM storage_producer_jobs WHERE id=?',(baseline,)).fetchone() if baseline else None
+            candidates=[dict(r) for r in conn.execute("SELECT * FROM storage_producer_jobs WHERE kind='parse' AND source_file_id=? AND version>? ORDER BY version",(item['source_file_id'],prior[0] if prior else 0))]
+            job=next((j for j in candidates if j['id']==jid),None)
+            if candidates and (len(candidates)!=1 or not job):
+                raise StorageError('revision_conflict','inspect source jobs and supply the exact orphan job_id')
+            if jid and not job:raise StorageError('revision_conflict','job is outside interrupted plan baseline')
+            if job and conn.execute('SELECT 1 FROM parse_plan_items WHERE job_id=? AND NOT(plan_id=? AND position=?)',(jid,pid,position)).fetchone():
+                raise StorageError('revision_conflict','job belongs to another plan')
+            if job and job['state']=='artifacts_ready':
+                raise StorageError('producer_incomplete','complete artifacts exist; resume registration instead')
+            outcome='succeeded' if job and job['state']=='registered' else 'abandoned'
+            if job and outcome=='abandoned':
+                conn.execute("UPDATE storage_producer_jobs SET state='failed',error_code='plan_abandoned',backend=COALESCE(backend,?) WHERE id=?",(current['selection']['backend'],jid))
+                conn.execute("UPDATE literature_parse_runs SET status='failed',error='plan_abandoned',finished_at=? WHERE id=?",(now(),job['parse_run_id']))
+                from scripts.migrate_sync_parse_status import sync_work_parse_status
+                sync_work_parse_status(conn,item['source']['work_id'])
+            conn.execute('UPDATE parse_plan_items SET state=?,job_id=?,error_code=? WHERE plan_id=? AND position=?',
+                         (outcome,jid,'operator_abandoned' if outcome=='abandoned' else None,pid,position))
+            conn.execute('''CREATE TABLE IF NOT EXISTS parse_plan_resolutions(
+                plan_id TEXT NOT NULL, position INTEGER NOT NULL, job_id TEXT,
+                reason TEXT NOT NULL, resolved_at TEXT NOT NULL, outcome TEXT NOT NULL)''')
+            conn.execute('INSERT INTO parse_plan_resolutions VALUES(?,?,?,?,?,?)',(pid,position,jid,reason.strip(),now(),outcome))
+        return status(registry,pid)

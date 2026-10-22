@@ -58,6 +58,21 @@ def plan_step(plan_id: str):
     return parse_plans.step(configured_service(), plan_id, _run_parse)
 
 
+class AbandonItem(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    position: int = Field(ge=0)
+    reason: str = Field(min_length=1,max_length=500)
+    job_id: str | None = None
+    force: bool = False
+
+
+@router.post('/parse/plans/{plan_id}/abandon')
+def abandon_item(plan_id: str, body: AbandonItem):
+    if not enabled():raise StorageError('configuration_error','immutable storage required')
+    if not body.force:raise StorageError('invalid_request','explicit force required after inspection')
+    return parse_plans.abandon(configured_service(),plan_id,body.position,body.reason,body.job_id)
+
+
 class IntakeItem(BaseModel):
     model_config = ConfigDict(extra='forbid')
     client_id: str = Field(min_length=1, max_length=200)
@@ -95,7 +110,11 @@ def reconcile(body: Reconcile):
                 if notes:
                     targets = [s['work_id'] for s in sources] if not item.work_id else [item.work_id]
                     for wid in targets:
-                        row = conn.execute('SELECT purpose FROM ingest_notes WHERE request_id=? AND work_id=?', (item.request_id,wid)).fetchone()
+                        row = conn.execute('SELECT purpose,source_file_id FROM ingest_notes WHERE request_id=? AND work_id=?', (item.request_id,wid)).fetchone()
+                        if row and row['source_file_id'] is not None and not any(
+                            s['work_id']==wid and s['source_file_id']==row['source_file_id'] for s in sources
+                        ):
+                            continue
                         if row:
                             purpose_state = 'confirmed' if item.purpose is None or row[0]==item.purpose else 'conflict'
                             break

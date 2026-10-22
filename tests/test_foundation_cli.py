@@ -30,7 +30,7 @@ def test_real_http_cli_plan_execute_status_guide_and_backup(service, tmp_path, m
     monkeypatch.setattr(parse_plans,'step',lambda svc,pid,parse:original(svc,pid,parse,count_pages=lambda p:1))
     calls=[];monkeypatch.setattr(parse,'_run_parse',runner(calls))
     monkeypatch.setattr(remote_version,'version_info',lambda:dict(format='litlib-client-capabilities-v1',protocol_version=1,
-        capabilities={k:{} for k in ['parse_plans_v1','backup_jobs_v1','intake_reconcile_v1','foundation_guide_v1']}))
+        capabilities={k:{} for k in ['parse_plans_v1','parse_resolution_v1','backup_jobs_v1','intake_reconcile_v1','foundation_guide_v1']}))
     app=FastAPI();app.add_middleware(remote_access.RemoteAuthentication)
     app.include_router(remote_access.router,prefix='/api');app.include_router(foundation.router,prefix='/api')
     @app.exception_handler(StorageError)
@@ -54,6 +54,18 @@ def test_real_http_cli_plan_execute_status_guide_and_backup(service, tmp_path, m
         assert module.main(base+['backup','request','--request-id','after-intake','--execute'])==0
         assert module.main(base+['backup','status'])==0
         assert module.main(base+['guide'])==0
+        failed_path=tmp_path/'failed-plan.json'
+        assert module.main(base+['parse','plan','--backend','vlm','--source-file-id','SF2','--output',str(failed_path)])==0
+        def interrupted(*args,**kwargs):raise TimeoutError('isolated failure')
+        monkeypatch.setattr(parse,'_run_parse',interrupted)
+        assert module.main(base+['parse','run','--plan',str(failed_path),'--request-id','remote-failed','--max-items','1','--max-submissions','1','--execute'])==3
+        with service.registry.conn(read_only=True) as conn:
+            pid=conn.execute("SELECT id FROM parse_plans WHERE request_id='remote-failed'").fetchone()[0]
+        abandon=base+['parse','abandon','--plan-id',pid,'--position','0','--reason','Inspected failed runner']
+        with pytest.raises(ValueError,match='--execute'):module.main(abandon)
+        assert module.main(abandon+['--execute'])==0
+        assert parse_plans.status(service.registry,pid)['budget']['reserved_submissions']==1
+        assert module.main(base+['parse','continue','--plan-id',pid,'--execute'])==3
         assert 'private-token' not in capsys.readouterr().out
     finally:
         server.should_exit=True;thread.join(10);sock.close()
@@ -71,4 +83,6 @@ def test_old_epoch_blocks_plan_writes_before_execution(service,monkeypatch):
     monkeypatch.setattr(foundation,'plan_step',lambda *a:pytest.fail('executed old epoch'))
     app=FastAPI();app.add_middleware(remote_access.RemoteAuthentication);app.include_router(foundation.router,prefix='/api')
     response=TestClient(app).post('/api/parse/plans/PP-old/step',json={},headers={'Authorization':'Bearer '+'t'*40})
+    assert response.status_code==409 and response.json()['code']=='revision_conflict'
+    response=TestClient(app).post('/api/parse/plans/PP-old/abandon',json={'position':0,'reason':'Inspected','force':True},headers={'Authorization':'Bearer '+'t'*40})
     assert response.status_code==409 and response.json()['code']=='revision_conflict'

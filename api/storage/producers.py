@@ -101,7 +101,12 @@ def parse_source(source_id,runner,*,force=False,backend=None,service=None,on_reg
     c.execute("UPDATE literature_parse_runs SET status='running',output_dir=?,started_at=?,content_md_path='',content_json_path='',package_path='',error='' WHERE id=?",(str(out),now(),rid))
    else:c.execute("INSERT INTO literature_parse_runs(id,work_id,source_file_id,source_path,status,output_dir,started_at,error) VALUES(?,?,?,?,'running',?,?,'')",(rid,source['work_id'],source_id,source['source_path'],str(out),now()))
    c.execute("INSERT INTO storage_producer_jobs(id,kind,source_file_id,parse_run_id,version,state) VALUES(?,'parse',?,?,?,'preparing')",(jid,source_id,rid,version))
-  if on_registered:on_registered(jid)
+   from ..producer_recovery import create
+   binding=c.execute("SELECT sha256,bytes FROM storage_bindings WHERE identity=? AND role='pdf' AND version=1",(source_id,)).fetchone()
+   if not binding or binding['sha256']!=source['content_sha256']:raise StorageError('checksum_mismatch','registered PDF required')
+   create(c,jid,source_id,rid,version,binding['sha256'],binding['bytes'])
+   # Link the plan in THIS transaction; a crash cannot commit an orphan job.
+   if on_registered:on_registered(c,jid)
   try:
    out.mkdir(parents=True,exist_ok=False)
    owner={'job_id':jid,'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'}
@@ -165,7 +170,20 @@ def recover_cloud_producer(jid,runner,service=None):
   if out.resolve()!=expected.resolve() or not out.resolve().is_relative_to(library) or out.is_symlink() or (hasattr(out,'is_junction') and out.is_junction()):raise StorageError('configuration_error','recovery output outside owned path')
   if any(p.is_symlink() or (hasattr(p,'is_junction') and p.is_junction()) for p in out.rglob('*')):raise StorageError('configuration_error','linked recovery output refused')
   marker=out/'.litlib-producer-owned.json'
-  if not marker.is_file():raise StorageError('producer_incomplete','owned output marker unavailable')
+  if not marker.is_file():
+   from ..producer_recovery import read
+   with service.registry.conn(read_only=True) as c:receipt=read(c,jid)
+   binding=service.registry.binding(job['source_file_id'],'pdf',1)
+   if not receipt or any(receipt[k]!=job[k] for k in ('source_file_id','parse_run_id','version')) or receipt['sha256']!=binding['sha256'] or receipt['bytes']!=binding['bytes']:
+    raise StorageError('producer_incomplete','portable recovery receipt unavailable or differs')
+   # Reject junctions/symlinks at every ancestor, not just the final directory.
+   for ancestor in [out,*out.parents]:
+    if ancestor.is_symlink() or (hasattr(ancestor,'is_junction') and ancestor.is_junction()):raise StorageError('configuration_error','linked recovery ancestor refused')
+    if ancestor==library:break
+   if out.exists() and (not out.is_dir() or any(out.iterdir())):raise StorageError('producer_incomplete','unowned recovery files preserved; inspect first')
+   out.mkdir(parents=True,exist_ok=True)
+   from .release_control import write
+   write(marker,{'job_id':jid,'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'})
   owner=json.loads(marker.read_text('utf-8'))
   if owner.get('job_id')!=jid or owner.get('catalog')!=str(service.registry.catalog) or owner.get('output')!=str(out) or owner.get('release_state')!='producing' or (out/'immutable-assets.zip').exists():raise StorageError('producer_incomplete','partial package requires inspection; do not overwrite')
   from ..producer_events import capture

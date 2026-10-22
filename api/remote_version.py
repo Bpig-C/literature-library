@@ -30,6 +30,8 @@ def version_info():
             'parse_plans_v1':{'preview':'/api/parse/plan','accept':'/api/parse/plans','concurrency':1,
                 'budgets':['max_items','max_submissions','max_pages'],'unknown_submission':'inspect; never automatic resubmit'},
             'intake_reconcile_v1':{'endpoint':'/api/intake/reconcile','read_only':True,'limit':1000},
+            'parse_resolution_v1':{'endpoint':'/api/parse/plans/{plan_id}/abandon','refunds_budget':False},
+            'portable_parse_recovery_v1':{'identity':'catalog receipt and fixed PDF binding; existing cloud task only'},
             'backup_jobs_v1':{'status':'/api/remote/backup-status','request':'/api/remote/backup-jobs',
                 'request_configured':bool(os.environ.get('LITLIB_BACKUP_CONTROL')) and len(os.environ.get('LITLIB_BACKUP_ADMIN_TOKEN',''))>=32,
                 'execution':'independent host worker; scheduler is not installed by this capability'},
