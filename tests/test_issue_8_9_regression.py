@@ -1,7 +1,7 @@
 """Regression tests for issue #8 (provenance multi-Source) and #9 (lookup bypass)."""
 import hashlib
 import sqlite3
-from pathlib import Path
+from contextlib import contextmanager
 
 import pytest
 from fastapi import FastAPI
@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 from scripts.literature_ingest import ensure_core_schema
 from api.routes import duplicates as dup_route
 from api.routes import provenance as prov_route
+from api import db as catalog_db
+from api.remote_access import RemoteAuthentication
 
 
 @pytest.fixture()
@@ -41,6 +43,8 @@ def db(tmp_path, monkeypatch):
 
     monkeypatch.setattr(dup_route, 'get_conn', _connect)
     monkeypatch.setattr(prov_route, 'get_conn', _connect)
+    monkeypatch.setattr(catalog_db, 'DB_PATH', tmp_path / 'literature.sqlite')
+    monkeypatch.delenv('LITLIB_STORAGE_MODE', raising=False)
 
     app = FastAPI()
     app.include_router(dup_route.router, prefix='/api')
@@ -104,22 +108,65 @@ def test_provenance_export_integrity_covers_all_fields(db):
 def test_lookup_bypasses_write_gate(db):
     """POST /api/duplicates/lookup must work even when remote writes are disabled."""
     tmp, client, sha = db
-    # Simulate remote writes disabled (the middleware checks this env var,
-    # but we can't easily set it in TestClient; instead we verify the handler
-    # returns 200 which proves it reached the route, not the middleware gate)
     r = client.post('/api/duplicates/lookup', json={'content_sha256': sha})
     assert r.status_code == 200
     assert r.json()['status'] == 'exact_match'
 
 
-def test_other_write_still_gated(db):
-    """Other write operations should still be gated normally."""
-    tmp, client, _ = db
-    # POST /api/provenance is still a write endpoint (not in the read-only bypass list)
-    # We can't test the middleware directly without the real authority, but we can
-    # verify the middleware source includes the whitelist correctly
-    from api.remote_access import _READ_ONLY_POST_PATHS
-    assert '/api/duplicates/lookup' in _READ_ONLY_POST_PATHS
-    assert '/api/provenance' not in _READ_ONLY_POST_PATHS
-    assert '/api/works' not in _READ_ONLY_POST_PATHS
-    assert '/api/parse/trigger' not in _READ_ONLY_POST_PATHS
+@pytest.fixture()
+def gated(db, monkeypatch):
+    from types import SimpleNamespace
+    from api.storage import authority, runtime
+    from api.storage.core import StorageError
+    tmp, _, sha = db
+    monkeypatch.setenv('LITLIB_REMOTE_ENABLED', '1')
+    monkeypatch.setenv('LITLIB_REMOTE_TOKEN', 't' * 32)
+    monkeypatch.setenv('LITLIB_REMOTE_WRITE_ENABLED', '0')
+    monkeypatch.setenv('LITLIB_STORAGE_MODE', 'immutable')
+    monkeypatch.setattr(runtime, 'configured_registry', lambda: SimpleNamespace(validate=lambda **kw: None))
+    calls = []
+    @contextmanager
+    def guard():
+        calls.append('guard')
+        raise StorageError('revision_conflict', 'synthetic old epoch')
+        yield
+    monkeypatch.setattr(authority, 'configured_authority', lambda: SimpleNamespace(write_guard=guard))
+    app = FastAPI()
+    app.add_middleware(RemoteAuthentication)
+    app.include_router(dup_route.router, prefix='/api')
+    app.include_router(prov_route.router, prefix='/api')
+    # Deliberately install a future mutating method on the lookup path.
+    @app.put('/api/duplicates/lookup')
+    def mutation():
+        pytest.fail('non-POST route bypassed gate')
+    with TestClient(app) as client:
+        yield tmp, client, sha, calls, {'Authorization': 'Bearer ' + 't' * 32}
+
+
+def test_lookup_real_middleware_auth_and_guard(gated):
+    tmp, client, sha, calls, headers = gated
+    before = (tmp / 'literature.sqlite').read_bytes()
+    for path in ['/api/duplicates/lookup', '/api/duplicates/lookup/', '/api/duplicates/lookup?x=1']:
+        response = client.post(path, headers=headers, json={'content_sha256': sha})
+        assert response.status_code == 200
+        assert response.json()['status'] == 'exact_match'
+    assert calls == []
+    assert (tmp / 'literature.sqlite').read_bytes() == before
+    assert client.post('/api/duplicates/lookup', json={'doi': 'x'}).status_code == 401
+    assert client.post('/api/duplicates/lookup', headers={'Authorization': 'Bearer wrong'}, json={'doi': 'x'}).status_code == 401
+
+
+def test_other_write_still_gated(gated, monkeypatch):
+    _, client, _, calls, headers = gated
+    assert client.post('/api/provenance', headers=headers, json={'work_id': 'W-1'}).status_code == 403
+    assert client.put('/api/duplicates/lookup', headers=headers).status_code == 403
+    assert client.post('/api/duplicates/lookup-extra', headers=headers).status_code == 403
+    assert calls == []
+    monkeypatch.setenv('LITLIB_REMOTE_WRITE_ENABLED', '1')
+    response = client.post('/api/provenance', headers=headers, json={'work_id': 'W-1'})
+    assert response.status_code == 409
+    assert response.json()['code'] == 'revision_conflict'
+    assert calls == ['guard']
+    calls.clear()
+    assert client.post('/api/duplicates/lookup', headers=headers, json={'doi': 'x'}).status_code == 200
+    assert calls == []

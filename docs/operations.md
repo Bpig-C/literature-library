@@ -32,6 +32,61 @@ The first authorized write adds both purpose tables; queries/dry-run leave legac
 catalogs untouched. The migration does not backfill historical purposes. Continue
 using the current authentication/authority gates for writes and deployment.
 
+## Read-only lookup and source provenance
+
+`POST /api/duplicates/lookup` remains an authenticated query. Only this exact
+path (including its trailing-slash redirect) with method POST bypasses the
+remote write gate and authority write guard. Other methods and mutating routes
+keep their existing gates. Lookup opens the catalog with SQLite `mode=ro` and
+`query_only`; registry validation also uses read-only connections. It does not
+change journal mode, create a missing database, or contact object storage.
+An unavailable/incompatible SQLite catalog returns 503, never a false no-match.
+Results describe the local catalog, not proof of the latest global authority.
+
+`POST /api/provenance` selects either `(work_id, source_file_id)` or a separate
+Work-level entry when Source is absent. Source existence/ownership and supplied
+SHA/byte counts are checked against the registered Source within the write
+transaction. Omitted fields retain their values; explicit empty strings clear
+text fields, and `known_bytes: null` clears an unknown size. Metadata edits do
+not automatically advance `last_verified_at`. Effective changes append snapshots
+to `source_provenance_revisions`; identical replays do not append another revision.
+The Source identity cannot be patched onto a different entry.
+
+Queries include `history` and `legacy_review_required`. A pre-history row is
+preserved verbatim before its first edit and marked `legacy_unverified`; this
+cannot recover already overwritten information or certify mixed historical URLs.
+No read endpoint initializes/migrates either table. New history/index setup is
+additive on authorized writes; existing duplicate identities fail without merging.
+To explicitly preserve all legacy rows, first stop writers through the existing
+authorized maintenance procedure and take a catalog backup. Against that offline
+catalog, the following command creates another fresh SQLite backup before one
+transaction of history backfill (never run it directly against a serving slot):
+
+```powershell
+python scripts/preserve_source_provenance.py --database C:/offline/literature.sqlite --backup C:/offline/before-provenance.sqlite --apply
+```
+
+Backup destinations are never overwritten. Backfill preserves IDs/current rows,
+is idempotent, and rolls back on failure; the pre-change backup remains available.
+Duplicate identities require manual review, not automatic merging. Original
+PDFs, Parse versions, research records and review decisions are unaffected.
+
+`GET /api/provenance-export` now returns **litlib-source-provenance-v2**.
+Both v1 variants (the old subset digest and the later full-row digest) remain
+historical formats and must not be verified as v2. The v2 SHA256 covers canonical
+UTF-8 JSON (`ensure_ascii=False`, sorted keys, compact separators) of `format`,
+`digest_scope`, `entry_count`, `total_count`, `truncated` and complete `entries`,
+including their history. It excludes `generated_at` and `integrity_sha256`.
+Rows sort by Work, Source (NULL treated as empty), then ID; revisions sort by
+revision number. `api.source_provenance.verify_catalog` verifies this scope.
+This checksum detects changes; it is not an authenticity signature.
+
+Exports use one read snapshot. `limit` is bounded at 5000; `truncated: true`
+explicitly indicates an incomplete export. Such a response is not a complete
+recovery catalog. Only a missing provenance table yields an empty result;
+database/schema errors remain errors. Publishing this code does not execute
+backfill or deploy it to a running service.
+
 ## Client version checks
 
 Publishing Git code does not change a running server or a downloaded client.

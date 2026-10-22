@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from pathlib import Path
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..db import get_conn, LIBRARY_ROOT
+from ..db import get_conn, get_read_conn, LIBRARY_ROOT
 from ..models import DuplicateReview
 from ..path_safety import _safe_dest_name, _unique_dest
 
@@ -47,7 +48,10 @@ def duplicates_lookup(body: DuplicateLookupBody):
         raise HTTPException(400, "at least one of content_sha256, doi, arxiv_id, or title is required")
 
     results = {"exact_sha": [], "same_work": [], "title_candidates": [], "status": "unmatched"}
-    conn = get_conn()
+    try:
+        conn = get_read_conn()
+    except sqlite3.DatabaseError as error:
+        raise HTTPException(503, 'lookup catalog unavailable') from error
     try:
         # Tier 1: exact SHA match
         if body.content_sha256:
@@ -127,6 +131,8 @@ def duplicates_lookup(body: DuplicateLookupBody):
             }
 
         return results
+    except sqlite3.DatabaseError as error:
+        raise HTTPException(503, 'lookup catalog query failed') from error
     finally:
         conn.close()
 

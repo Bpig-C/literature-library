@@ -29,6 +29,17 @@ def table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return row is not None
 
 
+def get_read_conn() -> sqlite3.Connection:
+    """Open the configured catalog without creating it or changing journal mode."""
+    if os.environ.get('LITLIB_STORAGE_MODE') == 'immutable':
+        from .storage.runtime import configured_registry
+        configured_registry().validate(read_only=True)
+    conn = sqlite3.connect(DB_PATH.resolve().as_uri() + '?mode=ro', uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA query_only=ON')
+    return conn
+
+
 # LL-DECOUPLE-20260920: ``ensure_metadata_review_columns`` (which ALTERed the
 # legacy ``metadata_extractions`` table on connect) was removed together with
 # every active writer of that table.  Historical archives stay untouched.

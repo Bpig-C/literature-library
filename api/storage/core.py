@@ -101,9 +101,12 @@ class Registry:
         self.catalog = Path(catalog).resolve(); self.ns = namespace
         if not self.catalog.is_file(): raise StorageError('configuration_error', 'explicit catalog must already exist')
     @contextmanager
-    def conn(self, write=False):
-        c = sqlite3.connect(self.catalog.as_uri() + '?mode=rw', uri=True, timeout=30)
+    def conn(self, write=False, *, read_only=False):
+        if write and read_only: raise ValueError('read-only registry cannot write')
+        mode = 'ro' if read_only else 'rw'
+        c = sqlite3.connect(self.catalog.as_uri() + '?mode=' + mode, uri=True, timeout=30)
         c.row_factory = sqlite3.Row; c.execute('PRAGMA foreign_keys=ON')
+        if read_only: c.execute('PRAGMA query_only=ON')
         try:
             if write: c.execute('BEGIN IMMEDIATE')
             yield c
@@ -116,9 +119,9 @@ class Registry:
         with self.conn() as c:
             c.executescript(SCHEMA); c.execute('INSERT OR IGNORE INTO storage_settings VALUES(1,?)', (self.ns.root,)); c.commit()
         self.validate()
-    def validate(self):
+    def validate(self, *, read_only=False):
         try:
-            with self.conn() as c:
+            with self.conn(read_only=read_only) as c:
                 row = c.execute('SELECT root FROM storage_settings WHERE id=1').fetchone()
                 c.execute('SELECT sha256 FROM storage_staging_files LIMIT 0')
                 c.execute('SELECT id FROM storage_producer_jobs LIMIT 0')

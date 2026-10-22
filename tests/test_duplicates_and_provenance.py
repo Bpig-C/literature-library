@@ -40,7 +40,9 @@ def db(tmp_path, monkeypatch):
         c.row_factory = sqlite3.Row
         return c
     monkeypatch.setattr(dr, 'get_conn', _connect)
+    monkeypatch.setattr(dr, 'get_read_conn', _connect)
     monkeypatch.setattr(pr, 'get_conn', _connect)
+    monkeypatch.setattr(pr, 'get_read_conn', _connect)
 
     app = FastAPI()
     app.include_router(dr.router, prefix='/api')
@@ -184,7 +186,7 @@ def test_provenance_export(db):
     r = client.get('/api/provenance-export')
     assert r.status_code == 200
     catalog = r.json()
-    assert catalog['format'] == 'litlib-source-provenance-v1'
+    assert catalog['format'] == 'litlib-source-provenance-v2'
     assert catalog['entry_count'] == 1
     assert len(catalog['integrity_sha256']) == 64
 

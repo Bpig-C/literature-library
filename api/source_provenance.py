@@ -1,172 +1,202 @@
-"""Lightweight source provenance for offline recovery (issue #5).
-
-Records where each Work/Source was originally obtained so that lost originals
-can be re-acquired. Reads never create a database or migrate a schema.
-"""
+"""Source-scoped recovery metadata; reads never initialize or migrate a schema."""
 from __future__ import annotations
 
 import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 
 MAX_URL_LENGTH = 2048
 MAX_NOTES_LENGTH = 2000
 MAX_EXPORT_WORKS = 5000
+FORMAT = 'litlib-source-provenance-v2'
+DIGEST_SCOPE = 'format,digest_scope,entry_count,total_count,truncated,entries; canonical UTF-8 JSON'
+FIELDS = ('work_id', 'source_file_id', 'landing_url', 'direct_url', 'backup_url',
+          'source_type', 'doi', 'arxiv_id', 'known_sha256', 'known_bytes',
+          'first_obtained_at', 'last_verified_at', 'access_notes', 'created_at')
 
 
-def initialize(conn: sqlite3.Connection) -> None:
-    conn.execute('''CREATE TABLE IF NOT EXISTS source_provenance (
-        id TEXT PRIMARY KEY,
-        work_id TEXT NOT NULL,
-        source_file_id TEXT,
-        landing_url TEXT DEFAULT '',
-        direct_url TEXT DEFAULT '',
-        backup_url TEXT DEFAULT '',
-        source_type TEXT DEFAULT '',
-        doi TEXT DEFAULT '',
-        arxiv_id TEXT DEFAULT '',
-        known_sha256 TEXT DEFAULT '',
-        known_bytes INTEGER,
-        first_obtained_at TEXT DEFAULT '',
-        last_verified_at TEXT DEFAULT '',
-        access_notes TEXT DEFAULT '',
-        created_at TEXT NOT NULL)''')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_source_provenance_work ON source_provenance(work_id)')
-    expected = {'id', 'work_id', 'source_file_id', 'landing_url', 'direct_url', 'backup_url',
-                'source_type', 'doi', 'arxiv_id', 'known_sha256', 'known_bytes',
-                'first_obtained_at', 'last_verified_at', 'access_notes', 'created_at'}
-    actual = {r[1] for r in conn.execute('PRAGMA table_info(source_provenance)')}
-    if not expected <= actual:
-        raise ValueError('incompatible source_provenance schema; explicit migration required')
+def _json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(timezone.utc).isoformat(timespec='microseconds')
 
 
-def _validate_url(url: str, field: str) -> str:
-    url = url.strip()
-    if len(url) > MAX_URL_LENGTH:
-        raise ValueError(f'{field} exceeds {MAX_URL_LENGTH} characters')
-    return url
+def _exists(conn, name):
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def initialize(conn: sqlite3.Connection) -> None:
+    """Write-only additive schema setup. Caller owns transaction/rollback."""
+    conn.execute('''CREATE TABLE IF NOT EXISTS source_provenance (
+        id TEXT PRIMARY KEY, work_id TEXT NOT NULL, source_file_id TEXT,
+        landing_url TEXT DEFAULT '', direct_url TEXT DEFAULT '', backup_url TEXT DEFAULT '',
+        source_type TEXT DEFAULT '', doi TEXT DEFAULT '', arxiv_id TEXT DEFAULT '',
+        known_sha256 TEXT DEFAULT '', known_bytes INTEGER, first_obtained_at TEXT DEFAULT '',
+        last_verified_at TEXT DEFAULT '', access_notes TEXT DEFAULT '', created_at TEXT NOT NULL)''')
+    actual = {r[1] for r in conn.execute('PRAGMA table_info(source_provenance)')}
+    if not (set(FIELDS) | {'id'}) <= actual:
+        raise ValueError('incompatible source_provenance schema; explicit migration required')
+    # NULL and empty Source both mean the separate Work-level identity.
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_provenance_identity ON source_provenance(work_id, COALESCE(source_file_id,''))")
+    conn.execute('''CREATE TABLE IF NOT EXISTS source_provenance_revisions (
+        provenance_id TEXT NOT NULL, revision INTEGER NOT NULL,
+        recorded_at TEXT NOT NULL, origin TEXT NOT NULL, payload TEXT NOT NULL,
+        PRIMARY KEY(provenance_id, revision))''')
+
+
+def _append(conn, row, origin):
+    revision = conn.execute('SELECT COALESCE(MAX(revision),0)+1 FROM source_provenance_revisions WHERE provenance_id=?',
+                            (row['id'],)).fetchone()[0]
+    conn.execute('INSERT INTO source_provenance_revisions VALUES(?,?,?,?,?)',
+                 (row['id'], revision, _now(), origin, _json(row)))
+
+
+def preserve_legacy(conn: sqlite3.Connection) -> int:
+    """Explicit idempotent backfill preserving old values without certifying them.
+
+    Does not commit. Duplicate legacy identities fail rather than merging history.
+    """
+    if not conn.in_transaction:
+        conn.execute('BEGIN IMMEDIATE')
+    conn.row_factory = sqlite3.Row
+    initialize(conn)
+    count = 0
+    for row in conn.execute('SELECT * FROM source_provenance ORDER BY id').fetchall():
+        if not conn.execute('SELECT 1 FROM source_provenance_revisions WHERE provenance_id=?', (row['id'],)).fetchone():
+            _append(conn, dict(row), 'legacy_unverified')
+            count += 1
+    return count
 
 
 def record(conn: sqlite3.Connection, work_id: str, **kwargs) -> dict:
-    conn.row_factory = sqlite3.Row
-    """Insert or update provenance for a Work. Caller manages transaction."""
+    """Patch one identity, appending immutable snapshots of every effective change.
+
+    Missing fields keep their value; explicit empty strings clear text fields.
+    Source identity is a selector, never a field patched onto another identity.
+    """
     if not work_id or not work_id.strip():
         raise ValueError('work_id is required')
     work_id = work_id.strip()
-
-    for url_field in ('landing_url', 'direct_url', 'backup_url'):
-        if kwargs.get(url_field):
-            kwargs[url_field] = _validate_url(kwargs[url_field], url_field)
-    if kwargs.get('access_notes') and len(kwargs['access_notes']) > MAX_NOTES_LENGTH:
-        raise ValueError(f'access_notes exceeds {MAX_NOTES_LENGTH} characters')
-    if kwargs.get('known_sha256') and len(kwargs['known_sha256']) != 64:
+    unknown = set(kwargs) - (set(FIELDS) - {'work_id', 'created_at'})
+    if unknown:
+        raise ValueError('unknown provenance fields: ' + ', '.join(sorted(unknown)))
+    source_id = kwargs.pop('source_file_id', None) or ''
+    if not isinstance(source_id, str):
+        raise ValueError('source_file_id must be a string')
+    for key, value in kwargs.items():
+        if key == 'known_bytes':
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError('known_bytes must be a nonnegative integer')
+        elif not isinstance(value, str):
+            raise ValueError(key + ' must be a string')
+        if key.endswith('_url'):
+            kwargs[key] = value.strip()
+            if len(kwargs[key]) > MAX_URL_LENGTH:
+                raise ValueError(key + ' exceeds URL length budget')
+    if len(kwargs.get('access_notes', '')) > MAX_NOTES_LENGTH:
+        raise ValueError('access_notes exceeds notes length budget')
+    sha = kwargs.get('known_sha256', '').lower()
+    if sha and (len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha)):
         raise ValueError('known_sha256 must be a 64-character hex string')
-
+    if 'known_sha256' in kwargs:
+        kwargs['known_sha256'] = sha
+    if not conn.in_transaction:
+        conn.execute('BEGIN IMMEDIATE')
+    conn.row_factory = sqlite3.Row
     initialize(conn)
-    # Issue #8: match by (work_id, source_file_id) so different Sources of the
-    # same Work get their own provenance records instead of overwriting.
-    source_file_id = kwargs.get('source_file_id') or ''
-    if source_file_id:
-        existing = conn.execute(
-            'SELECT id FROM source_provenance WHERE work_id = ? AND source_file_id = ? '
-            'ORDER BY created_at DESC LIMIT 1',
-            (work_id, source_file_id)).fetchone()
-    else:
-        # No source_file_id: match on work_id only (generic Work-level entry)
-        existing = conn.execute(
-            'SELECT id FROM source_provenance WHERE work_id = ? AND (source_file_id IS NULL OR source_file_id = \'\') '
-            'ORDER BY created_at DESC LIMIT 1',
-            (work_id,)).fetchone()
-
-    prov_id = existing['id'] if existing else 'SP-' + hashlib.sha256(
-        f"{work_id}:{source_file_id}".encode()).hexdigest()[:16]
-    now = _now()
-
-    fields = {'work_id': work_id, 'source_file_id': source_file_id,
-              'landing_url': kwargs.get('landing_url') or '',
-              'direct_url': kwargs.get('direct_url') or '',
-              'backup_url': kwargs.get('backup_url') or '',
-              'source_type': kwargs.get('source_type') or '',
-              'doi': kwargs.get('doi') or '',
-              'arxiv_id': kwargs.get('arxiv_id') or '',
-              'known_sha256': kwargs.get('known_sha256') or '',
-              'known_bytes': kwargs.get('known_bytes'),
-              'first_obtained_at': kwargs.get('first_obtained_at') or '',
-              'last_verified_at': kwargs.get('last_verified_at') or now,
-              'access_notes': kwargs.get('access_notes') or ''}
-
+    existing = conn.execute("SELECT * FROM source_provenance WHERE work_id=? AND COALESCE(source_file_id,'')=?",
+                            (work_id, source_id)).fetchone()
     if existing:
-        # merge: update non-empty fields only
-        current = dict(conn.execute(
-            'SELECT * FROM source_provenance WHERE id = ?', (prov_id,)).fetchone())
-        for k, v in fields.items():
-            if v or k == 'last_verified_at':
-                current[k] = v
-        current['last_verified_at'] = now
-        conn.execute('''UPDATE source_provenance SET
-            source_file_id=?, landing_url=?, direct_url=?, backup_url=?, source_type=?,
-            doi=?, arxiv_id=?, known_sha256=?, known_bytes=?,
-            first_obtained_at=?, last_verified_at=?, access_notes=?
-            WHERE id=?''',
-            (current['source_file_id'], current['landing_url'], current['direct_url'],
-             current['backup_url'], current['source_type'], current['doi'], current['arxiv_id'],
-             current['known_sha256'], current['known_bytes'],
-             current['first_obtained_at'], current['last_verified_at'],
-             current['access_notes'], prov_id))
-    else:
-        conn.execute('''INSERT INTO source_provenance
-            (id, work_id, source_file_id, landing_url, direct_url, backup_url, source_type,
-             doi, arxiv_id, known_sha256, known_bytes, first_obtained_at, last_verified_at,
-             access_notes, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-            (prov_id, work_id, fields['source_file_id'], fields['landing_url'],
-             fields['direct_url'], fields['backup_url'], fields['source_type'],
-             fields['doi'], fields['arxiv_id'], fields['known_sha256'],
-             fields['known_bytes'], fields['first_obtained_at'],
-             fields['last_verified_at'], fields['access_notes'], now))
+        current = dict(existing)
+        # Preserve the exact original row, including ID and NULLs, before first change.
+        if not conn.execute('SELECT 1 FROM source_provenance_revisions WHERE provenance_id=?', (current['id'],)).fetchone():
+            _append(conn, current, 'legacy_unverified')
+        updated = {**current, **kwargs}
+        if updated != current:
+            conn.execute('UPDATE source_provenance SET ' + ','.join(k + '=?' for k in kwargs) + ' WHERE id=?',
+                         [*kwargs.values(), current['id']])
+            _append(conn, updated, 'recorded')
+        return updated
+    now = _now()
+    identity = _json([work_id, source_id])
+    row = {k: '' for k in FIELDS}
+    row.update(id='SP-' + hashlib.sha256(identity.encode()).hexdigest(),
+               work_id=work_id, source_file_id=source_id, known_bytes=None, created_at=now)
+    row.update(kwargs)
+    columns = ['id', *FIELDS]
+    conn.execute('INSERT INTO source_provenance (' + ','.join(columns) + ') VALUES (' + ','.join('?' for _ in columns) + ')',
+                 [row[k] for k in columns])
+    _append(conn, row, 'recorded')
+    return row
 
-    row = conn.execute('SELECT * FROM source_provenance WHERE id = ?', (prov_id,)).fetchone()
-    return dict(row)
+
+def _with_history(conn, rows):
+    has_history = _exists(conn, 'source_provenance_revisions')
+    entries = []
+    for row in rows:
+        entry = dict(row)
+        history = []
+        if has_history:
+            for revision in conn.execute('SELECT revision,recorded_at,origin,payload FROM source_provenance_revisions WHERE provenance_id=? ORDER BY revision', (entry['id'],)):
+                history.append({'revision': revision['revision'], 'recorded_at': revision['recorded_at'],
+                                'origin': revision['origin'], 'record': json.loads(revision['payload'])})
+        entry['history'] = history
+        # A subsequent edit cannot prove that a pre-fix URL/fingerprint was sound.
+        entry['legacy_review_required'] = not history or any(r['origin'] == 'legacy_unverified' for r in history)
+        entries.append(entry)
+    return entries
 
 
 def query(conn: sqlite3.Connection, work_id: str) -> list[dict]:
     conn.row_factory = sqlite3.Row
-    """Read provenance records for a Work. Read-only; no schema creation."""
+    own_transaction = not conn.in_transaction
+    if own_transaction:
+        conn.execute('BEGIN')
     try:
-        rows = conn.execute(
-            'SELECT * FROM source_provenance WHERE work_id = ? ORDER BY created_at DESC',
-            (work_id,)).fetchall()
-        return [dict(r) for r in rows]
-    except sqlite3.OperationalError:
-        return []  # table doesn't exist yet
+        if not _exists(conn, 'source_provenance'):
+            return []
+        return _with_history(conn, conn.execute('SELECT * FROM source_provenance WHERE work_id=? ORDER BY created_at DESC,id', (work_id,)).fetchall())
+    finally:
+        if own_transaction:
+            conn.rollback()
+
+
+def _digest(catalog):
+    payload = {k: catalog[k] for k in ('format', 'digest_scope', 'entry_count', 'total_count', 'truncated', 'entries')}
+    return hashlib.sha256(_json(payload).encode('utf-8')).hexdigest()
+
+
+def verify_catalog(catalog: dict) -> bool:
+    """v2 only: historical v1 used two incompatible digest algorithms."""
+    try:
+        return (catalog['format'] == FORMAT and catalog['digest_scope'] == DIGEST_SCOPE
+                and catalog['entry_count'] == len(catalog['entries'])
+                and catalog['integrity_sha256'] == _digest(catalog))
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def export_catalog(conn: sqlite3.Connection, *, limit: int = MAX_EXPORT_WORKS) -> dict:
+    if type(limit) is not int or not 1 <= limit <= MAX_EXPORT_WORKS:
+        raise ValueError('invalid export limit')
     conn.row_factory = sqlite3.Row
-    """Export the full provenance catalog as a versioned, integrity-checkable manifest."""
+    # One read snapshot covers both current rows and their history/counts.
+    own_transaction = not conn.in_transaction
+    if own_transaction:
+        conn.execute('BEGIN')
     try:
-        rows = [dict(r) for r in conn.execute(
-            'SELECT * FROM source_provenance ORDER BY work_id').fetchall()]
-    except sqlite3.OperationalError:
-        rows = []
-    if len(rows) > limit:
-        rows = rows[:limit]
-
-    # Issue #8: integrity digest covers ALL recovery-relevant fields, not just
-    # a subset, so any change to direct_url, backup_url, known_bytes, etc.
-    # invalidates the digest and is detectable.
-    catalog = {
-        'format': 'litlib-source-provenance-v1',
-        'generated_at': _now(),
-        'entry_count': len(rows),
-        'entries': rows,
-    }
-    manifest_text = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-    catalog['integrity_sha256'] = hashlib.sha256(manifest_text.encode('utf-8')).hexdigest()
-    return catalog
+        rows, total = [], 0
+        if _exists(conn, 'source_provenance'):
+            total = conn.execute('SELECT COUNT(*) FROM source_provenance').fetchone()[0]
+            rows = conn.execute("SELECT * FROM source_provenance ORDER BY work_id,COALESCE(source_file_id,''),id LIMIT ?", (limit,)).fetchall()
+        catalog = {'format': FORMAT, 'generated_at': _now(), 'digest_scope': DIGEST_SCOPE,
+                   'entry_count': len(rows), 'total_count': total, 'truncated': total > len(rows),
+                   'entries': _with_history(conn, rows)}
+        catalog['integrity_sha256'] = _digest(catalog)
+        return catalog
+    finally:
+        if own_transaction:
+            conn.rollback()  # release read snapshot; never commit a caller's writes
