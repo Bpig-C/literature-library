@@ -66,6 +66,15 @@ def test_real_http_cli_plan_execute_status_guide_and_backup(service, tmp_path, m
         assert module.main(abandon+['--execute'])==0
         assert parse_plans.status(service.registry,pid)['budget']['reserved_submissions']==1
         assert module.main(base+['parse','continue','--plan-id',pid,'--execute'])==3
+        mixed_path=tmp_path/'mixed-plan.json'
+        assert module.main(base+['parse','plan','--backend','vlm','--purpose','deception','--reparse-completed','--output',str(mixed_path)])==0
+        assert module.main(base+['parse','run','--plan',str(mixed_path),'--request-id','remote-mixed','--max-items','2','--max-submissions','2','--execute'])==3
+        with service.registry.conn(read_only=True) as conn:
+            mixed_pid=conn.execute("SELECT id FROM parse_plans WHERE request_id='remote-mixed'").fetchone()[0]
+        assert module.main(base+['parse','abandon','--plan-id',mixed_pid,'--position','0','--reason','Inspected failure','--execute'])==0
+        monkeypatch.setattr(parse,'_run_parse',runner(calls))
+        assert module.main(base+['parse','continue','--plan-id',mixed_pid,'--steps','1','--execute'])==3
+        assert [i['state'] for i in parse_plans.status(service.registry,mixed_pid)['items']]==['abandoned','succeeded']
         assert 'private-token' not in capsys.readouterr().out
     finally:
         server.should_exit=True;thread.join(10);sock.close()

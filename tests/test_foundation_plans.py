@@ -205,7 +205,8 @@ def test_crash_during_registration_rolls_back_job_and_plan_link(service,monkeypa
     assert resolved['items'][0]['state']=='abandoned' and resolved['budget']['reserved_submissions']==1
     assert resolved['resolutions'][0]['reason']=='Inspected before submission'
     monkeypatch.setattr(producers,'parse_source',original)
-    assert plans.step(service,pid,runner([]),count_pages=lambda p:1)['items'][1]['state']=='succeeded'
+    completed=plans.step(service,pid,runner([]),count_pages=lambda p:1)
+    assert completed['items'][1]['state']=='succeeded' and completed['action']=='complete_with_abandoned'
 
 
 def test_committed_crash_and_legacy_orphan_have_audited_exit(service,monkeypatch):

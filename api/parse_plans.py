@@ -288,7 +288,10 @@ def step(service, pid, runner, *, count_pages=None):
                 # Conservative reservation remains even if the provider outcome is unknown.
                 conn.execute("UPDATE parse_plan_items SET state='failed',error_code=? WHERE plan_id=? AND position=?", (getattr(error,'code','producer_failed'),pid,item['position']))
             return {**status(registry,pid), 'action': 'inspect_failure'}
-        return {**status(registry,pid), 'action': 'progress'}
+        completed=status(registry,pid)
+        action='progress' if completed['remaining'] else (
+            'complete_with_abandoned' if any(i['state']=='abandoned' for i in completed['items']) else 'complete')
+        return {**completed, 'action': action}
 
 
 def abandon(service, pid, position, reason, job_id=None):
