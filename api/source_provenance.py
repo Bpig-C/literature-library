@@ -69,14 +69,26 @@ def record(conn: sqlite3.Connection, work_id: str, **kwargs) -> dict:
         raise ValueError('known_sha256 must be a 64-character hex string')
 
     initialize(conn)
-    existing = conn.execute(
-        'SELECT id FROM source_provenance WHERE work_id = ? ORDER BY created_at DESC LIMIT 1',
-        (work_id,)).fetchone()
+    # Issue #8: match by (work_id, source_file_id) so different Sources of the
+    # same Work get their own provenance records instead of overwriting.
+    source_file_id = kwargs.get('source_file_id') or ''
+    if source_file_id:
+        existing = conn.execute(
+            'SELECT id FROM source_provenance WHERE work_id = ? AND source_file_id = ? '
+            'ORDER BY created_at DESC LIMIT 1',
+            (work_id, source_file_id)).fetchone()
+    else:
+        # No source_file_id: match on work_id only (generic Work-level entry)
+        existing = conn.execute(
+            'SELECT id FROM source_provenance WHERE work_id = ? AND (source_file_id IS NULL OR source_file_id = \'\') '
+            'ORDER BY created_at DESC LIMIT 1',
+            (work_id,)).fetchone()
 
-    prov_id = existing['id'] if existing else 'SP-' + hashlib.sha256(work_id.encode()).hexdigest()[:16]
+    prov_id = existing['id'] if existing else 'SP-' + hashlib.sha256(
+        f"{work_id}:{source_file_id}".encode()).hexdigest()[:16]
     now = _now()
 
-    fields = {'work_id': work_id, 'source_file_id': kwargs.get('source_file_id') or '',
+    fields = {'work_id': work_id, 'source_file_id': source_file_id,
               'landing_url': kwargs.get('landing_url') or '',
               'direct_url': kwargs.get('direct_url') or '',
               'backup_url': kwargs.get('backup_url') or '',
@@ -146,17 +158,15 @@ def export_catalog(conn: sqlite3.Connection, *, limit: int = MAX_EXPORT_WORKS) -
     if len(rows) > limit:
         rows = rows[:limit]
 
+    # Issue #8: integrity digest covers ALL recovery-relevant fields, not just
+    # a subset, so any change to direct_url, backup_url, known_bytes, etc.
+    # invalidates the digest and is detectable.
     catalog = {
         'format': 'litlib-source-provenance-v1',
         'generated_at': _now(),
         'entry_count': len(rows),
         'entries': rows,
     }
-    # integrity digest over sorted entry JSON
-    manifest_text = json.dumps(
-        [{'work_id': e['work_id'], 'known_sha256': e['known_sha256'],
-          'landing_url': e['landing_url'], 'source_file_id': e['source_file_id']}
-         for e in rows],
-        ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    manifest_text = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
     catalog['integrity_sha256'] = hashlib.sha256(manifest_text.encode('utf-8')).hexdigest()
     return catalog

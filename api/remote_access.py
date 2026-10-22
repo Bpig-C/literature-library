@@ -6,9 +6,15 @@ from starlette.responses import JSONResponse
 from .storage.runtime import configured_service
 from .storage.response import PinnedFileResponse
 
+# Issue #9: read-only POST endpoints that must bypass the write gate and
+# authority write_guard. Only exact paths are exempted; query params and
+# trailing slashes are normalised before matching.
+_READ_ONLY_POST_PATHS = frozenset({'/api/duplicates/lookup'})
+
 class RemoteAuthentication(BaseHTTPMiddleware):
     async def dispatch(self,request,call_next):
         token=os.environ.get('LITLIB_REMOTE_TOKEN')
+        path=request.url.path.rstrip('/') or request.url.path
         if os.environ.get('LITLIB_REMOTE_ENABLED')=='1':
             if not token or len(token)<32:
                 return JSONResponse({'detail':'Remote authentication unavailable'},status_code=503)
@@ -16,17 +22,18 @@ class RemoteAuthentication(BaseHTTPMiddleware):
             if not hmac.compare_digest(supplied,'Bearer '+token):
                 return JSONResponse({'detail':'Authentication required'},status_code=401)
             if request.method not in {'GET','HEAD','OPTIONS'} and os.environ.get('LITLIB_REMOTE_WRITE_ENABLED')!='1':
-                return JSONResponse({'detail':'Remote writes disabled on this runtime'},status_code=403)
+                if path not in _READ_ONLY_POST_PATHS:
+                    return JSONResponse({'detail':'Remote writes disabled on this runtime'},status_code=403)
         elif request.url.path.startswith('/api/remote/'):
             return JSONResponse({'detail':'Remote access disabled'},status_code=503)
-        if request.method not in {'GET','HEAD','OPTIONS'} and os.environ.get('LITLIB_STORAGE_MODE')=='immutable':
+        is_read_only_post = request.method=='POST' and path in _READ_ONLY_POST_PATHS
+        if request.method not in {'GET','HEAD','OPTIONS'} and not is_read_only_post and os.environ.get('LITLIB_STORAGE_MODE')=='immutable':
             from .storage.authority import configured_authority
             from .storage.core import StorageError
             try:
                 with configured_authority().write_guard():return await call_next(request)
             except StorageError as e:
                 if e.code=='busy':
-                    # Phase 2: uniform busy contract with retry guidance
                     return JSONResponse(
                         {'code':'busy','detail':str(e),'retry_after':5},
                         status_code=409,
