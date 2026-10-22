@@ -56,12 +56,12 @@ def record_verified(catalog,stage,receipt,backend,verified_at):
         c['versions'].append(v);write(catalog,c)
     return v
 
-def run_due(catalog,active_keys,backup,*,now=None,interval_days=7,retain=3):
+def run_due(catalog,active_keys,backup,*,now=None,interval_days=7,retain=3,force=False):
     """backup() must return only after publish and record_verified complete."""
     now=now or datetime.now(timezone.utc).isoformat()
     with file_lock(Path(catalog).with_suffix('.scheduler.lock'),timeout=0):
         c=read_catalog(catalog);decision=plan(c['versions'],active_keys,now=now,interval_days=interval_days,retain=retain)
-        if not decision['backup_due']:return {'state':'not_due','retention':decision}
+        if not decision['backup_due'] and not force:return {'state':'not_due','retention':decision}
         try:
             version=backup()
             if select(catalog,version['id'])!=version:raise StorageError('checksum_mismatch','Backup did not register verified version')

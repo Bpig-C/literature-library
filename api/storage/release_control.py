@@ -1,5 +1,5 @@
 """Reviewed snapshot prepare/stage/publish, with immutable resumable uploads."""
-import json,sqlite3,subprocess,tempfile,hashlib
+import json,sqlite3,subprocess,tempfile,hashlib,os
 from contextlib import closing
 from pathlib import Path
 from .core import Namespace,StorageError,hash_file,relative_key
@@ -48,10 +48,39 @@ def database_digest(path):
             h.update(canonical([table,sql,values]).encode())
     return h.hexdigest()
 
+def validate_source(inputs):
+    """Bind all runtime inputs to one reviewed slot; reject inherited stale DBs.
+
+    This is an offline identity check, not proof the slot is the live authority.
+    The maintenance adapter must verify that identity before stopping writers.
+    """
+    root_value=inputs.get('source_root')
+    if not root_value:
+        if '/prod/' in inputs['namespace']:
+            raise StorageError('configuration_error','Production snapshots require explicit source_root; regenerate legacy inputs from the current writer slot')
+        return
+    root=Path(root_value)
+    if not root.is_absolute() or not root.is_dir():raise StorageError('configuration_error','Existing absolute source slot required')
+    root=root.resolve();env=read(root/'environment.json')
+    if env.get('LITLIB_STORAGE_ROOT')!=inputs['namespace']:raise StorageError('revision_conflict','Source slot namespace differs')
+    for name,key,relative in [('catalog','LITLIB_DB_PATH','library/literature.sqlite'),('research','LITLIB_RESEARCH_DB','research/research.sqlite')]:
+        expected=root/'data'/relative
+        if Path(inputs[name]).resolve()!=expected or Path(env[key]).resolve()!=expected:
+            raise StorageError('revision_conflict','Snapshot database differs from source slot: '+name)
+        if os.environ.get(key) and Path(os.environ[key]).resolve()!=expected:
+            raise StorageError('revision_conflict','Snapshot source differs from the applied runtime: '+name)
+    for name,entry in inputs['files'].items():
+        relative_key(name)
+        expected=(root/'data'/name).resolve()
+        if not expected.is_relative_to(root/'data') or Path(entry['source']).resolve()!=expected:
+            raise StorageError('revision_conflict','Snapshot working file differs from source slot: '+name)
+
+
 def prepare(inputs,max_bytes):
     """No source mutation, registry/cache initialization or network requests."""
     if inputs.get('format')!='litlib-snapshot-input-v1':raise StorageError('invalid_request','exact snapshot input format required')
     no_secrets(inputs);ns=Namespace(inputs['namespace']);cfg=inputs['configuration']
+    validate_source(inputs)
     if set(cfg)-CONFIG_KEYS or cfg.get('storage_namespace')!=ns.root:raise StorageError('invalid_request','whitelisted configuration and namespace required')
     if '/prod/' in ns.root and not (cfg.get('oss_bucket') and cfg.get('oss_region')):raise StorageError('invalid_request','explicit production OSS bucket/region required')
     if max_bytes<=0:raise StorageError('invalid_request','positive explicit snapshot budget required')

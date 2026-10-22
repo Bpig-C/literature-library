@@ -323,7 +323,7 @@ class WebClient(PdfParseClient):
         logger.info("Web MinerU POST %s, file=%s", url, req.pdf_path.name)
 
         with req.pdf_path.open("rb") as f:
-            files = {"files": (req.pdf_path.name, f, "application/pdf")}
+            files = {"files": (req.pdf_path.with_suffix('.pdf').name, f, "application/pdf")}
             try:
                 resp = requests.post(
                     url,

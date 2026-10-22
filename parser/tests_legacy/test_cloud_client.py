@@ -8,6 +8,7 @@ import os
 import sys
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,6 +21,13 @@ os.environ.setdefault("MinerU_API_KEY", "test-token-for-unit-test")
 
 from core.mineru import cloud_client as cc  # noqa: E402
 from core.mineru.base_client import ParseRequest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def isolated_configuration(monkeypatch):
+    # Tests must not depend on a workstation configuration or real credentials.
+    monkeypatch.setitem(sys.modules, 'config', SimpleNamespace(config=SimpleNamespace(cloud={})))
+    monkeypatch.setenv('MinerU_API_KEY', 'test-token-for-unit-test')
 
 
 class _FakeResp:
@@ -45,8 +53,9 @@ def _make_result_zip() -> bytes:
     return buf.getvalue()
 
 
-def test_parse_pdf_full_flow(monkeypatch, tmp_path):
-    pdf = tmp_path / "demo.pdf"
+@pytest.mark.parametrize('suffix', ['.pdf', '.asset'])
+def test_parse_pdf_full_flow(monkeypatch, tmp_path, suffix):
+    pdf = tmp_path / ('demo' + suffix)
     pdf.write_bytes(b"%PDF-1.4 fake")
 
     out_dir = tmp_path / "out"
@@ -72,6 +81,7 @@ def test_parse_pdf_full_flow(monkeypatch, tmp_path):
 
     def fake_put(url, data=None, **kwargs):
         assert "Content-Type" not in (kwargs.get("headers") or {})
+        assert data.read() == b"%PDF-1.4 fake"
         call_log["uploaded"] = True
         return _FakeResp(200)
 
@@ -96,6 +106,8 @@ def test_parse_pdf_full_flow(monkeypatch, tmp_path):
     assert isinstance(cj, list) or cj.get("source") == "mineru_cloud"
     assert (out_dir / "package.zip").exists()
     assert (out_dir / "images" / "a.jpg").exists()
+    if suffix == '.asset':
+        assert not (tmp_path / 'demo.pdf').exists()
 
 
 def test_daily_limit_not_retried(monkeypatch, tmp_path):
@@ -150,6 +162,22 @@ def test_helpers():
     assert cc._normalize_language("") == "ch"
     assert cc._extract_json_from_text('noise ```json\n{"a":1}\n``` end') == {"a": 1}
     assert cc._extract_json_from_text('{"b":2}') == {"b": 2}
+
+
+def test_multipart_upload_labels_pinned_cache_bytes_as_pdf(monkeypatch, tmp_path):
+    from core.mineru import web_client
+    monkeypatch.setattr(web_client, 'config', SimpleNamespace(mineru_server_url='https://example.invalid', timeout=1, share_dir=str(tmp_path)))
+    source = tmp_path / 'cached.asset'
+    source.write_bytes(b'%PDF-test')
+    captured = []
+    def post(url, **kwargs):
+        name, stream, mime = kwargs['files']['files']
+        captured.append((name, mime, stream.read()))
+        return _FakeResp(500, {'error': 'synthetic response after captured upload'})
+    monkeypatch.setattr(web_client.requests, 'post', post)
+    assert web_client.WebClient().parse_pdf(ParseRequest(pdf_path=source, output_dir=tmp_path/'out'))[0] is False
+    assert captured == [('cached.pdf', 'application/pdf', b'%PDF-test')]
+    assert not (tmp_path/'cached.pdf').exists()
 
 
 def test_safe_extract_zip_blocks_traversal(tmp_path):

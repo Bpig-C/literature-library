@@ -32,6 +32,39 @@ The first authorized write adds both purpose tables; queries/dry-run leave legac
 catalogs untouched. The migration does not backfill historical purposes. Continue
 using the current authentication/authority gates for writes and deployment.
 
+## Snapshot and recovery safety
+
+Weekly policy does not install a scheduler. Check the actual host task and its
+last successful receipt; an enabled service task is not a backup task. Manual
+`storage_backup.py --catalog <absolute-path> tick ... --force` bypasses only the
+seven-day interval. It still requires stopped writers, a byte budget, a new
+verified snapshot and the scheduler lock. Retention never deletes production blobs.
+
+Production inputs require `source_root`. Regenerate a reviewed file selection
+using `scripts/snapshot_inputs.py --template <inputs.json> --source-root <current-slot>
+--output <new-inputs.json>`. This refreshes both DB paths and working-file hashes.
+The maintenance adapter must compare this slot with the actual authenticated
+runtime before stopping writers; offline checks alone cannot establish authority.
+Run prepare/stage again inside the maintenance window. Do not reuse old tickets
+or substitute raw SQLite files after restore. The source guard checks both DBs,
+working-file locations and any applied runtime DB environment before publication.
+
+For immediate incident preservation, `scripts/preserve_databases.py --catalog
+<catalog.sqlite> --research <research.sqlite> --destination <new-directory>` uses
+SQLite Backup, includes committed WAL data, verifies integrity and writes counts
+and hashes. It does not stop writers or produce a coherent application release;
+use the release maintenance workflow for that. Preserve the original slot and
+WAL until all data and asset dependencies have been reconciled. Equal counts do
+not establish equal rows or safe deletion.
+
+Prepare and validate the new slot, including full-table preservation and path
+relocation, before writer epoch handover. Never edit sealed runtime code. A
+backup alone does not switch code, slots or authority epochs.
+
+MinerU cloud and multipart upload requests now label the pinned PDF bytes with a
+`.pdf` filename even when the cache path ends in `.asset`. Cloud result polling
+uses the same name. No unmanaged cache sibling copy is needed.
+
 ## Read-only lookup and source provenance
 
 `POST /api/duplicates/lookup` remains an authenticated query. Only this exact

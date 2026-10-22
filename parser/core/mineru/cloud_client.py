@@ -206,7 +206,7 @@ class CloudClient(PdfParseClient):
 
         # 3. 轮询结果
         try:
-            result = self._poll_batch(batch_id, file_name=req.pdf_path.name)
+            result = self._poll_batch(batch_id, file_name=req.pdf_path.with_suffix('.pdf').name)
         except Exception as exc:
             msg = f"轮询失败：{exc}"
             logger.error(msg)
@@ -245,7 +245,9 @@ class CloudClient(PdfParseClient):
         payload: dict[str, Any] = {
             "files": [
                 {
-                    "name": req.pdf_path.name,
+                    # Cache objects can end in .asset. The upload API receives a
+                    # PDF filename while bytes remain read from the pinned cache.
+                    "name": req.pdf_path.with_suffix('.pdf').name,
                     "is_ocr": is_ocr,
                     "data_id": _sanitize_data_id(req.pdf_path.stem),
                 }

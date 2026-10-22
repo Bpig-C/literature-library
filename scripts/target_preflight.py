@@ -41,6 +41,14 @@ def validate(value,*,check_files=False):
             p=paths.get(k)
             if not p or not p.is_file() or p.is_symlink():errors.append('Existing regular file required: '+k)
         adapter=paths.get('maintenance_adapter')
+        inputs_path=paths.get('backup_inputs')
+        if inputs_path and inputs_path.is_file() and root:
+            try:
+                from api.storage.release_control import validate_source
+                inputs=json.loads(inputs_path.read_text('utf-8'))
+                if Path(inputs.get('source_root','')).resolve()!=root:errors.append('Backup source_root differs from restored runtime')
+                validate_source(inputs)
+            except Exception as exc:errors.append('Backup source validation failed: '+str(exc))
         if adapter and adapter.is_file() and hash_file(adapter)[0]!=value.get('maintenance_adapter_sha256'):errors.append('Reviewed maintenance adapter hash differs')
         if root and not (root/'release-manifest.json').is_file():errors.append('Restored manifest missing')
         elif root:

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Configuration,[switch]$Execute)
+param([Parameter(Mandatory=$true)][string]$Configuration,[switch]$Execute,[switch]$Force)
 $ErrorActionPreference='Stop'
 $cfg=Get-Content -LiteralPath $Configuration -Raw | ConvertFrom-Json
 $app=Join-Path $cfg.restored_root 'app'
@@ -20,7 +20,9 @@ try {
   $lease=Enter-LitlibMaintenance $cfg
   if (!$lease -or !$lease.stopped) { throw 'Actual writer maintenance window not established.' }
   $now=[datetime]::UtcNow.ToString('o')
-  & $python (Join-Path $app 'scripts/restored_runtime.py') run-cli --root $cfg.restored_root --authority-control storage_backup.py --catalog $cfg.backup_catalog tick --inputs $cfg.backup_inputs --now $now --interval-days $cfg.interval_days --retain $cfg.retain_successful --stage-parent $cfg.stage_parent --max-snapshot-bytes $cfg.max_snapshot_bytes --writers-stopped
+  $manualArgs=@()
+  if ($Force) { $manualArgs=@('--force') }
+  & $python (Join-Path $app 'scripts/restored_runtime.py') run-cli --root $cfg.restored_root --authority-control storage_backup.py --catalog $cfg.backup_catalog tick --inputs $cfg.backup_inputs --now $now --interval-days $cfg.interval_days --retain $cfg.retain_successful --stage-parent $cfg.stage_parent --max-snapshot-bytes $cfg.max_snapshot_bytes --writers-stopped @manualArgs
   if ($LASTEXITCODE -ne 0) { throw 'Backup failed; previous successful versions remain. Stage retained for diagnosis/retry.' }
 } finally {
   if ($lease) { Exit-LitlibMaintenance $cfg $lease }

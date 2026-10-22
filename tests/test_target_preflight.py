@@ -18,5 +18,9 @@ def test_target_config_rejects_placeholders_credentials_and_unsafe_controls(tmp_
     config['manifest_key']=config['namespace']+'objects/sha256/'+config['manifest_sha256'][:2]+'/'+config['manifest_sha256']
     for key in ('backup_inputs','maintenance_adapter'):Path(config[key]).write_text('{}',encoding='utf-8')
     config['maintenance_adapter_sha256']=hashlib.sha256(Path(config['maintenance_adapter']).read_bytes()).hexdigest()
+    assert not validate(config,check_files=True)['ok']  # Empty/stale inputs fail before maintenance.
+    env={'LITLIB_STORAGE_ROOT':config['namespace'],'LITLIB_DB_PATH':str(root/'data/library/literature.sqlite'),'LITLIB_RESEARCH_DB':str(root/'data/research/research.sqlite')}
+    (root/'environment.json').write_text(json.dumps(env),encoding='utf-8')
+    Path(config['backup_inputs']).write_text(json.dumps({'source_root':str(root),'namespace':config['namespace'],'catalog':env['LITLIB_DB_PATH'],'research':env['LITLIB_RESEARCH_DB'],'files':{}}),encoding='utf-8')
     assert validate(config,check_files=True)['ok']
     config['code_commit']='d'*40;assert not validate(config,check_files=True)['ok']
