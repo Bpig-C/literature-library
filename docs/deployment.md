@@ -5,7 +5,9 @@ an independent `scripts/parse_worker.py` at the exact live commit, explicit
 capability activation, and an independently preserved upload encryption key.
 The [client/host operations](foundation-client.md#8-异步解析与原生多文件批次issue-714)
 cover migration, limits, maintenance barriers and cold restore. Code push does
-not install or activate either worker.
+not install or activate either worker. The restored launcher preserves only the
+reviewed host controls for async activation, upload encryption and backup
+authorization; database and asset roots still come from the verified slot.
 
 The [foundation client and host guide](foundation-client.md) describes the
 additive backup queue, independent worker configuration, parse plan tables and

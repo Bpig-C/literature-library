@@ -40,8 +40,11 @@ def environment(root):
     if env.get('LITLIB_STORAGE_BACKEND')=='local':
         if '/test/' not in ns.root or not Path(env.get('LITLIB_STORAGE_LOCAL_OBJECTS','')).is_absolute():raise StorageError('configuration_error','local backend allowed only in explicit test namespace')
     elif env.get('LITLIB_STORAGE_BACKEND')!='oss' or env.get('LITLIB_OSS_BUCKET')!=m['configuration'].get('oss_bucket') or env.get('LITLIB_OSS_REGION')!=m['configuration'].get('oss_region'):raise StorageError('configuration_error','release OSS backend configuration mismatch')
+    host_controls={'LITLIB_REMOTE_ENABLED','LITLIB_REMOTE_TOKEN','LITLIB_REMOTE_WRITE_ENABLED',
+                   'LITLIB_AUTHORITY_TOKEN','LITLIB_AUTHORITY_EPOCH','LITLIB_ASYNC_PARSE_ENABLED',
+                   'LITLIB_PARSE_UPLOAD_KEY','LITLIB_BACKUP_CONTROL','LITLIB_BACKUP_ADMIN_TOKEN'}
     for k in list(os.environ):
-        if k.startswith('LITLIB_') and k not in {'LITLIB_REMOTE_ENABLED','LITLIB_REMOTE_TOKEN','LITLIB_REMOTE_WRITE_ENABLED','LITLIB_AUTHORITY_TOKEN','LITLIB_AUTHORITY_EPOCH'}:os.environ.pop(k)
+        if k.startswith('LITLIB_') and k not in host_controls:os.environ.pop(k)
     os.environ.update(env);os.environ.update(LITLIB_RESEARCH_READ_ONLY='1',LITLIB_LEGACY_CLASSIFICATION_WRITES='block',PYTHONUTF8='1')
     return root,m
 
