@@ -1,6 +1,5 @@
 """HTTP regression for issue #2: resume existing output under the producer lock."""
 import json
-from contextlib import contextmanager
 
 import pytest
 from fastapi import FastAPI
@@ -58,20 +57,17 @@ def test_artifacts_ready_resume_is_idempotent_and_keeps_ids(isolated, tmp_path, 
                         member=None, virtual_path=str(output))
     service.backend = backend
     original_lock = producers.file_lock
-    lock_entries = []
-    @contextmanager
-    def observed_lock(path):
-        with original_lock(path):
-            lock_entries.append(path)
-            yield
-    monkeypatch.setattr(producers, 'file_lock', observed_lock)
     body = {'job_id': 'job-1', 'force': True}
+    monkeypatch.setattr(producers, 'file_lock', lambda path: original_lock(path, timeout=0))
+    with original_lock(producers._source_lock_path(service, 'source-1')):
+        blocked = client.post('/api/parse/resume', json=body)
+        assert blocked.status_code == 422 and 'busy' in blocked.json()['detail']
+    monkeypatch.setattr(producers, 'file_lock', original_lock)
     first = client.post('/api/parse/resume', json=body)
     assert first.status_code == 200, first.text
     assert first.json() == dict(job_id='job-1', state='registered', parse_run_id='run-1',
                                 version=3, backend='test')
     assert client.post('/api/parse/resume', json=body).json() == first.json()
-    assert lock_entries == [producers.lock_path(service)] * 2
     with service.registry.conn() as conn:
         for table in ('storage_producer_jobs', 'literature_parse_runs',
                       'storage_operations', 'storage_bindings'):

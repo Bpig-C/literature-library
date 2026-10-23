@@ -183,16 +183,22 @@ class Queue:
     def configure(self,limits):
         with self.tx() as conn:
             initialize(conn,limits)
+            self.control_mutable(conn)
             if conn.execute('SELECT 1 FROM parse_queue_jobs WHERE lease_token IS NOT NULL LIMIT 1').fetchone():
                 raise StorageError('busy','drain active leases before changing limits')
             conn.execute('UPDATE parse_queue_control SET limits_json=?',(parse_plans.canonical(asdict(limits)),))
 
     def batch_status(self,batch_id):
         with self.registry.conn(read_only=True) as conn:
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_cloud_batches'").fetchone():raise StorageError('not_found','native batch not found')
             batch=conn.execute('SELECT id,provider_id,state,language,created_at FROM parse_cloud_batches WHERE id=?',(batch_id,)).fetchone()
             if not batch:raise StorageError('not_found','native batch not found')
             return {**dict(batch),'files':[dict(r) for r in conn.execute('''SELECT task_id,data_id,file_name,source_file_id,producer_id,sha256,bytes,version,upload_state,upstream_state
                 FROM parse_cloud_members WHERE batch_id=? ORDER BY data_id''',(batch_id,))]}
+
+    def control_mutable(self,conn):
+        if conn.execute('SELECT maintenance FROM parse_queue_control').fetchone()[0]=='snapshot':
+            raise StorageError('busy','snapshot barrier blocks task/configuration changes; restore maintenance first')
 
     def maintenance(self,action,owner):
         with self.tx() as conn:
@@ -330,6 +336,7 @@ class Queue:
         if not reason.strip() or len(reason)>500:raise StorageError('invalid_request','inspection reason required')
         with self.tx() as conn:
             initialize(conn,self.initial_limits)
+            self.control_mutable(conn)
             row=conn.execute('SELECT * FROM parse_queue_jobs WHERE id=?',(qid,)).fetchone()
             if not row:raise StorageError('not_found','async task not found')
             if row['state']=='succeeded':raise StorageError('revision_conflict','completed task cannot be paused, cancelled or restarted')
@@ -372,6 +379,7 @@ class Queue:
         if outcome not in ('not_submitted','task_found'):raise StorageError('invalid_request','explicit verified outcome required')
         if outcome=='task_found' and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}',task_id or ''):raise StorageError('invalid_request','exact provider task ID required')
         with self.tx() as conn:
+            initialize(conn,self.initial_limits);self.control_mutable(conn)
             row=conn.execute('SELECT * FROM parse_queue_jobs WHERE id=?',(qid,)).fetchone()
             if not row:raise StorageError('not_found','task not found')
             if row['lease_token'] or row['state'] not in ('inspection_required','cancelled','paused'):

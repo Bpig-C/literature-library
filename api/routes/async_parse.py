@@ -79,6 +79,7 @@ def maintain(action:str,body:Maintenance,x_litlib_backup_token:Annotated[str|Non
     if action=='resume-submissions':
         with q.tx() as conn:
             from ..parse_queue import initialize
-            initialize(conn);conn.execute('UPDATE parse_queue_control SET submit_paused=0')
+            initialize(conn);q.control_mutable(conn)
+            conn.execute('UPDATE parse_queue_control SET submit_paused=0')
         return q.overview()
     return q.maintenance(action,body.owner)

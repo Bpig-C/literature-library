@@ -278,6 +278,34 @@ def test_maintenance_drains_existing_jobs_blocks_new_work_and_snapshot_claims(qu
     assert run_all(queue,driver,pid)['action']=='complete'
 
 
+def test_empty_queue_reads_do_not_initialize_catalog(queue):
+    from api.storage.core import hash_file
+    before=hash_file(queue.registry.catalog)
+    assert queue.overview()['configured'] is False
+    with pytest.raises(StorageError,match='async task not found'):queue.status('missing')
+    with pytest.raises(StorageError,match='native batch not found'):queue.batch_status('missing')
+    assert hash_file(queue.registry.catalog)==before
+    with queue.registry.conn(read_only=True) as conn:
+        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name LIKE 'parse_queue_%' OR name LIKE 'parse_cloud_%'").fetchone()
+
+
+def test_snapshot_barrier_blocks_control_changes_until_owner_resumes(queue,monkeypatch):
+    pid=accept(queue);task=queue.enqueue(pid)['tasks'][0]
+    queue.maintenance('drain','backup-owner');queue.maintenance('snapshot','backup-owner')
+    before=queue.overview();task_before=queue.status(task['id'])
+    with pytest.raises(StorageError,match='snapshot barrier'):queue.configure(replace(queue.initial_limits,upstream=2))
+    with pytest.raises(StorageError,match='snapshot barrier'):queue.action(task['id'],'cancel','operator cancellation')
+    with pytest.raises(StorageError,match='snapshot barrier'):queue.resolve(task['id'],'not_submitted','verified by operator')
+    monkeypatch.setattr(async_parse,'queue',lambda:queue)
+    from api import backup_jobs
+    monkeypatch.setattr(backup_jobs,'authorize',lambda token:None)
+    with pytest.raises(StorageError,match='snapshot barrier'):
+        async_parse.maintain('resume-submissions',async_parse.Maintenance(owner='backup-owner',reason='resume submissions',force=True),None)
+    assert queue.overview()==before and queue.status(task['id'])==task_before
+    queue.maintenance('resume','backup-owner')
+    assert queue.action(task['id'],'cancel','operator cancellation')['state']=='cancelled'
+
+
 def test_cancel_pause_resume_are_explicit_and_preserve_existing_task(queue):
     pid=accept(queue,source_ids=['SF1']);task=queue.enqueue(pid)['tasks'][0];driver=Driver()
     queue.run_one(driver);queue.clock.tick();queue.run_one(driver);queue.clock.tick()
