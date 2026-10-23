@@ -75,11 +75,16 @@ def main(argv=None):
     r.add_argument('--max-items',type=int,required=True);r.add_argument('--max-submissions',type=int,required=True)
     r.add_argument('--max-pages',type=int);r.add_argument('--execute',action='store_true')
     r=sub.add_parser('continue');r.add_argument('--plan-id',required=True);r.add_argument('--steps',type=int,default=1);r.add_argument('--execute',action='store_true')
-    r=sub.add_parser('status');g=r.add_mutually_exclusive_group(required=True);g.add_argument('--plan-id');g.add_argument('--job-id')
+    r=sub.add_parser('status');g=r.add_mutually_exclusive_group(required=True);g.add_argument('--plan-id');g.add_argument('--job-id');g.add_argument('--task-id')
     r=sub.add_parser('resume');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
     r=sub.add_parser('recover');r.add_argument('--job-id',required=True);r.add_argument('--execute',action='store_true')
     r=sub.add_parser('abandon');r.add_argument('--plan-id',required=True);r.add_argument('--position',type=int,required=True)
     r.add_argument('--reason',required=True);r.add_argument('--job-id');r.add_argument('--execute',action='store_true')
+    for action in ('pause','cancel','retry'):
+        r=sub.add_parser(action);r.add_argument('--task-id',required=True);r.add_argument('--reason',required=True);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('resolve');r.add_argument('--task-id',required=True);r.add_argument('--outcome',choices=['not_submitted','task_found'],required=True)
+    r.add_argument('--provider-task-id');r.add_argument('--reason',required=True);r.add_argument('--execute',action='store_true')
+    r=sub.add_parser('scheduler');r.add_argument('--resume-submissions',action='store_true');r.add_argument('--reason');r.add_argument('--execute',action='store_true')
     a=p.parse_args(argv);base=base_url(a.server);token=os.environ.get('LITLIB_REMOTE_TOKEN','')
     if len(token)<32:raise ValueError('LITLIB_REMOTE_TOKEN must be supplied in process environment')
     headers={'Authorization':'Bearer '+token};opener=build_opener(NoRedirect,HTTPSHandler(context=tls_context(a.ca_file)))
@@ -95,6 +100,7 @@ def main(argv=None):
         if a.command=='parse' and a.action=='abandon':needed='parse_resolution_v1'
         version,code=check_version(opener,base,headers,a.timeout,required=[needed])
         if code:print(json.dumps(version,ensure_ascii=False));return code
+        async_mode=bool(version.get('server',{}).get('capabilities',{}).get('async_parse_v1',{}).get('enabled'))
         def output(value):print(json.dumps(value,ensure_ascii=False,indent=2),flush=True)
         if a.command=='guide':
             result=request('/api/remote/foundation-guide')
@@ -118,9 +124,29 @@ def main(argv=None):
             with a.output.open('x',encoding='utf-8') as f:json.dump(result,f,ensure_ascii=False,indent=2)
             output({'plan_file':str(a.output),'sha256':result['sha256'],'counts':result['counts'],'excluded':result['excluded']});return 0
         if a.action=='status':
-            path='/api/parse/plans/'+quote(a.plan_id,safe='') if a.plan_id else '/api/parse/jobs?'+urlencode({'job_id':a.job_id})
+            if a.task_id:
+                if not async_mode:raise ValueError('async_parse_v1 enabled capability required')
+                path='/api/async/parse/tasks/'+quote(a.task_id,safe='')
+            elif a.plan_id:path=('/api/async/parse/plans/' if async_mode else '/api/parse/plans/')+quote(a.plan_id,safe='')
+            else:path='/api/parse/jobs?'+urlencode({'job_id':a.job_id})
             output(request(path));return 0
+        if a.action=='scheduler':
+            if not async_mode:raise ValueError('async_parse_v1 enabled capability required')
+            if not a.resume_submissions:output(request('/api/async/parse/scheduler'));return 0
+            if not a.execute or not a.reason:raise ValueError('resuming submissions requires --execute and inspection --reason')
+            admin=os.environ.get('LITLIB_BACKUP_ADMIN_TOKEN','')
+            if len(admin)<32:raise ValueError('dedicated maintenance permission required')
+            output(request('/api/async/parse/scheduler/resume-submissions',dict(owner='client-admin',reason=a.reason,force=True),
+                           extra={'X-Litlib-Backup-Token':admin}));return 0
         if not a.execute:raise ValueError('explicit --execute required')
+        if a.action=='resolve':
+            if not async_mode:raise ValueError('async_parse_v1 enabled capability required')
+            output(request('/api/async/parse/tasks/'+quote(a.task_id,safe='')+'/resolve',
+                           dict(outcome=a.outcome,task_id=a.provider_task_id,reason=a.reason,force=True)));return 0
+        if a.action in ('pause','cancel','retry'):
+            if not async_mode:raise ValueError('async_parse_v1 enabled capability required')
+            action='resume' if a.action=='retry' else a.action
+            output(request('/api/async/parse/tasks/'+quote(a.task_id,safe='')+'/'+action,dict(reason=a.reason,force=True)));return 0
         if a.action=='abandon':
             output(request('/api/parse/plans/'+quote(a.plan_id,safe='')+'/abandon',
                            dict(position=a.position,reason=a.reason,job_id=a.job_id,force=True)));return 0
@@ -132,6 +158,9 @@ def main(argv=None):
             output(result)  # Durable plan ID is printed before any long parse request.
         else:pid=a.plan_id;steps=a.steps
         if not 1<=steps<=1000:raise ValueError('steps must be 1..1000')
+        if async_mode:
+            result=request('/api/async/parse/plans/'+quote(pid,safe='')+'/enqueue',dict(max_tasks=steps))
+            output(result);return 0 if result['action'] in ('queued','complete') else 3
         for _ in range(steps):
             result=request('/api/parse/plans/'+quote(pid,safe='')+'/step',{})
             output(result)

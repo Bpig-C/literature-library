@@ -22,6 +22,10 @@ def version_info():
         'read_only':os.environ.get('LITLIB_RESEARCH_READ_ONLY')=='1',
         'remote_writes_enabled':os.environ.get('LITLIB_REMOTE_WRITE_ENABLED')=='1',
         'capabilities':{
+            'async_parse_v1':{'enabled':os.environ.get('LITLIB_ASYNC_PARSE_ENABLED')=='1',
+                'enqueue':'/api/async/parse/plans/{plan_id}/enqueue','status':'/api/async/parse/tasks/{task_id}',
+                'native_batch':True,'batch_status':'/api/async/parse/batches/{batch_id}',
+                'execution':'independent phase worker; 202 is acceptance, not completion'},
             'ingest_purpose_v1':{'required_fields':['purpose'],'max_length':2000,
                 'request_id':'retain for retries; use a new ID for another operation',
                 'exact_duplicate':'append purpose to existing Work',

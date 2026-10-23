@@ -118,3 +118,40 @@ worker 异常或断电遗留 running 时标为 needs_attention 并停止后续�
 未开始的 `pending` 解析可以随快照备份，因此可以先补录、备份，再按额度解析。真正 running 的解析/计划以及未登记完成的资产仍须协调。执行器明确证明尚未进入维护的预检失败记为 `failed`，后续请求可继续；修正原因后使用新 request_id。已调用维护入口（即使入口随后报错）或断电导致阶段不明的任务仍为 `needs_attention`，不能按普通预检失败处理。
 
 新表 `parse_plans`、`parse_plan_items`、`producer_diagnostics`、`producer_recovery`、`parse_plan_resolutions` 在首次授权写入时增量创建，只读入口不迁移；既有研究 schema/contract 不变。切换前在恢复副本验证新表进入两库快照；代码回退不删除这些记录，也不重放未知解析。线上发布和真实 MinerU/维护窗口验证另行执行。
+
+## 8. 异步解析与原生多文件批次（Issue #7/#14）
+
+2026-10-23 候选新增 async_parse_v1。部署方开启 LITLIB_ASYNC_PARSE_ENABLED=1 并启动独立 parse_worker 后，更新版 CLI 的 run/continue 快速入队。HTTP 202/退出 0 表示已接收，随后 status 查询；Parse/version 在 worker prepare 短事务中分配。旧同步写入口在开启时返回 async_required，客户端按 version 的固定地址/SHA 更新；未开启的服务保留原同步协议及其长锁限制。
+
+```powershell
+python scripts/litlib_remote.py --server $server parse run --plan deception-plan.json --request-id vlm-async-001 --max-items 10 --max-submissions 12 --max-pages 300 --execute
+python scripts/litlib_remote.py --server $server parse status --plan-id PP-实际ID
+python scripts/litlib_remote.py --server $server parse status --task-id PQ-实际ID
+python scripts/litlib_remote.py --server $server parse scheduler
+python scripts/litlib_remote.py --server $server parse pause --task-id PQ-实际ID --reason "暂停本地处理" --execute
+python scripts/litlib_remote.py --server $server parse retry --task-id PQ-实际ID --reason "核对后继续原任务或单项重试" --execute
+python scripts/litlib_remote.py --server $server parse cancel --task-id PQ-实际ID --reason "停止后续处理，保留预算与上游跟踪" --execute
+```
+
+同批 batch ID 可相同，data_id、Source、Parse/version、PDF 身份各自独立。cloud_history 回看各次映射，不返回签名链接；GET /api/async/parse/batches/{CB-ID} 查看逐文件状态。单份成功先登记，其余继续；failed 项有剩余预算才可明确 retry，已成功项不重提。文件尝试预算保守预留，批次 POST 意图另列，不代表账户余额或实际计费。等待上传、云排队、云 done、目录 registered 与固定资产可读分开表达。
+
+依据[官方精准 API](https://mineru.net/apiManage/docs)于 2026-10-23 的详细说明，本地批次上限按 50 份约束；余项可立即小批，不凑满。原生 batch 不保证全部文件同时执行。PUT 中断先查原批次，已确认上传但暂报 waiting-file 的文件继续等待，不重复上传；链接缺失/过期、密钥不符进入检查，不自动新建 batch。
+
+暂停/取消的已知任务仍仅查询到终态，tracking_upstream=true 表示尚在跟踪；不保证取消云端任务或退款。正常 pending/running 不计失败；查询错误有持久连续计数和有界退避。未知提交需实际核对 provider 后记录结论：
+
+```powershell
+python scripts/litlib_remote.py --server $server parse resolve --task-id PQ-实际ID --outcome task_found --provider-task-id 原上游ID --reason "已核对账户回执及文件身份" --execute
+python scripts/litlib_remote.py --server $server parse resolve --task-id PQ-实际ID --outcome not_submitted --reason "已核实该提交未创建任务" --execute
+```
+
+not_submitted 不退还原尝试预算，后续仍需剩余预算或新计划。响应丢失且上传链接未保存时保留映射待核，取得 batch ID 不等于已上传。-60009/429、-60018、认证错误和本地 busy 分列。账号额度恢复后，维护身份可执行 parse scheduler --resume-submissions --reason "核对依据" --execute 解除提交暂停；需要 LITLIB_BACKUP_ADMIN_TOKEN，不自动重试未知/已完成任务。
+
+部署准备（本轮不执行）：
+
+1. 保全数据、盘点并协调旧作业；从与运行 manifest 相同提交的干净代码目录安装 uv sync --locked --extra storage --extra parsing。
+2. API/worker 配相同根、authority 及 LITLIB_ASYNC_PARSE_ENABLED=1。另行保全 worker 的 32 字节 base64 密钥 LITLIB_PARSE_UPLOAD_KEY，不交普通客户端、不入 Git/快照。上传及结果链接用 AES-GCM 加密，AAD 绑定 namespace/batch/PQ/用途；恢复未上传文件需原密钥。
+3. 可信 limits JSON 可设 prepare/submit/upload/poll/download/publish/local 槽位、upstream 在途文件数、batch_size（1–50）、batch_input_bytes、提交/查询 RPM、页数/字节/磁盘和 lease。默认本地阶段/worker 为 1，批大小/在途文件数为 10；它们是排队边界，不承诺 10 个云端同时执行或账号配额，上线值按账号及有限样本调整。
+4. python scripts/parse_worker.py --configure C:/受控目录/parse-limits.json 提交共享配置，之后独立运行 python scripts/parse_worker.py --workers 1。多进程共享领取限制；--once 仅推进一个阶段。启动检查代码干净且与运行 manifest 提交一致。
+5. 维护用 --maintenance drain --owner 工单ID 阻止新接收/prepare，排空后才进入 snapshot；备份执行器已协调屏障。冷恢复通过 scheduler 读取 maintenance_owner，核对实际写者后，以 --maintenance resume --owner 原工单ID 显式解除保留的屏障。未登记资产/部分不可变包仍需先协调。
+
+parse_queue_control/jobs/events、parse_cloud_batches/members 为增量控制表，研究 schema/contract 不变。密文随数据库恢复，密钥独立配置；所有目录写入经短 epoch/租约事务。Source/最新版本在 resume/resolve/claim/发布检查，历史任务不能绕过新版本恢复。代码交付不安装 worker/定时任务、不自动迁移旧执行作业，不代表生产验收。

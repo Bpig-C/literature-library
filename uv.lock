@@ -333,6 +333,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+parsing = [
+    { name = "pycryptodome" },
+]
 storage = [
     { name = "alibabacloud-oss-v2" },
 ]
@@ -347,6 +350,7 @@ dev = [
 requires-dist = [
     { name = "alibabacloud-oss-v2", marker = "extra == 'storage'", specifier = "==1.4.0" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "pycryptodome", marker = "extra == 'parsing'", specifier = ">=3.24.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pymupdf", specifier = ">=1.27.2.3" },
     { name = "pypdf", specifier = ">=4.0" },
@@ -354,7 +358,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.34.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["storage"]
+provides-extras = ["storage", "parsing"]
 
 [package.metadata.requires-dev]
 dev = [

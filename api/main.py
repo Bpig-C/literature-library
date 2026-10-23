@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 if enabled(): validate_startup()  # explicit roots, both schemas and registry; fail before serving
 
 from .routes import duplicates, export, files, ingest, intake, metadata, parse, relations, works, classification, discovery, templates, research, provenance, foundation
+from .routes import async_parse
 from .remote_access import RemoteAuthentication, router as remote_router
 
 app = FastAPI(title="Literature Library API", version="0.1.0")
@@ -23,8 +24,10 @@ app.include_router(remote_router,prefix='/api')
 
 @app.exception_handler(StorageError)
 async def storage_failure(request,exc):
-    status={'not_found':404,'invalid_request':400,'permission_denied':403,'revision_conflict':409,'busy':409,'checksum_mismatch':502,'cache_full':507,'staging_full':507,'configuration_error':503}.get(exc.code,503)
-    return JSONResponse({'detail':str(exc),'code':exc.code,'retryable':exc.code in {'busy','network_unavailable','registration_pending','cache_full'}},status_code=status,headers={'Cache-Control':'no-store'})
+    status={'not_found':404,'invalid_request':400,'permission_denied':403,'revision_conflict':409,'producer_incomplete':409,'budget_exhausted':409,'busy':409,'checksum_mismatch':502,'cache_full':507,'staging_full':507,'configuration_error':503}.get(exc.code,503)
+    return JSONResponse({'detail':str(exc),'code':exc.code,'retryable':exc.code in {'busy','network_unavailable','registration_pending','cache_full'},
+                         **({'retry_after':5} if exc.code=='busy' else {})},status_code=status,
+                        headers={'Cache-Control':'no-store',**({'Retry-After':'5'} if exc.code=='busy' else {})})
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,6 +53,7 @@ app.include_router(research.router, prefix="/api")
 app.include_router(overview.router, prefix="/api")
 app.include_router(provenance.router, prefix="/api")
 app.include_router(foundation.router, prefix="/api")
+app.include_router(async_parse.router, prefix="/api")
 
 # Serve Vue build in production
 DIST = Path(__file__).resolve().parents[1] / "web" / "dist"

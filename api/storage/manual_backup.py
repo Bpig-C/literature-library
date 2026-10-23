@@ -96,10 +96,20 @@ def _execute(config, job_id, *, preview, phase):
             # Trusted host configuration only; neither request ID nor remote
             # payload is interpolated into shell commands.
             subprocess.run(argv,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        quiet(); entered=False
+        entered=False;draining=False;scheduler=None
+        from ..parse_queue import Queue, exists, snapshot_barrier
+        from .core import Registry
+        from types import SimpleNamespace
+        catalog=Path(environment['LITLIB_DB_PATH'])
+        with closing(sqlite3.connect(catalog.as_uri()+'?mode=ro',uri=True)) as conn:has_queue=exists(conn)
+        if has_queue:scheduler=Queue(SimpleNamespace(registry=Registry(catalog,Namespace(environment['LITLIB_STORAGE_ROOT']))),authority)
         try:
+            if scheduler:scheduler.maintenance('drain',job_id);draining=True
+            quiet()
             with authority.write_guard():
                 quiet(); require(schema()['manifest_sha256']==live['manifest_sha256'],'runtime changed')
+                if scheduler:
+                    with scheduler.registry.conn(write=True) as conn:snapshot_barrier(conn,job_id)
                 # Mark before invoking: a command may stop the service and then fail.
                 entered=True; phase['entered']=True; command('maintenance_enter')
             command('maintenance_verify_stopped')
@@ -116,13 +126,17 @@ def _execute(config, job_id, *, preview, phase):
             result=run_due(control_root()/'backup-catalog.json',active,backup,force=True)
             write(destination/'result.json',result)
         finally:
-            if entered:
-                # This backup never freezes or hands over authority. Verify
-                # that ownership is unchanged before restarting the same writer.
-                authority.check_remote(); command('maintenance_exit')
-                after=schema()
-                require(after['manifest_sha256']==live['manifest_sha256'] and after['remote_writes_enabled'] and not after['read_only'], 'writer did not recover')
-                write(destination/'service-restored.json',{'at':now(),'manifest_sha256':after['manifest_sha256']})
+            restored=not entered
+            try:
+                if entered:
+                    # Ownership must be unchanged before restarting this writer.
+                    authority.check_remote(); command('maintenance_exit')
+                    after=schema()
+                    require(after['manifest_sha256']==live['manifest_sha256'] and after['remote_writes_enabled'] and not after['read_only'], 'writer did not recover')
+                    write(destination/'service-restored.json',{'at':now(),'manifest_sha256':after['manifest_sha256']})
+                    restored=True
+            finally:
+                if draining and restored:scheduler.maintenance('resume',job_id)
         return result['version']
     finally:
         for key,value in previous.items():

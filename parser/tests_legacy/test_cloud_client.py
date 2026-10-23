@@ -42,6 +42,10 @@ class _FakeResp:
             raise ValueError("no json")
         return self._json
 
+    def iter_content(self,size):yield self.content
+
+    def close(self):pass
+
 
 def _make_result_zip() -> bytes:
     """构造一个仿 MinerU 结果 zip：full.md / content_list.json / images/a.jpg。"""
@@ -51,6 +55,68 @@ def _make_result_zip() -> bytes:
         zf.writestr("content_list.json", json.dumps([{"type": "text", "text": "Abstract body."}]))
         zf.writestr("images/a.jpg", b"\xff\xd8\xffimgdata")
     return buf.getvalue()
+
+
+def test_async_submit_returns_before_polling_and_persists_id_before_upload(monkeypatch,tmp_path):
+    pdf=tmp_path/'pinned.asset';pdf.write_bytes(b'%PDF synthetic');events=[];calls=[]
+    def request(method,url,**kwargs):
+        calls.append(method)
+        assert kwargs['json']['files'][0]['name']=='pinned.pdf'
+        return _FakeResp(200,{'code':0,'data':{'batch_id':'known-batch','file_urls':['https://upload.invalid/signed']}})
+    def upload(url,data,**kwargs):
+        assert any(stage=='upstream_submitted' and detail['task_id']=='known-batch' for stage,detail in events)
+        return _FakeResp(200)
+    monkeypatch.setattr(cc.requests,'request',request);monkeypatch.setattr(cc.requests,'put',upload)
+    monkeypatch.setattr(cc,'_detect_is_ocr',lambda p:False)
+    client=cc.CloudClient();client.on_progress=lambda stage,**detail:events.append((stage,detail))
+    assert client.submit_pdf(ParseRequest(pdf_path=pdf,output_dir=tmp_path/'out'))=='known-batch'
+    assert calls==['POST']
+
+
+def test_async_poll_is_one_get_and_rejects_unmatched_source(monkeypatch):
+    responses=[{'file_name':'pinned.pdf','state':'pending'},{'file_name':'other.pdf','state':'done','full_zip_url':'https://private.invalid/result'}];calls=[]
+    def request(method,url,**kwargs):
+        calls.append(method)
+        return _FakeResp(200,{'code':0,'data':{'extract_result':[responses.pop(0)]}})
+    monkeypatch.setattr(cc.requests,'request',request)
+    client=cc.CloudClient()
+    assert client.poll_once('batch','pinned.pdf')['state']=='pending'
+    with pytest.raises(cc.CloudStageError,match='provider_identity_mismatch'):client.poll_once('batch','pinned.pdf')
+    assert calls==['GET','GET']
+
+
+def test_native_upload_batch_sends_multiple_files_with_distinct_data_ids(monkeypatch,tmp_path):
+    pdf=tmp_path/'fixed.asset';pdf.write_bytes(b'%PDF synthetic');payloads=[];remembered=[]
+    def request(method,url,**kwargs):
+        assert method=='POST';payloads.append(kwargs['json'])
+        return _FakeResp(200,{'code':0,'data':{'batch_id':'native-batch','file_urls':['https://upload.invalid/one','https://upload.invalid/two']}})
+    monkeypatch.setattr(cc.requests,'request',request);monkeypatch.setattr(cc,'_detect_is_ocr',lambda p:False)
+    files=[dict(path=pdf,name='first.pdf',data_id='one'),dict(path=pdf,name='second.pdf',data_id='two')]
+    batch=cc.CloudClient().create_upload_batch(files,'en',lambda bid,urls:remembered.append((bid,urls)))
+    assert batch=='native-batch' and len(payloads)==1 and len(payloads[0]['files'])==2
+    assert [f['data_id'] for f in payloads[0]['files']]==['one','two']
+    assert remembered[0][0]=='native-batch' and len(remembered[0][1])==2
+
+
+def test_native_query_returns_each_file_state_independently(monkeypatch):
+    entries=[dict(data_id='a',file_name='a.pdf',state='done',full_zip_url='https://result.invalid/a'),
+             dict(data_id='b',file_name='b.pdf',state='running'),dict(data_id='c',file_name='c.pdf',state='failed')]
+    methods=[]
+    def request(method,*args,**kwargs):methods.append(method);return _FakeResp(200,{'code':0,'data':{'extract_result':entries}})
+    monkeypatch.setattr(cc.requests,'request',request)
+    assert [r['state'] for r in cc.CloudClient().query_batch('native-batch')]==['done','running','failed']
+    assert methods==['GET']
+
+
+@pytest.mark.parametrize('kind',['compressed','expanded'])
+def test_async_download_enforces_stream_and_expansion_budgets(monkeypatch,tmp_path,kind):
+    buf=io.BytesIO()
+    with zipfile.ZipFile(buf,'w',compression=zipfile.ZIP_DEFLATED) as z:z.writestr('full.md','x'*6000)
+    payload=buf.getvalue();out=tmp_path/'out';out.mkdir()
+    monkeypatch.setattr(cc.requests,'get',lambda *a,**k:_FakeResp(200,content=payload))
+    with pytest.raises(cc.CloudStageError,match='download_budget_exceeded' if kind=='compressed' else 'extraction_budget_exceeded'):
+        cc.CloudClient()._materialize('https://private.invalid/result',out,'pinned',max_bytes=10 if kind=='compressed' else len(payload)+1)
+    assert not (out/'package.zip.part').exists() and not (out/'content.md').exists()
 
 
 @pytest.mark.parametrize('suffix', ['.pdf', '.asset'])

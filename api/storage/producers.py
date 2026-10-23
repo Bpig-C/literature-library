@@ -5,6 +5,7 @@ IDs. Explicit resume completes artifacts_ready without running the parser again.
 Foundation execution is globally serial across parse/resume/release.
 """
 import hashlib,json,os,re,sqlite3,zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime,timezone
 from .core import StorageError,file_lock,hash_file
@@ -13,6 +14,22 @@ from .runtime import configured_service,required_path
 def now():return datetime.now(timezone.utc).isoformat()
 def job_id(kind,identity):return kind+'-'+hashlib.sha256(identity.encode()).hexdigest()
 def lock_path(service):return service.registry.catalog.with_suffix('.producer.lock')
+
+def _check_async_owner(conn,source_id,registry):
+ from .fenced import FencedRegistry
+ if isinstance(registry,FencedRegistry):return
+ if conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_queue_jobs'").fetchone():
+  row=conn.execute("SELECT id FROM parse_queue_jobs WHERE source_file_id=? AND state NOT IN ('succeeded','failed','cancelled','blocked_budget') LIMIT 1",(source_id,)).fetchone()
+  if row:raise StorageError('producer_incomplete','source belongs to async task '+row[0])
+
+@contextmanager
+def _job_lock(service,jid):
+ with service.registry.conn(read_only=True) as c:
+  row=c.execute('SELECT source_file_id FROM storage_producer_jobs WHERE id=?',(jid,)).fetchone()
+ if not row:raise StorageError('not_found','producer job unavailable')
+ with file_lock(lock_path(service)),file_lock(_source_lock_path(service,row[0])):
+  with service.registry.conn(read_only=True) as c:_check_async_owner(c,row[0],service.registry)
+  yield
 
 def _source_lock_path(service,source_id):
  """Canonical safe lock key; the global ownership guard remains authoritative."""
@@ -73,40 +90,47 @@ def _finish(service,jid):
 
 def resume_producer(jid,service=None):
  service=service or configured_service()
- with file_lock(lock_path(service)):return _finish(service,jid)
+ with _job_lock(service,jid):return _finish(service,jid)
+
+def prepare_parse(service,source_id,*,force=False,backend=None,on_registered=None):
+ with service.registry.conn(write=True) as c:
+  _check_async_owner(c,source_id,service.registry)
+  source=c.execute('SELECT sf.*,w.language FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(source_id,)).fetchone()
+  if not source or source['status']=='quarantined':raise StorageError('invalid_request','active source required')
+  previous=c.execute("SELECT * FROM storage_producer_jobs WHERE kind='parse' AND source_file_id=? ORDER BY version DESC LIMIT 1",(source_id,)).fetchone()
+  if previous and previous['state'] in ('preparing','artifacts_ready'):raise StorageError('producer_incomplete','resume or inspect unfinished producer before new parse')
+  if previous and previous['state']=='registered' and not force:return dict(previous)
+  version=previous['version']+1 if previous else 1
+  # Never reuse a historical local parse row/output, even on first opt-in run.
+  rid='LPR-immutable-'+hashlib.sha256((source_id+':'+str(version)).encode()).hexdigest()[:32]
+  initial='LPR-'+source_id
+  pending=c.execute("SELECT id FROM literature_parse_runs WHERE id=? AND status='pending'",(initial,)).fetchone() if not previous else None
+  with sqlite3.connect(required_path('LITLIB_RESEARCH_DB').as_uri()+'?mode=ro',uri=True) as research:
+   referenced=research.execute('SELECT 1 FROM research_text_snapshots WHERE parse_run_id=? LIMIT 1',(initial,)).fetchone()
+  if pending and not referenced and not c.execute('SELECT 1 FROM storage_bindings WHERE identity=? LIMIT 1',(initial,)).fetchone():rid=initial
+  out=required_path('LITLIB_LIBRARY_ROOT')/'works'/source['work_id']/'parsed'/'immutable'/source_id/('v'+str(version))
+  if out.exists():raise StorageError('revision_conflict','new parse directory already exists; inspect before retry')
+  jid=job_id('parse',rid)
+  if rid==initial:
+   c.execute("UPDATE literature_parse_runs SET status='running',output_dir=?,started_at=?,content_md_path='',content_json_path='',package_path='',error='' WHERE id=?",(str(out),now(),rid))
+  else:c.execute("INSERT INTO literature_parse_runs(id,work_id,source_file_id,source_path,status,output_dir,started_at,error) VALUES(?,?,?,?,'running',?,?,'')",(rid,source['work_id'],source_id,source['source_path'],str(out),now()))
+  c.execute("INSERT INTO storage_producer_jobs(id,kind,source_file_id,parse_run_id,version,state) VALUES(?,'parse',?,?,?,'preparing')",(jid,source_id,rid,version))
+  from ..producer_recovery import create
+  binding=c.execute("SELECT sha256,bytes FROM storage_bindings WHERE identity=? AND role='pdf' AND version=1",(source_id,)).fetchone()
+  if not binding or binding['sha256']!=source['content_sha256']:raise StorageError('checksum_mismatch','registered PDF required')
+  create(c,jid,source_id,rid,version,binding['sha256'],binding['bytes'])
+  # Link the plan in THIS transaction; a crash cannot commit an orphan job.
+  if on_registered:on_registered(c,jid)
+ return dict(source),rid,out,jid
 
 def parse_source(source_id,runner,*,force=False,backend=None,service=None,on_registered=None):
  service=service or configured_service()
  # Foundation release retains global serialization across parse/resume/release.
  # A request-local thread pool must not bypass shared ownership or maintenance.
  with file_lock(lock_path(service)),file_lock(_source_lock_path(service,source_id)):
-  with service.registry.conn(write=True) as c:
-   source=c.execute('SELECT sf.*,w.language FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(source_id,)).fetchone()
-   if not source or source['status']=='quarantined':raise StorageError('invalid_request','active source required')
-   previous=c.execute("SELECT * FROM storage_producer_jobs WHERE kind='parse' AND source_file_id=? ORDER BY version DESC LIMIT 1",(source_id,)).fetchone()
-   if previous and previous['state'] in ('preparing','artifacts_ready'):raise StorageError('producer_incomplete','resume or inspect unfinished producer before new parse')
-   if previous and previous['state']=='registered' and not force:return dict(previous)
-   version=previous['version']+1 if previous else 1
-   # Never reuse a historical local parse row/output, even on first opt-in run.
-   rid='LPR-immutable-'+hashlib.sha256((source_id+':'+str(version)).encode()).hexdigest()[:32]
-   initial='LPR-'+source_id
-   pending=c.execute("SELECT id FROM literature_parse_runs WHERE id=? AND status='pending'",(initial,)).fetchone() if not previous else None
-   with sqlite3.connect(required_path('LITLIB_RESEARCH_DB').as_uri()+'?mode=ro',uri=True) as research:
-    referenced=research.execute('SELECT 1 FROM research_text_snapshots WHERE parse_run_id=? LIMIT 1',(initial,)).fetchone()
-   if pending and not referenced and not c.execute('SELECT 1 FROM storage_bindings WHERE identity=? LIMIT 1',(initial,)).fetchone():rid=initial
-   out=required_path('LITLIB_LIBRARY_ROOT')/'works'/source['work_id']/'parsed'/'immutable'/source_id/('v'+str(version))
-   if out.exists():raise StorageError('revision_conflict','new parse directory already exists; inspect before retry')
-   jid=job_id('parse',rid)
-   if rid==initial:
-    c.execute("UPDATE literature_parse_runs SET status='running',output_dir=?,started_at=?,content_md_path='',content_json_path='',package_path='',error='' WHERE id=?",(str(out),now(),rid))
-   else:c.execute("INSERT INTO literature_parse_runs(id,work_id,source_file_id,source_path,status,output_dir,started_at,error) VALUES(?,?,?,?,'running',?,?,'')",(rid,source['work_id'],source_id,source['source_path'],str(out),now()))
-   c.execute("INSERT INTO storage_producer_jobs(id,kind,source_file_id,parse_run_id,version,state) VALUES(?,'parse',?,?,?,'preparing')",(jid,source_id,rid,version))
-   from ..producer_recovery import create
-   binding=c.execute("SELECT sha256,bytes FROM storage_bindings WHERE identity=? AND role='pdf' AND version=1",(source_id,)).fetchone()
-   if not binding or binding['sha256']!=source['content_sha256']:raise StorageError('checksum_mismatch','registered PDF required')
-   create(c,jid,source_id,rid,version,binding['sha256'],binding['bytes'])
-   # Link the plan in THIS transaction; a crash cannot commit an orphan job.
-   if on_registered:on_registered(c,jid)
+  prepared=prepare_parse(service,source_id,force=force,backend=backend,on_registered=on_registered)
+  if isinstance(prepared,dict):return prepared
+  source,rid,out,jid=prepared
   try:
    out.mkdir(parents=True,exist_ok=False)
    owner={'job_id':jid,'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'}
@@ -151,13 +175,39 @@ def _stage_parse_assets(service,jid,out,used,task,owner):
  assets[0]['owned_files']=owner['files']
  with service.registry.conn(write=True) as c:c.execute("UPDATE storage_producer_jobs SET state='artifacts_ready',artifacts=?,backend=?,task_id=? WHERE id=?",(json.dumps(assets),used,task,jid))
 
+def owned_output(service,job,run):
+ out=Path(run['output_dir']);library=required_path('LITLIB_LIBRARY_ROOT')
+ expected=library/'works'/run['work_id']/'parsed'/'immutable'/job['source_file_id']/('v'+str(job['version']))
+ if out.resolve()!=expected.resolve() or not out.resolve().is_relative_to(library) or out.is_symlink() or (hasattr(out,'is_junction') and out.is_junction()):raise StorageError('configuration_error','recovery output outside owned path')
+ if any(p.is_symlink() or (hasattr(p,'is_junction') and p.is_junction()) for p in out.rglob('*')):raise StorageError('configuration_error','linked recovery output refused')
+ marker=out/'.litlib-producer-owned.json'
+ if not marker.is_file():
+  from ..producer_recovery import read
+  with service.registry.conn(read_only=True) as c:receipt=read(c,job['id'])
+  binding=service.registry.binding(job['source_file_id'],'pdf',1)
+  if not receipt or any(receipt[k]!=job[k] for k in ('source_file_id','parse_run_id','version')) or receipt['sha256']!=binding['sha256'] or receipt['bytes']!=binding['bytes']:
+   raise StorageError('producer_incomplete','portable recovery receipt unavailable or differs')
+  # Reject junctions/symlinks at every ancestor, not just the final directory.
+  for ancestor in [out,*out.parents]:
+   if ancestor.is_symlink() or (hasattr(ancestor,'is_junction') and ancestor.is_junction()):raise StorageError('configuration_error','linked recovery ancestor refused')
+   if ancestor==library:break
+  if out.exists() and (not out.is_dir() or any(out.iterdir())):raise StorageError('producer_incomplete','unowned recovery files preserved; inspect first')
+  out.mkdir(parents=True,exist_ok=True)
+  from .release_control import write
+  write(marker,{'job_id':job['id'],'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'})
+ owner=json.loads(marker.read_text('utf-8'))
+ if owner.get('job_id')!=job['id'] or owner.get('catalog')!=str(service.registry.catalog) or owner.get('output')!=str(out) or owner.get('release_state')!='producing' or (out/'immutable-assets.zip').exists():raise StorageError('producer_incomplete','partial package requires inspection; do not overwrite')
+ return out,owner
+
 def recover_cloud_producer(jid,runner,service=None):
  """Query/download an existing cloud task; never submit another task/version."""
  service=service or configured_service()
- with file_lock(lock_path(service)):
+ with _job_lock(service,jid):
   with service.registry.conn() as c:
    job=dict(c.execute('SELECT * FROM storage_producer_jobs WHERE id=?',(jid,)).fetchone() or {})
    if not job:raise StorageError('not_found','producer not found')
+   if c.execute("SELECT 1 FROM sqlite_master WHERE name='parse_cloud_members'").fetchone() and c.execute('SELECT 1 FROM parse_cloud_members WHERE producer_id=? LIMIT 1',(jid,)).fetchone():
+    raise StorageError('producer_incomplete','native batch requires async task recovery with data_id mapping')
    if job['state'] in ('registered','artifacts_ready'):return _finish(service,jid)
    if job['kind']!='parse' or job['backend']!='vlm' or not job['task_id']:raise StorageError('producer_incomplete','known VLM task required; never resubmit unknown tasks')
    latest=c.execute("SELECT id FROM storage_producer_jobs WHERE kind='parse' AND source_file_id=? ORDER BY version DESC LIMIT 1",(job['source_file_id'],)).fetchone()
@@ -165,27 +215,7 @@ def recover_cloud_producer(jid,runner,service=None):
    run=c.execute('SELECT work_id,output_dir FROM literature_parse_runs WHERE id=?',(job['parse_run_id'],)).fetchone()
    source=c.execute('SELECT sf.status,w.read_status FROM source_files sf JOIN works w ON w.id=sf.work_id WHERE sf.id=?',(job['source_file_id'],)).fetchone()
    if not source or source[0]!='active' or source[1] in ('quarantined','archived'):raise StorageError('revision_conflict','source is not active')
-  out=Path(run['output_dir']);library=required_path('LITLIB_LIBRARY_ROOT')
-  expected=library/'works'/run['work_id']/'parsed'/'immutable'/job['source_file_id']/('v'+str(job['version']))
-  if out.resolve()!=expected.resolve() or not out.resolve().is_relative_to(library) or out.is_symlink() or (hasattr(out,'is_junction') and out.is_junction()):raise StorageError('configuration_error','recovery output outside owned path')
-  if any(p.is_symlink() or (hasattr(p,'is_junction') and p.is_junction()) for p in out.rglob('*')):raise StorageError('configuration_error','linked recovery output refused')
-  marker=out/'.litlib-producer-owned.json'
-  if not marker.is_file():
-   from ..producer_recovery import read
-   with service.registry.conn(read_only=True) as c:receipt=read(c,jid)
-   binding=service.registry.binding(job['source_file_id'],'pdf',1)
-   if not receipt or any(receipt[k]!=job[k] for k in ('source_file_id','parse_run_id','version')) or receipt['sha256']!=binding['sha256'] or receipt['bytes']!=binding['bytes']:
-    raise StorageError('producer_incomplete','portable recovery receipt unavailable or differs')
-   # Reject junctions/symlinks at every ancestor, not just the final directory.
-   for ancestor in [out,*out.parents]:
-    if ancestor.is_symlink() or (hasattr(ancestor,'is_junction') and ancestor.is_junction()):raise StorageError('configuration_error','linked recovery ancestor refused')
-    if ancestor==library:break
-   if out.exists() and (not out.is_dir() or any(out.iterdir())):raise StorageError('producer_incomplete','unowned recovery files preserved; inspect first')
-   out.mkdir(parents=True,exist_ok=True)
-   from .release_control import write
-   write(marker,{'job_id':jid,'catalog':str(service.registry.catalog),'output':str(out),'files':None,'release_state':'producing'})
-  owner=json.loads(marker.read_text('utf-8'))
-  if owner.get('job_id')!=jid or owner.get('catalog')!=str(service.registry.catalog) or owner.get('output')!=str(out) or owner.get('release_state')!='producing' or (out/'immutable-assets.zip').exists():raise StorageError('producer_incomplete','partial package requires inspection; do not overwrite')
+  out,owner=owned_output(service,job,run)
   from ..producer_events import capture
   try:
    with capture(service.registry,jid) as event:
@@ -202,7 +232,7 @@ def recover_cloud_producer(jid,runner,service=None):
 def release_producer_output(jid,service=None):
  """Explicit, conservative release of owned successful parse output only."""
  service=service or configured_service()
- with file_lock(lock_path(service)):
+ with _job_lock(service,jid):
   with service.registry.conn() as c:
    job=c.execute('SELECT * FROM storage_producer_jobs WHERE id=?',(jid,)).fetchone()
    if not job or job['kind']!='parse' or job['state']!='registered':raise StorageError('producer_incomplete','registered parse job required; failed/unregistered material preserved')

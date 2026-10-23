@@ -125,9 +125,10 @@ def preview(conn, selection: Selection):
         receipt = recovery(conn,jobs[0]['id']) if jobs else None
         stages = {e['stage'] for e in events}
         uncertain = bool(jobs and jobs[0]['state']=='failed' and
-                         (jobs[0]['task_id'] or (receipt and receipt['submission'] in ('unknown','known')) or 'submission_unknown' in stages or
+                         ((jobs[0]['task_id'] and not (receipt and receipt['submission']=='terminal_failed')) or (receipt and receipt['submission'] in ('unknown','known')) or
+                          (not receipt and ('submission_unknown' in stages or
                           ('submitting' in stages and 'submission_rejected' not in stages) or
-                          (jobs[0]['backend']=='vlm' and not events and not receipt)))
+                          (jobs[0]['backend']=='vlm' and not events)))))
         if row['source_status'] != 'active' or row['read_status'] in ('quarantined', 'archived'): reason = 'inactive'
         elif any(j['state'] in ('preparing', 'artifacts_ready') for j in jobs): reason = 'unfinished_job'
         elif uncertain: reason = 'upstream_inspection_required'
@@ -220,12 +221,14 @@ def status(registry, pid):
                 job = conn.execute('SELECT state,parse_run_id,version,backend,task_id,error_code FROM storage_producer_jobs WHERE id=?', (item['job_id'],)).fetchone()
                 item['producer'] = dict(job) if job else None
         used = sum(i['reserved'] for i in items)
+        from .parse_queue import submission_usage
+        submissions=submission_usage(conn,pid) if payload['selection']['backend']=='vlm' else 0
         resolutions = []
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plan_resolutions'").fetchone():
             resolutions = [dict(r) for r in conn.execute('SELECT position,job_id,reason,resolved_at,outcome FROM parse_plan_resolutions WHERE plan_id=? ORDER BY rowid',(pid,))]
         return dict(plan_id=pid, request_id=plan['request_id'], selection=payload['selection'],
                     budget=dict(max_items=plan['max_items'], max_submissions=plan['max_submissions'], max_pages=plan['max_pages'],
-                                reserved_items=used, reserved_submissions=used if payload['selection']['backend']=='vlm' else 0,
+                                reserved_items=used, reserved_submissions=submissions,
                                 reserved_pages=sum(i['pages'] for i in items if i['reserved'])), items=items, resolutions=resolutions,
                     remaining=[i['source_file_id'] for i in items if i['state']=='queued'])
 

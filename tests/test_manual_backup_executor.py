@@ -124,3 +124,21 @@ def test_legacy_failed_cloud_job_requires_recovery_before_snapshot(host):
     from api.backup_jobs import BackupPreflightError
     with pytest.raises(BackupPreflightError):backup.execute(cfg,'BK-legacy')
     assert 'enter' not in events
+
+
+def test_backup_establishes_and_releases_scheduler_snapshot_barrier(host,monkeypatch):
+    from api.parse_queue import initialize
+    cfg,events,control,live=host
+    catalog=Path(live['code_root']).parent/'data/library/literature.sqlite'
+    with sqlite3.connect(catalog) as conn:
+        initialize(conn)
+        conn.execute("INSERT INTO parse_queue_jobs(id,plan_id,position,source_file_id,backend,phase,state,created_at,updated_at) VALUES('PQ-test','PP-test',0,'SF-test','vlm','prepare','queued',0,0)")
+    def command(argv,**kwargs):
+        events.append(argv[0])
+        if argv[0]=='enter':
+            with sqlite3.connect(catalog) as conn:assert conn.execute('SELECT maintenance FROM parse_queue_control').fetchone()[0]=='snapshot'
+    monkeypatch.setattr(backup.subprocess,'run',command)
+    assert backup.execute(cfg,'BK-async-queued')['id']=='new'
+    with sqlite3.connect(catalog) as conn:
+        assert conn.execute('SELECT maintenance FROM parse_queue_control').fetchone()[0]==''
+        assert conn.execute('SELECT state FROM parse_queue_jobs').fetchone()[0]=='queued'

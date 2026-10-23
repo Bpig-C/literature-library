@@ -1,5 +1,5 @@
 """Authenticated transport over existing business routes and storage bindings."""
-import hmac,os
+import hmac,os,re
 from fastapi import APIRouter,HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -26,6 +26,15 @@ class RemoteAuthentication(BaseHTTPMiddleware):
                 return JSONResponse({'detail':'Remote writes disabled on this runtime'},status_code=403)
         elif request.url.path.startswith('/api/remote/'):
             return JSONResponse({'detail':'Remote access disabled'},status_code=503)
+        from .parse_queue import enabled as async_enabled
+        # These routes own short fenced transactions. Authentication and remote
+        # write gating above still apply; no client-supplied bypass flag exists.
+        if request.method=='POST' and re.fullmatch(r'/api/async/parse/(?:plans/[^/]+/enqueue|tasks/[^/]+/(?:pause|cancel|resume|resolve)|scheduler/(?:drain|snapshot|resume|resume-submissions))',path):
+            return await call_next(request)
+        if async_enabled() and request.method=='POST' and (
+            path in ('/api/parse/trigger','/api/parse/resume','/api/parse/recover') or
+            (path.startswith('/api/parse/plans/') and path.endswith(('/step','/abandon')))):
+            return JSONResponse({'code':'async_required','detail':'Use async_parse_v1 task enqueue/status/control; synchronous parsing is disabled on this runtime'},status_code=409)
         if request.method not in {'GET','HEAD','OPTIONS'} and not is_read_only_post and os.environ.get('LITLIB_STORAGE_MODE')=='immutable':
             from .storage.authority import configured_authority
             from .storage.core import StorageError

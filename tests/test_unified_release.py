@@ -153,3 +153,75 @@ def test_failed_cloud_task_recovers_after_full_cold_restore(release,tmp_path,mon
     assert complete['action']=='complete' and complete['budget']==failed['budget']
     with restored.read(recovered['parse_run_id'],'md',2) as md:
         assert md.read_text()=='Recovered existing cloud output'
+
+
+def test_async_queue_paused_cloud_task_resumes_after_cold_restore(release,tmp_path,monkeypatch):
+    from api.parse_queue import Queue,Limits
+    from api.storage.authority import Authority
+    from test_async_parse import Driver,Clock,run_all
+    root,backend,ns,published,action,old_job,snap,config,code,files,frontend=release
+    service=configured_service();owner='synthetic-async-owner-'+'x'*32
+    a=Authority(backend,ns,owner,0,tmp_path/'authority');a.initialize()
+    clock=Clock();q=Queue(service,a,clock=clock,limits=Limits(poll_seconds=1,submit_per_minute=600,poll_per_minute=600))
+    with service.registry.conn(read_only=True) as conn:pid=conn.execute('SELECT id FROM parse_plans').fetchone()[0]
+    task=q.enqueue(pid)['tasks'][0];driver=Driver()
+    q.run_one(driver);clock.tick();q.run_one(driver);clock.tick()
+    paused=q.action(task['id'],'pause','Prepare recoverable snapshot')
+    assert paused['producer']['task_id'] and len(driver.submits)==1
+    snapshot=publish_snapshot(tmp_path/'async-snapshot',catalog=service.registry.catalog,research=root/'research/research.sqlite',
+        files=files,config=config,code=code,frontend=frontend,namespace=ns,backend=backend,asset_index=published['manifest']['asset_index'])
+    entry=snapshot['manifest_object'];target=tmp_path/'async-cold'
+    gc.collect();assert root.resolve().is_relative_to(tmp_path.resolve());root.rename(tmp_path/'old-async-unavailable')
+    restore_release(backend,manifest_key=entry['key'],manifest_sha256=entry['sha256'],destination=target,namespace=ns,expected_git_url=str(CODE))
+    assert not list(target.rglob('.litlib-producer-owned.json'))
+    for k,v in json.loads((target/'environment.json').read_text('utf-8')).items():monkeypatch.setenv(k,v)
+    restored=configured_service();new_authority=Authority(backend,ns,owner,0,target/'data/.authority')
+    current=Queue(restored,new_authority,clock=clock)
+    assert current.status(task['id'])['state']=='paused'
+    current.action(task['id'],'resume','Continue same provider task after restore')
+    class ExistingOnly(Driver):
+        def submit(self,*args,**kwargs):pytest.fail('cold restore must not create cloud task')
+    reader=ExistingOnly();completed=run_all(current,reader,pid)
+    assert completed['action']=='complete' and completed['budget']['reserved_submissions']==1
+    assert reader.downloads==driver.submits
+
+
+def test_native_batch_upload_links_and_mappings_survive_cold_restore(release,tmp_path,monkeypatch):
+    import base64
+    from api import parse_plans
+    from api.parse_queue import Queue,Limits
+    from api.storage.authority import Authority
+    from test_async_parse import Clock,run_all
+    from test_native_batches import Native,until
+    root,backend,ns,published,action,old_job,snap,config,code,files,frontend=release
+    library=root/'library'
+    import pymupdf
+    doc=pymupdf.open();page=doc.new_page();page.insert_text((40,40),'Second synthetic native batch paper')
+    doc.save(library/'_inbox/second.pdf');doc.close()
+    intake=build_ingest_plan(library);execute_plan(intake,purpose='native batch cold restore verification',no_backup=True)
+    service=configured_service();owner='native-owner-'+'x'*32
+    monkeypatch.setenv('LITLIB_PARSE_UPLOAD_KEY',base64.urlsafe_b64encode(b'n'*32).decode())
+    auth=Authority(backend,ns,owner,0,tmp_path/'native-authority');auth.initialize()
+    clock=Clock();q=Queue(service,auth,clock=clock,limits=Limits(upstream=2,batch_size=2,poll_seconds=1,submit_per_minute=600,poll_per_minute=600))
+    with service.registry.conn(read_only=True) as conn:
+        plan=parse_plans.preview(conn,parse_plans.Selection(backend='vlm',work_ids=[action.work_id,intake.ingests[0].work_id]))
+    pid=parse_plans.accept(service.registry,plan,'native-cold-plan',2,2,100)['plan_id']
+    tasks=q.enqueue(pid)['tasks'];driver=Native();until(q,driver,lambda:bool(driver.posts))
+    assert len(driver.posts)==1 and len(driver.posts[0])==2 and not driver.puts
+    for task in tasks:q.action(task['id'],'pause','Checkpoint before uploading files')
+    q.maintenance('drain','native-cold-snapshot');q.maintenance('snapshot','native-cold-snapshot')
+    with service.registry.conn(read_only=True) as conn:bindings=[dict(r) for r in conn.execute('SELECT * FROM storage_bindings ORDER BY identity,role,version')]
+    snapshot=publish_snapshot(tmp_path/'native-snapshot',catalog=service.registry.catalog,research=root/'research/research.sqlite',
+        files=files,config=config,code=code,frontend=frontend,namespace=ns,backend=backend,asset_index={'bindings':bindings})
+    entry=snapshot['manifest_object'];target=tmp_path/'native-cold'
+    gc.collect();assert root.resolve().is_relative_to(tmp_path.resolve());root.rename(tmp_path/'native-old-unavailable')
+    restore_release(backend,manifest_key=entry['key'],manifest_sha256=entry['sha256'],destination=target,namespace=ns,expected_git_url=str(CODE))
+    for k,v in json.loads((target/'environment.json').read_text('utf-8')).items():monkeypatch.setenv(k,v)
+    restored=configured_service();current=Queue(restored,Authority(backend,ns,owner,0,target/'data/.authority'),clock=clock)
+    assert current.overview()['maintenance_owner']=='native-cold-snapshot'
+    assert current.claim(native=True) is None
+    current.maintenance('resume','native-cold-snapshot')
+    for task in tasks:current.action(task['id'],'resume','Restore original native batch upload checkpoint')
+    assert run_all(current,driver,pid)['action']=='complete'
+    assert len(driver.posts)==1 and len(driver.puts)==2 and len(driver.downloads)==2
+    assert current.plan_status(pid)['budget']['reserved_submissions']==2

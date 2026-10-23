@@ -1,5 +1,13 @@
 # Code and runtime boundaries
 
+Async parsing (#7/#14) reuses frozen plans, producers and fixed assets. An
+independent `scripts/parse_worker.py` advances leased phases; catalog mutations
+use short epoch/generation-fenced transactions in `api/storage/fenced.py`.
+Native multi-file batches share creation/query calls while upload, download and
+publication stay per Source. Signed URLs use AES-GCM with an independently
+provisioned key. See [design](design/bounded-concurrency.md) and
+[operations](foundation-client.md#8-异步解析与原生多文件批次issue-714).
+
 Git holds application code, reproducible Python/Node locks, machine contracts,
 necessary tests, and these deployment/architecture notes. OSS holds long-term
 PDF/parse/JSON/image objects plus versioned coherent DB snapshots, required drafts,

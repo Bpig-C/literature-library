@@ -110,6 +110,12 @@ class MissingMarkdown(RuntimeError):
     code = 'missing_content_md'
 
 
+class CloudStageError(RuntimeError):
+    def __init__(self, code, *, http_status=None, provider_code=None):
+        super().__init__(code)
+        self.code=code;self.http_status=http_status;self.provider_code=provider_code
+
+
 class CloudClient(PdfParseClient):
     """官网精准解析 API 客户端。"""
 
@@ -199,6 +205,80 @@ class CloudClient(PdfParseClient):
         return None
 
     # ---- 主流程 ----
+    def create_upload_batch(self,files,language,remember):
+        """One native multi-file POST. Persist mapping/links before any PUT."""
+        if not 1<=len(files)<=50:raise ValueError('native upload batch requires 1..50 files')
+        if len({f['data_id'] for f in files})!=len(files) or len({f['name'] for f in files})!=len(files):raise ValueError('unique native batch identities required')
+        payload={'files':[{'name':f['name'],'data_id':f['data_id'],
+            'is_ocr':_detect_is_ocr(Path(f['path'])) if self.is_ocr_auto else False} for f in files],
+            'model_version':'vlm','language':_normalize_language(language),'enable_formula':True,'enable_table':True}
+        headers=self._headers()
+        try:resp=requests.request('POST',f'{self.api_base}/api/v4/file-urls/batch',headers=headers,json=payload,timeout=120)
+        except Exception:raise CloudStageError('submission_unknown') from None
+        try:body=resp.json()
+        except (ValueError,TypeError):body={}
+        code=body.get('code') if isinstance(body,dict) else None
+        if resp.status_code!=200 or code!=0:
+            definite=resp.status_code==429 or (resp.status_code<500 and code is not None and code!=0)
+            raise CloudStageError('submission_rejected' if definite else 'submission_unknown',http_status=resp.status_code,provider_code=code)
+        data=body.get('data') or {};batch=data.get('batch_id');urls=data.get('file_urls') or []
+        if not isinstance(batch,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}',batch):raise CloudStageError('submission_unknown')
+        # An ID is worth preserving even when links are incomplete/malformed.
+        remember(batch,urls if isinstance(urls,list) else [])
+        if len(urls)!=len(files):raise CloudStageError('batch_response_incomplete')
+        return batch
+
+    def query_batch(self,batch_id):
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}',batch_id):raise ValueError('invalid batch ID')
+        resp=requests.request('GET',f'{self.api_base}/api/v4/extract-results/batch/{batch_id}',headers=self._headers(),timeout=60)
+        try:body=resp.json()
+        except (ValueError,TypeError):raise CloudStageError('provider_response_invalid',http_status=resp.status_code) from None
+        code=body.get('code') if isinstance(body,dict) else None
+        if resp.status_code!=200 or code!=0:raise CloudStageError('provider_query_failed',http_status=resp.status_code,provider_code=code)
+        entries=(body.get('data') or {}).get('extract_result') or []
+        if not isinstance(entries,list):raise CloudStageError('provider_response_invalid')
+        return [{k:r.get(k) for k in ('data_id','file_name','state','full_zip_url')} for r in entries if isinstance(r,dict)]
+
+    def submit_pdf(self, req: ParseRequest) -> str:
+        """One POST and upload; task ID is emitted durably before upload.
+
+        Queue rate/capacity reservation belongs to the host scheduler. This
+        method never retries a task-creating request or waits for cloud work.
+        """
+        self._event('configuration',backend='vlm')
+        batch_id,upload_url=self._create_batch(req)
+        self._event('upload',task_id=batch_id)
+        self._upload_file(upload_url,req.pdf_path)
+        return batch_id
+
+    def poll_once(self, batch_id: str, file_name: str) -> dict:
+        """Exactly one query; pending/running remains nonterminal."""
+        if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,160}',batch_id):raise ValueError('invalid task ID')
+        self._event('poll',task_id=batch_id)
+        resp=requests.request('GET',f'{self.api_base}/api/v4/extract-results/batch/{batch_id}',headers=self._headers(),timeout=60)
+        try:data=resp.json()
+        except (ValueError,TypeError):raise CloudStageError('provider_response_invalid',http_status=resp.status_code) from None
+        code=data.get('code') if isinstance(data,dict) else None
+        if resp.status_code!=200 or code!=0:
+            raise CloudStageError('provider_query_failed',http_status=resp.status_code,provider_code=code)
+        results=(data.get('data') or {}).get('extract_result') or []
+        entry=next((r for r in results if r.get('file_name')==file_name),None)
+        # An unmatched filename must never be silently assigned to this source,
+        # including operator-identified tasks after a lost submission response.
+        if entry is None and results:raise CloudStageError('provider_identity_mismatch')
+        if entry is None:return {'state':'pending'}
+        state=entry.get('state')
+        if state not in ('pending','running','done','failed','waiting-file'):state='pending'
+        return {'state':state,'full_zip_url':entry.get('full_zip_url') if state=='done' else None}
+
+    def download_existing(self, req: ParseRequest, batch_id: str, *, max_bytes=256*1024*1024):
+        # Signed URLs are obtained just in time and never stored in the catalog.
+        result=self.poll_once(batch_id,req.pdf_path.with_suffix('.pdf').name)
+        if result['state']!='done' or not result.get('full_zip_url'):
+            raise CloudStageError('result_not_ready')
+        self._event('download',task_id=batch_id)
+        self._materialize(result['full_zip_url'],req.output_dir,req.pdf_path.stem,max_bytes=max_bytes)
+
     def parse_pdf(self, req: ParseRequest) -> tuple[bool, str]:
         output_dir = (req.output_dir if req.output_dir else req.pdf_path.parent).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -361,17 +441,30 @@ class CloudClient(PdfParseClient):
             time.sleep(self.poll_interval)
         return {"state": "timeout", "err_msg": f"轮询超时（{self.timeout}s）"}
 
-    def _materialize(self, zip_url: str, output_dir: Path, stem: str) -> None:
+    def _materialize(self, zip_url: str, output_dir: Path, stem: str, *, max_bytes=None) -> None:
         # 下载原始 zip（保留为 package.zip）
-        resp = requests.get(zip_url, timeout=600)
+        resp = requests.get(zip_url, timeout=600, **({'stream':True} if max_bytes is not None else {}))
         if resp.status_code != 200:
             raise RuntimeError(f"下载结果 zip 返回 HTTP {resp.status_code}")
         package_zip = output_dir / "package.zip"
-        package_zip.write_bytes(resp.content)
+        if max_bytes is None:package_zip.write_bytes(resp.content)
+        else:
+            temporary=output_dir/'package.zip.part';size=0
+            try:
+                with temporary.open('wb') as target:
+                    for chunk in resp.iter_content(1024*1024):
+                        size+=len(chunk)
+                        if size>max_bytes:raise CloudStageError('download_budget_exceeded')
+                        target.write(chunk)
+                temporary.replace(package_zip)
+            finally:
+                resp.close();temporary.unlink(missing_ok=True)
 
         raw_dir = output_dir / "_raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(package_zip, "r") as zf:
+            if max_bytes is not None and (len(zf.infolist())>10000 or sum(i.file_size for i in zf.infolist())>max_bytes):
+                raise CloudStageError('extraction_budget_exceeded')
             self._safe_extract_zip(zf, raw_dir)
 
         full_md = self._find(raw_dir, "full.md")

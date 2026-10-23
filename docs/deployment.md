@@ -1,5 +1,12 @@
 # Controlled backup and complete recovery
 
+The #7/#14 async/native-batch candidate additionally needs the `parsing` extra,
+an independent `scripts/parse_worker.py` at the exact live commit, explicit
+capability activation, and an independently preserved upload encryption key.
+The [client/host operations](foundation-client.md#8-异步解析与原生多文件批次issue-714)
+cover migration, limits, maintenance barriers and cold restore. Code push does
+not install or activate either worker.
+
 The [foundation client and host guide](foundation-client.md) describes the
 additive backup queue, independent worker configuration, parse plan tables and
 client capabilities. The worker must survive API maintenance and use a clean,

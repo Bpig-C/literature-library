@@ -74,7 +74,7 @@ def publish_snapshot(destination,*,catalog,research,files,config,code,frontend,n
     essentials.update({name:descriptor(dest/name,ns) for name in files})
     front=descriptor(frontend,ns)
     manifest={'format':'litlib-unified-release-v1','release_id':uuid.uuid4().hex,'code':code,'frontend':front,'essentials':essentials,'configuration':config,
-              'credential_environment_names':['OSS_ACCESS_KEY_ID','OSS_ACCESS_KEY_SECRET','OSS_SESSION_TOKEN','MINERU_API_TOKEN'],'namespace':namespace,
+              'credential_environment_names':['OSS_ACCESS_KEY_ID','OSS_ACCESS_KEY_SECRET','OSS_SESSION_TOKEN','MINERU_API_TOKEN','LITLIB_PARSE_UPLOAD_KEY'],'namespace':namespace,
               'original_roots':{'library':str(Path(catalog).resolve().parent),'research':str(Path(research).resolve().parent)},'asset_index':asset_index,
               'default_fetch':'code/frontend/DBs/required working files only; asset_index attaches remote objects for bounded on-demand cache',
               'snapshot_window':'both SQLite write locks; caller must stop external file/business writers'}

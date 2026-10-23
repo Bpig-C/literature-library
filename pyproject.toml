@@ -20,6 +20,7 @@ dev = [
 
 [project.optional-dependencies]
 storage = ["alibabacloud-oss-v2==1.4.0"]
+parsing = ["pycryptodome>=3.24.0"]
 
 [tool.pytest.ini_options]
 # Scope collection to the project test suite. This keeps bare `pytest`
