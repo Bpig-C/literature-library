@@ -60,7 +60,9 @@ const stateLabel=s=>({stable:'稳定',needs_review:'待核查',needs_completion:
 let sequence=0, comparisonRequest=0
 const feedbackError=ref('')
 async function load(){
-  const token=++sequence;error.value='';comparison.value=null;record.value=null;feedback.value=[];feedbackError.value='';loading.value=true
+  // 审计 F7：切换记录时同步清空 Work 标题与比较错误——B 读取失败时，不得
+  // 让 A 的标题/比较错误留在 B 路由上冒充当前对象（与 record 同批重置）。
+  const token=++sequence;error.value='';comparison.value=null;comparisonError.value='';record.value=null;work.value=null;feedback.value=[];feedbackError.value='';loading.value=true
   comparisonRequest++  // 使在途的旧引用/比较请求失效（issue #18）
   if(!batchId.value){error.value='请从研究批次进入，链接需要保留批次信息。';loading.value=false;return}
   try{

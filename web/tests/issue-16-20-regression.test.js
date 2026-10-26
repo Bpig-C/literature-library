@@ -29,7 +29,12 @@ vi.mock('naive-ui', () => ({
   useDialog: () => ({ warning: vi.fn() }),
 }))
 vi.mock('../src/error-handler', () => ({ showError: vi.fn() }))
-vi.mock('../src/composables/useRuntimeMode', () => ({ useRuntimeMode: () => ({ readOnly: { value: false } }) }))
+vi.mock('../src/composables/useRuntimeMode', async () => {
+  // 必须返回真正的 ref：普通对象在模板里恒为真值，会把所有 :disabled="readOnly"
+  // 的写操作按钮误判为禁用（点击不触发处理器）。
+  const { ref } = await import('vue')
+  return { useRuntimeMode: () => ({ readOnly: ref(false) }) }
+})
 vi.mock('../src/composables/useNextStep', () => ({ useNextStep: () => ({ notifyNext: vi.fn() }) }))
 vi.mock('../src/utils/storage-feedback', () => ({ readMaterial: vi.fn(async () => ''), freezeMaterialSelection: vi.fn(v => v) }))
 vi.mock('../src/components/IngestPurposeHistory.vue', () => ({ default: { render: () => h('div') } }))
@@ -259,4 +264,127 @@ it('issue #20: record page stays readable when only the feedback list fails', as
   expect(host.querySelector('.detail-layout')).toBeTruthy()
   expect(host.textContent).toContain('质疑清单读取失败')
   expect(host.textContent).toContain('正文可读')
+})
+
+// ------------------------------------- 2026-10-26 独立复核缺陷回归（F1/F5/F6/F7）
+
+function findButton(text) {
+  return [...host.querySelectorAll('button')].find(b => b.textContent.trim() === text
+    || b.textContent.includes(text))
+}
+
+it('audit F1 (issue #18): switching works immediately closes the open edit form — the stale form can never reach the new work', async () => {
+  const slowWorkB = deferred()
+  api.getWork.mockImplementation(id => id === 'W-a' ? Promise.resolve(workFixture(id)) : slowWorkB.promise)
+  api.getWorks.mockResolvedValue({ works: [], total_matching: 0 })
+  api.getOverview.mockResolvedValue({ research: { batches: [] } })
+  api.getResearchWorkProfile.mockResolvedValue({ metadata: {} })
+  api.getResearchWork.mockResolvedValue({ items: [] })
+  await mount('/works/W-a', [routesFor['/works/:id']])
+  findButton('编辑').click(); await settle()
+  expect(findButton('保存')).toBeTruthy()
+  await router.push('/works/W-b'); await settle()
+  // 切换立即使旧表单失效：保存入口消失，旧表单不可能提交到 W-b。
+  expect(findButton('保存')).toBeFalsy()
+  expect(api.updateWork).not.toHaveBeenCalled()
+  slowWorkB.resolve(workFixture('W-b')); await settle()
+  expect(api.updateWork).not.toHaveBeenCalled()
+})
+
+it('audit F1 (issue #18): a save already in flight keeps addressing its own work after a route switch', async () => {
+  const slowSave = deferred()
+  api.getWork.mockImplementation(id => Promise.resolve(workFixture(id)))
+  api.getWorks.mockResolvedValue({ works: [], total_matching: 0 })
+  api.getOverview.mockResolvedValue({ research: { batches: [] } })
+  api.getResearchWorkProfile.mockResolvedValue({ metadata: {} })
+  api.getResearchWork.mockResolvedValue({ items: [] })
+  api.updateWork.mockImplementation(() => slowSave.promise)
+  await mount('/works/W-a', [routesFor['/works/:id']])
+  findButton('编辑').click(); await settle()
+  findButton('保存').click(); await settle()
+  // 保存挂起期间切到 W-b：请求目标仍是表单自己的 W-a，绝不改投 W-b。
+  expect(api.updateWork).toHaveBeenCalledWith('W-a', expect.anything())
+  await router.push('/works/W-b'); await settle()
+  slowSave.resolve({}); await settle()
+  expect(api.updateWork).toHaveBeenCalledTimes(1)
+  expect(api.updateWork.mock.calls[0][0]).toBe('W-a')
+})
+
+it('audit F5 (issue #20): with a work selected, prompt generation stays disabled and no-op until schema actually returns', async () => {
+  const pendingSchema = deferred()
+  api.getMetadataWorklist.mockResolvedValue({
+    items: [{ id: 'W-a', title: 'Kept work', status: 'absent', parse_ready: true }],
+    counts: { absent: 1 },
+  })
+  api.getResearchSchema.mockImplementation(() => pendingSchema.promise)
+  api.getMaterials.mockResolvedValue({ available: true, items: [] })
+  api.getMetadataWorkDetail.mockResolvedValue({ work_id: 'W-a', records: [], feedback: [] })
+  await mount('/metadata-workspace', [routesFor['/metadata-workspace']])
+  // 审计指出：未勾选 Work 时禁用断言验证不了 schema 守卫——先选中。
+  // 行选择框带 aria-label；不能用第一个 checkbox（那是“允许勾选稳定 A”控件）。
+  const checkbox = host.querySelector('tbody input[type=checkbox][aria-label="选择 W-a"]')
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await settle()
+  // schema 尚未返回（null 且无错误）：按钮禁用，提示可见，generate 不产生工单。
+  const generate = findButton('生成可编辑工单')
+  expect(generate.disabled).toBe(true)
+  expect(host.textContent).toContain('研究环境（schema）尚未取得')
+  generate.click(); await settle()
+  expect(host.querySelector('textarea[aria-label="可编辑的元数据 Agent 工单"]').value).toBe('')
+  // 迟到失败落为 schemaError：选中状态下仍禁用（真正验证 schema 守卫）。
+  pendingSchema.reject(new Error('HTTP 503')); await settle()
+  expect(findButton('生成可编辑工单').disabled).toBe(true)
+})
+
+it('audit F6 (issue #20): an overlapping refresh cannot be overwritten by the previous round’s late schema result', async () => {
+  const firstSchema = deferred()
+  let schemaCall = 0
+  api.getMetadataWorklist.mockResolvedValue({
+    items: [{ id: 'W-a', title: 'Kept work', status: 'absent', parse_ready: true }],
+    counts: { absent: 1 },
+  })
+  api.getResearchSchema.mockImplementation(() => {
+    schemaCall += 1
+    return schemaCall === 1 ? firstSchema.promise
+      : Promise.resolve({ environment_id: 'ENV-NEW', read_only: false })
+  })
+  api.getMaterials.mockResolvedValue({ available: true, items: [] })
+  await mount('/metadata-workspace', [routesFor['/metadata-workspace']])
+  // 第二轮刷新先返回 ENV-NEW 并生效。
+  findButton('刷新状态').click(); await settle()
+  // 第一轮 schema 迟到返回 ENV-OLD：不得覆盖新一轮已生效的环境。
+  firstSchema.resolve({ environment_id: 'ENV-OLD', read_only: false }); await settle()
+  const checkbox = host.querySelector('tbody input[type=checkbox][aria-label="选择 W-a"]')
+  checkbox.checked = true
+  checkbox.dispatchEvent(new Event('change'))
+  await settle()
+  const generate = findButton('生成可编辑工单')
+  expect(generate.disabled).toBe(false)
+  generate.click(); await settle()
+  const prompt = host.querySelector('textarea[aria-label="可编辑的元数据 Agent 工单"]').value
+  expect(prompt).toContain('ENV-NEW')
+  expect(prompt).not.toContain('ENV-OLD')
+})
+
+it('audit F7 (issue #18): a failed record switch clears the previous work title and the old comparison error', async () => {
+  let queryCalls = 0
+  api.queryResearch.mockImplementation(() => {
+    queryCalls += 1
+    return queryCalls === 1 ? Promise.resolve({ items: [{ id: 'R-1', work_id: 'W-a' }] })
+      : Promise.reject(new Error('HTTP 500'))
+  })
+  api.getWork.mockImplementation(id => Promise.resolve(workFixture(id)))
+  api.listResearchFeedback.mockResolvedValue({ items: [] })
+  api.getBatchComparison.mockRejectedValue(new Error('HTTP 503'))
+  await mount('/research/records/W-a?batch_id=B1', [routesFor['/research/records/:workId']])
+  findButton('查看批次跨篇比较').click(); await settle()
+  expect(host.textContent).toContain('Title W-a')
+  expect(host.textContent).toContain('HTTP 503')
+  await router.push('/research/records/W-b?batch_id=B1'); await settle()
+  // B 读取失败：A 的标题不得留在 B 路由头部，A 的比较错误同时清空。
+  expect(host.querySelector('.detail-header h1').textContent.trim()).toBe('W-b')
+  expect(host.textContent).not.toContain('Title W-a')
+  expect(host.textContent).not.toContain('HTTP 503')
+  expect(host.textContent).toContain('HTTP 500')
 })

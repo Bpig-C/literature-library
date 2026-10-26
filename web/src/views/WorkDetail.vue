@@ -595,6 +595,9 @@ const parseBackendOptions = [
 ]
 const editing = ref(false)
 const editForm = ref({})
+// issue #18 / 审计 F1：编辑表单绑定固定的 Work 身份。切换/重载使旧表单失效，
+// 提交按表单自己的身份发送——不得把上一篇的表单写到当前路由的 Work。
+const editWorkId = ref('')
 const titleEl = ref(null)
 const newRel = ref({ targetId: '', type: 'translation_of' })
 const stageLoading = ref(false)
@@ -1115,6 +1118,12 @@ const parseRouteLabel = computed(() => {
 async function loadWork() {
   const generation = ++materialLoadGeneration
   const workId = props.id
+  // 审计 F1：切换到另一篇时旧编辑表单立即失效（同篇重载不影响进行中的编辑）。
+  if (work.value?.id && work.value.id !== workId) {
+    editing.value = false
+    editForm.value = {}
+    editWorkId.value = ''
+  }
   // Clear rendered text before changing any selector, including a Work switch.
   content.value = ''
   contentError.value = ''
@@ -1222,6 +1231,7 @@ async function loadResearch(generation = materialLoadGeneration) {
 
 
 function startEdit() {
+  if (!work.value?.id) return
   let month = null, day = null
   try {
     const pdj = work.value.publication_date_json ? JSON.parse(work.value.publication_date_json) : null
@@ -1237,6 +1247,7 @@ function startEdit() {
     language: work.value.language,
     read_status: work.value.read_status,
   }
+  editWorkId.value = work.value.id
   editing.value = true
 }
 function cancelEdit() { editing.value = false }
@@ -1251,6 +1262,12 @@ function onTitleBlur(e) {
 }
 
 async function saveEdit() {
+  // 审计 F1：表单不再属于当前 Work（切换后失效/身份不符）时丢弃，绝不提交。
+  if (!editing.value || !editWorkId.value || editWorkId.value !== work.value?.id) {
+    editing.value = false
+    return
+  }
+  const targetId = editWorkId.value
   const data = { ...editForm.value }
   data.authors = data.authors_str.split(';').map(s => s.trim()).filter(Boolean)
   delete data.authors_str
@@ -1262,9 +1279,12 @@ async function saveEdit() {
   delete data.month
   delete data.day
   try {
-    const result = await updateWork(props.id, data)
-    editing.value = false
-    await loadWork()
+    const result = await updateWork(targetId, data)
+    // 提交期间用户可能已切到另一篇：只对表单所属的 Work 应用后续刷新。
+    if (targetId === props.id && targetId === work.value?.id) {
+      editing.value = false
+      await loadWork()
+    }
     await loadList()
     // B9(R6): 类型/状态修改进入元数据修订（待核查），如实告知当前书目未变
     if (result?.type_note) {
