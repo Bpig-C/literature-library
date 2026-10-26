@@ -21,7 +21,7 @@ import json
 import uuid
 from contextlib import closing
 from datetime import datetime, timezone
-from .research_stability import clean_identifier, official_publication_url
+from .research_stability import clean_identifier, official_publication_url, select_catalog_abstract
 from typing import Any
 
 from .db import table_exists
@@ -131,10 +131,16 @@ def merge_v5_payload(base: dict, v5_payload: dict) -> dict:
         overlay["url"] = publication_url
     for src, dst in (("language", "language"), ("venue", "venue"),
                      ("volume", "volume"), ("issue", "issue"),
-                     ("pages", "pages"), ("abstract", "abstract")):
+                     ("pages", "pages")):
         value = str(v5_payload.get(src) or "").strip()
         if value:
             overlay[dst] = value
+    # issue #17：摘要经共享选择规则覆盖——original_abstracts 优先、译文/
+    # 概览不冒充原摘要、兼容旧顶层 abstract；与 propagate_metadata 写入
+    # works 行的选择是同一函数，Work 与投影对同一记录不会返回不同摘要。
+    abstract = select_catalog_abstract(v5_payload)
+    if abstract:
+        overlay["abstract"] = abstract
     for src, dst in (("document_type", "doc_type"),
                      ("publication_status", "publication_status")):
         value = str(v5_payload.get(src) or "").strip()

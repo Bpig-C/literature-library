@@ -45,6 +45,52 @@ def clean_identifier(value: Any, *, kind: str) -> str | None:
     raise ValueError(f"unsupported identifier kind: {kind}")
 
 
+def _language_matches(candidate: Any, reference: Any) -> bool:
+    """Primary-subtag language match ("en" ~ "en-US", "zh" ~ "zh-CN")."""
+    left = str(candidate or "").strip().lower().replace("_", "-")
+    right = str(reference or "").strip().lower().replace("_", "-")
+    if not left or not right:
+        return False
+    return left.split("-")[0] == right.split("-")[0]
+
+
+def select_catalog_abstract(payload: dict) -> str | None:
+    """Deterministic abstract selection for the catalog row and the active
+    bibliographic projection (issue #17).
+
+    Rule order, so the works row and the projection can never disagree
+    (both call this one function):
+
+    1. consider only ``original_abstracts`` entries with non-empty text —
+       translations (``abstract_translations``) and agent overviews
+       (``descriptive_overview``) never masquerade as the original;
+    2. prefer the entry whose language matches the formal ``language`` field;
+    3. else prefer the entry matching ``original_title.language``;
+    4. else the sole entry; otherwise the first entry in stored order
+       (deterministic, never "arbitrary latest");
+    5. legacy fallback: a pre-contract top-level ``abstract`` string keeps
+       already-approved records exporting — it is read-only compatibility,
+       not a parallel authority to write into.
+
+    Returns ``None`` when the record addresses no abstract: callers keep the
+    explicit missing semantics instead of fabricating one.
+    """
+    entries = [
+        item for item in (payload.get("original_abstracts") or [])
+        if isinstance(item, dict)
+        and str(item.get("text") or "").strip()
+    ]
+    if entries:
+        for reference in (payload.get("language"),
+                          (payload.get("original_title") or {}).get("language")):
+            for item in entries:
+                if _language_matches(item.get("language"), reference):
+                    return str(item["text"]).strip()
+        return str(entries[0]["text"]).strip()
+    legacy = str(payload.get("abstract") or "").strip()
+    return legacy or None
+
+
 def official_publication_url(payload: dict) -> str | None:
     """Select an explicitly publication-role URL without inventing one."""
     direct = str(payload.get("url") or "").strip()

@@ -24,7 +24,7 @@ from pathlib import Path
 from . import bibliographic_projection as projection
 from .db import CODE_ROOT
 from .research_context import ResearchContext
-from .research_stability import clean_identifier, official_publication_url
+from .research_stability import clean_identifier, official_publication_url, select_catalog_abstract
 
 
 def catalog_db_path(context: ResearchContext) -> Path:
@@ -158,6 +158,9 @@ def propagate_metadata(context: ResearchContext, work_id: str, payload: dict, *,
     arxiv = clean_identifier(payload.get("arxiv"), kind="arxiv")
     publication_url = official_publication_url(payload)
     language = str(payload.get("language") or "").strip() or None
+    # issue #17：正式 original_abstracts 按共享选择规则进入目录摘要；无摘要
+    # 时保持缺失语义（不写不造），works 行与投影用同一选择保证一致。
+    abstract = select_catalog_abstract(payload)
     # B9: 文献类型/发表状态经元数据修订贯通书目投影（旧研究分类写入口保持只读）
     document_type = str(payload.get("document_type") or "").strip() or None
     publication_status = str(payload.get("publication_status") or "").strip() or None
@@ -193,6 +196,10 @@ def propagate_metadata(context: ResearchContext, work_id: str, payload: dict, *,
                   title_zh or row["title_zh"], year or row["year"],
                   language or row["language"], doi or row["doi"], arxiv or row["arxiv_id"],
                   stamp]
+        if abstract and "abstract" in works_keys:
+            # 仅当本次记录选择了摘要时写入；选择规则见 select_catalog_abstract。
+            assignments.append("abstract=?")
+            values.append(abstract)
         if document_type and "doc_type" in works_keys:
             assignments.append("doc_type=?")
             values.append(document_type)

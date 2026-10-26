@@ -1,0 +1,339 @@
+"""Regression tests for the 2026-10-25 issue batch (#16 / #17 / #19).
+
+#16  Work 级 A 当前头不得依赖 C/D 研究来源登记（无来源≠无 A）。
+#17  正式 original_abstracts 必须进入目录摘要与书目投影，选择规则确定。
+#19  目录 language 编辑必须进入正式 payload.language，批准传播不得回滚；
+     文献语言与原题语言分开处理。
+
+All stores are synthetic, isolated SQLite files; no production data.
+"""
+import hashlib
+import json
+import sqlite3
+from contextlib import closing
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from api.bibliographic_projection import get_active_projection, merge_v5_payload, payload_from_works_row
+from api.research_context import ResearchContext
+from api.research_schema import apply_schema
+from api.research_stability import select_catalog_abstract
+from api.research_catalog import propagate_metadata
+from scripts.literature_ingest import ensure_core_schema
+
+
+@pytest.fixture
+def stores(tmp_path, monkeypatch):
+    library = tmp_path / "library"
+    (library / "_inbox").mkdir(parents=True)
+    with sqlite3.connect(library / "literature.sqlite") as c:
+        ensure_core_schema(c)
+        # 生产 works 表（schema 6）含 abstract/title_zh 列；基础建表脚本
+        # 未含，测试补齐。
+        cols = {r[1] for r in c.execute("PRAGMA table_info(works)")}
+        if "abstract" not in cols:
+            c.execute("ALTER TABLE works ADD COLUMN abstract TEXT")
+        if "title_zh" not in cols:
+            c.execute("ALTER TABLE works ADD COLUMN title_zh TEXT")
+    # 合成运行时资产（apply_schema 需要 baseline 本体，带 manifest 完整性校验）。
+    assets_root = tmp_path / "research-assets"
+    assets_root.mkdir()
+    baseline = {"version": "autonomy-risk-v1", "concepts": [
+        {"id": "synthetic", "definition": "Synthetic fixture only"}]}
+    (assets_root / "autonomy-risk-v1.json").write_text(
+        json.dumps(baseline, ensure_ascii=False), "utf-8")
+    manifest = {}
+    for path in assets_root.iterdir():
+        manifest[path.name] = {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                               "bytes": path.stat().st_size}
+    (assets_root / "assets-manifest.json").write_text(json.dumps(manifest), "utf-8")
+    monkeypatch.setenv("LITLIB_RESEARCH_ASSETS_ROOT", str(assets_root))
+    research_root = tmp_path / "research"
+    ctx = ResearchContext(research_root, research_root / "research.sqlite")
+    assert apply_schema(ctx, backup=False)["ok"]
+    monkeypatch.setenv("LITLIB_DB_PATH", str(library / "literature.sqlite"))
+    monkeypatch.setenv("LITLIB_LIBRARY_ROOT", str(library))
+    monkeypatch.setenv("LITLIB_RESEARCH_ROOT", str(research_root))
+    monkeypatch.setenv("LITLIB_RESEARCH_DB", str(ctx.db_path))
+    monkeypatch.delenv("LITLIB_STORAGE_MODE", raising=False)
+    return library / "literature.sqlite", ctx
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _insert_work(catalog_path, work_id="W-reg", **overrides):
+    row = {"id": work_id, "title": "Regression Work", "authors": '["Alice"]',
+           "year": 2026, "language": "en", "doi": None, "arxiv_id": None,
+           "doc_type": None, "read_status": "unread", "abstract": None,
+           "created_at": _now(), "updated_at": _now()}
+    row.update(overrides)
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        keys = {r[1] for r in conn.execute("PRAGMA table_info(works)")}
+        fields = [k for k in row if k in keys]
+        conn.execute(
+            f"INSERT INTO works ({', '.join(fields)}) VALUES ({', '.join('?' * len(fields))})",
+            [row[f] for f in fields])
+        conn.commit()
+        return conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
+
+
+def _insert_metadata(ctx, work_id, payload, *, version=1, review="approved",
+                     content="stable", validity="active", record_id="RM-reg-1"):
+    with closing(ctx.connect()) as conn:
+        conn.execute(
+            """INSERT INTO research_metadata_records
+               (id, work_id, version, payload_json, content_state,
+                agent_review_status, validity_status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (record_id, work_id, version, json.dumps(payload, ensure_ascii=False),
+             content, review, validity, _now(), _now()))
+        conn.commit()
+
+
+# ---------------------------------------------------------------- #16
+
+def test_issue16_summary_reports_a_head_without_research_sources(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path)
+    payload = {"original_title": {"text": "Regression Work", "language": "en"},
+               "authors": [{"display_name": "Alice"}], "language": "en"}
+    _insert_metadata(ctx, "W-reg", payload,
+                     review="approved", content="stable")
+
+    from api.routes.works import _work_research_summary
+    summary = _work_research_summary("W-reg")
+    # staged 仅描述 C/D 来源登记；A 当前头必须独立可读（issue #16）。
+    assert summary["available"] is True
+    assert summary["staged"] is False
+    head = summary["metadata_head"]
+    assert head and head["agent_review_status"] == "approved" \
+        and head["content_state"] == "stable" and head["version"] == 1
+
+
+def test_issue16_summary_states_missing_a_and_real_review_state(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path)
+    from api.routes.works import _work_research_summary
+    # 无来源 + 无 A：准确报无记录（metadata_head 为 None，而非缺键）。
+    summary = _work_research_summary("W-reg")
+    assert summary["staged"] is False
+    assert summary["metadata_head"] is None
+
+    # 无来源 + pending 当前头：如实反映 pending，不伪报稳定。
+    _insert_metadata(ctx, "W-reg",
+                     {"original_title": {"text": "Regression Work", "language": "en"},
+                      "authors": [{"display_name": "Alice"}]},
+                     review="pending", content="needs_review", record_id="RM-reg-2")
+    summary = _work_research_summary("W-reg")
+    assert summary["staged"] is False
+    assert summary["metadata_head"]["agent_review_status"] == "pending"
+
+
+def test_issue16_summary_current_head_not_mixed_with_superseded(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path)
+    base = {"original_title": {"text": "Regression Work", "language": "en"},
+            "authors": [{"display_name": "Alice"}]}
+    _insert_metadata(ctx, "W-reg", base, version=1, record_id="RM-reg-v1")
+    _insert_metadata(ctx, "W-reg", base, version=2, record_id="RM-reg-v2",
+                     validity="superseded")
+    _insert_metadata(ctx, "W-reg", base, version=3, review="approved",
+                     record_id="RM-reg-v3")
+    from api.routes.works import _work_research_summary
+    summary = _work_research_summary("W-reg")
+    assert summary["metadata_head"]["id"] == "RM-reg-v3"
+
+
+def test_issue16_summary_with_sources_unchanged(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path)
+    with closing(ctx.connect()) as conn:
+        conn.execute(
+            """INSERT INTO research_sources
+               (id, work_id, source_file_id, source_path, snapshot_path,
+                source_sha256, parse_exists, created_at)
+               VALUES ('RS-reg-1','W-reg','SF-reg-1','works/source.pdf',
+                       'snapshots/source.pdf','synthetic-sha',1,?)""", (_now(),))
+        conn.commit()
+    from api.routes.works import _work_research_summary
+    summary = _work_research_summary("W-reg")
+    assert summary["staged"] is True
+    assert summary["source_ids"] == ["RS-reg-1"]
+
+
+# ---------------------------------------------------------------- #17
+
+def test_issue17_abstract_selector_rules():
+    # 语言匹配 payload.language 优先（主子标签匹配）。
+    payload = {"language": "zh-CN",
+               "original_abstracts": [
+                   {"text": "English abstract", "language": "en"},
+                   {"text": "中文摘要", "language": "zh-CN"}]}
+    assert select_catalog_abstract(payload) == "中文摘要"
+    # 次选：匹配原题语言。
+    payload = {"original_title": {"text": "T", "language": "fr"},
+               "original_abstracts": [
+                   {"text": "English abstract", "language": "en"},
+                   {"text": "Résumé français", "language": "fr"}]}
+    assert select_catalog_abstract(payload) == "Résumé français"
+    # 无语言可匹配：唯一条目直接取；多条目按存储顺序取第一条（确定性）。
+    payload = {"original_abstracts": [{"text": "Only one", "language": "de"}]}
+    assert select_catalog_abstract(payload) == "Only one"
+    payload = {"original_abstracts": [
+        {"text": "First stored", "language": "de"},
+        {"text": "Second stored", "language": "ja"}]}
+    assert select_catalog_abstract(payload) == "First stored"
+    # 空文本条目跳过；译文与概览绝不冒充原摘要。
+    payload = {"original_abstracts": [{"text": "  ", "language": "en"}],
+               "abstract_translations": [{"text": "翻译", "language": "zh"}],
+               "descriptive_overview": "Agent 概述"}
+    assert select_catalog_abstract(payload) is None
+    # 缺失保留缺失语义；旧顶层 abstract 仅作只读兼容回退。
+    assert select_catalog_abstract({}) is None
+    assert select_catalog_abstract({"abstract": "legacy"}) == "legacy"
+
+
+def test_issue17_propagation_writes_catalog_and_projection_abstract(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    abstract_text = "Verified original abstract " + "x" * 40
+    payload = {"original_title": {"text": "Regression Work", "language": "en"},
+               "authors": [{"display_name": "Alice"}], "language": "en",
+               "original_abstracts": [{"text": abstract_text, "language": "en",
+                                       "bound_version": 1}]}
+    _insert_metadata(ctx, "W-reg", payload, version=2, record_id="RM-reg-abs")
+    result = propagate_metadata(ctx, "W-reg", payload, record_id="RM-reg-abs")
+    assert result["projection_id"]
+
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT abstract FROM works WHERE id='W-reg'").fetchone()
+        assert row["abstract"] == abstract_text
+        projection = get_active_projection(conn, "W-reg")
+    # Work 行与活动投影对同一选择返回一致摘要；导出读同一投影键。
+    assert projection["payload"]["abstract"] == abstract_text
+
+
+def test_issue17_new_selection_replaces_old_and_missing_keeps_explicit(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    v2 = {"original_title": {"text": "Regression Work", "language": "en"},
+          "authors": [{"display_name": "Alice"}], "language": "en",
+          "original_abstracts": [{"text": "old abstract text", "language": "en"}]}
+    _insert_metadata(ctx, "W-reg", v2, version=2, record_id="RM-reg-v2")
+    propagate_metadata(ctx, "W-reg", v2, record_id="RM-reg-v2")
+
+    # 换版：新摘要替换旧摘要，不保留与当前来源不兼容的旧值。
+    v3 = {"original_title": {"text": "Regression Work", "language": "en"},
+          "authors": [{"display_name": "Alice"}], "language": "en",
+          "original_abstracts": [{"text": "new abstract text", "language": "en"}]}
+    _insert_metadata(ctx, "W-reg", v3, version=3, record_id="RM-reg-v3")
+    propagate_metadata(ctx, "W-reg", v3, record_id="RM-reg-v3")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute(
+            "SELECT abstract FROM works WHERE id='W-reg'").fetchone()["abstract"] \
+            == "new abstract text"
+
+    # 无摘要的记录：不伪造、不清空既有目录值（缺失语义保留）。
+    v4 = {"original_title": {"text": "Regression Work", "language": "en"},
+          "authors": [{"display_name": "Alice"}], "language": "en"}
+    _insert_metadata(ctx, "W-reg", v4, version=4, record_id="RM-reg-v4")
+    propagate_metadata(ctx, "W-reg", v4, record_id="RM-reg-v4")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute(
+            "SELECT abstract FROM works WHERE id='W-reg'").fetchone()["abstract"] \
+            == "new abstract text"
+
+
+def test_issue17_merge_overlay_matches_selector_and_ignores_translations():
+    base = {"title": "T", "abstract": "stale row abstract"}
+    payload = {"language": "zh",
+               "original_abstracts": [{"text": "英文原文摘要", "language": "en"},
+                                      {"text": "中文原文摘要", "language": "zh"}],
+               "abstract_translations": [{"text": "不该出现的翻译", "language": "zh"}]}
+    merged = merge_v5_payload(base, payload)
+    assert merged["abstract"] == "中文原文摘要"
+    # 只有旧顶层 abstract（无 original_abstracts）时保持既有投影行为。
+    merged = merge_v5_payload(base, {"abstract": "legacy field"})
+    assert merged["abstract"] == "legacy field"
+
+
+# ---------------------------------------------------------------- #19
+
+def _catalog_row(catalog_path, work_id="W-reg"):
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        return conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
+
+
+def test_issue19_language_edit_bridges_into_formal_payload(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="zh-CN")
+    head_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "en"}
+    from api.routes.works import _work_catalog_metadata_payload
+    row = _catalog_row(catalog_path)
+    payload = _work_catalog_metadata_payload(row, head_payload)
+    # 新目录语言进入正式 payload.language（此前只进 original_title/catalog-sync）。
+    assert payload["language"] == "zh-CN"
+    # 题目文本未变：原题语言保留已核查值，不随文献语言被盲目改写。
+    assert payload["original_title"]["language"] == "en"
+    # catalog-sync 扩展仍记录变更字段。
+    sync = next(e for e in payload["extensions"] if e.get("name") == "catalog-sync")
+    assert "language" in sync["content"]["changed_fields"]
+
+
+def test_issue19_propagation_after_bridged_revision_does_not_revert(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="zh-CN")
+    head_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "en"}
+    from api.routes.works import _work_catalog_metadata_payload
+    payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), head_payload)
+    # 合成审核后状态：传播不应把目录语言改回旧值（issue #19 的回滚路径）。
+    _insert_metadata(ctx, "W-reg", payload, version=2, review="approved",
+                     content="stable", record_id="RM-reg-lang")
+    propagate_metadata(ctx, "W-reg", payload, record_id="RM-reg-lang")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute(
+            "SELECT language FROM works WHERE id='W-reg'").fetchone()["language"] \
+            == "zh-CN"
+        projection = get_active_projection(conn, "W-reg")
+    assert projection["payload"]["language"] == "zh-CN"
+
+
+def test_issue19_first_bridge_and_title_change_use_catalog_language(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="zh-CN")
+    from api.routes.works import _work_catalog_metadata_payload
+    # 无旧 A 的首次桥接：正式语言与原题语言都按当前目录语言。
+    payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), None)
+    assert payload["language"] == "zh-CN"
+    assert payload["original_title"]["language"] == "zh-CN"
+    # 题目实际变更：新题按当前目录语言标注原题语言。
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.execute("UPDATE works SET title='新标题' WHERE id='W-reg'")
+        conn.commit()
+    head_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "en"}
+    payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), head_payload)
+    assert payload["original_title"] == {"text": "新标题", "language": "zh-CN"}
+
+
+def test_issue19_unknown_catalog_language_keeps_head_value(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language=None)
+    head_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "en"}
+    from api.routes.works import _work_catalog_metadata_payload
+    payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), head_payload)
+    # 目录语言未知：无损继承，不把正式语言改写成 unknown。
+    assert payload["language"] == "en"

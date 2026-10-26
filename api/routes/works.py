@@ -44,10 +44,12 @@ def _work_research_summary(work_id: str) -> dict:
             sources = conn.execute(
                 "SELECT id, work_id FROM research_sources WHERE work_id=?",
                 (work_id,)).fetchall()
-            if not sources:
-                return {"available": True, "staged": False}
-            summary = {"available": True, "staged": True,
-                       "source_ids": [s["id"] for s in sources]}
+            # staged 只描述 C/D 研究来源登记；Work 级 A 当前头按 Work 独立
+            # 读取（issue #16：无来源≠无 A，早退会把已审核稳定的 A 误报为
+            # “尚无记录”）。staged=false 与“已有 approved/stable A”可同时成立。
+            summary = {"available": True, "staged": bool(sources)}
+            if sources:
+                summary["source_ids"] = [s["id"] for s in sources]
             if "research_metadata_records" in tables:
                 head = conn.execute(
                     """SELECT id, version, agent_review_status, content_state,
@@ -129,7 +131,22 @@ def _work_catalog_metadata_payload(row, head_payload: dict | None = None) -> dic
         else:
             author_items.append({"display_name": name})
     language = row["language"] if "language" in keys and row["language"] else "unknown"
-    payload["original_title"] = {"text": row["title"] or "", "language": language}
+    # issue #19：目录文献语言必须进入正式 payload.language。此前新语言只写进
+    # original_title.language 与 catalog-sync 扩展；批准后 propagate_metadata
+    # 以正式 language 为传播值，会把目录语言改回旧值。目录语言未知时不覆盖
+    # 既有正式值（无损继承）。
+    if language != "unknown":
+        payload["language"] = language
+    # 文献语言（work 本体）与原题语言分开：题目文本未变时保留已核查的
+    # original_title.language，不因一次语言/其他字段编辑重贴原题语言标签；
+    # 题目实际变更或首次桥接时才按当前目录语言标注原题。
+    head_original_title = (head_payload or {}).get("original_title") or {}
+    head_title = str(head_original_title.get("text") or "").strip()
+    if head_title and head_title == str(row["title"] or "").strip():
+        title_language = str(head_original_title.get("language") or "").strip() or language
+    else:
+        title_language = language
+    payload["original_title"] = {"text": row["title"] or "", "language": title_language}
     payload["authors"] = author_items
     if "year" in keys and row["year"] is not None:
         payload["citation_year"] = str(row["year"])
