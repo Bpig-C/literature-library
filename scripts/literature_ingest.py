@@ -1012,7 +1012,13 @@ def execute_plan(
     if database.is_file():
         with sqlite3.connect(database.as_uri()+'?mode=ro',uri=True) as conn:
             check_request(conn,request_id,purpose,request_targets(plan))
-            validate_targets(conn,note_targets(plan),planned=[a.work_id for a in plan.ingests if not a.existing_work])
+            # issue #15：已有 Work 计划新增的 Source 尚未插入，归属核验必须
+            # 延后到 write_notes（同一事务内插入后复验）；不能把已有 Work 整体
+            # 放进 planned（会跳过存在/隔离生命周期检查）。
+            validate_targets(conn,note_targets(plan),
+                             planned=[a.work_id for a in plan.ingests if not a.existing_work],
+                             pending_sources=[(a.work_id,a.source_file_id)
+                                              for a in plan.ingests if a.existing_work])
     now = utc_now()
     backup_dir = None if no_backup else backup_state_files(library_root, timestamp_slug())
     if enabled():

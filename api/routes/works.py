@@ -93,17 +93,30 @@ def _safe_json(value: str | None, default=None):
         return default
 
 
-def _work_catalog_metadata_payload(row, head_payload: dict | None = None) -> dict:
+def _work_catalog_metadata_payload(row, head_payload: dict | None = None, *,
+                                   changed: set[str] | None = None) -> dict:
     """Catalog row + previous approved payload → next metadata revision payload.
 
     B9 无损继承: the new revision starts from the current head payload so
     standard fields (citation_year, resources, …) and every named extension
-    survive the round-trip; only the catalog-edited bibliographic fields are
-    overwritten, and the catalog-sync extension is updated in place.  Without
-    a head payload (first revision) the definition minimal is built directly.
+    survive the round-trip.  Without a head payload (first revision) the
+    definition minimal is built directly from the catalog row.
+
+    审计 F4（issue #19 横向修正）: ``changed`` 是本次目录编辑实际修改的书目
+    列集合。有头且给出 ``changed`` 时，只有 ``changed`` 内字段映射的正式键
+    被目录值覆盖，其余全部继承当前头——未编辑 language/authors/… 时不得把
+    目录旧值倒灌进待审核 A（例如只改 read_status 或只改文献类型）。None =
+    全量构建（首次桥接无头时的既有行为）。
     """
     keys = set(row.keys())
     payload: dict = dict(head_payload or {})
+    # full_build=True：无头（首次桥接）或旧调用方未传 changed——全量构建。
+    # 否则 changed 一定是集合（可为空）：仅覆盖其中实际修改字段映射的键。
+    full_build = head_payload is None or changed is None
+
+    def touched(field: str) -> bool:
+        return full_build or field in changed  # type: ignore[operator]
+
     authors = row["authors"] if "authors" in keys else None
     if isinstance(authors, str):
         authors = _safe_json(authors, default=[authors])
@@ -112,56 +125,63 @@ def _work_catalog_metadata_payload(row, head_payload: dict | None = None) -> dic
     catalog_names = [str(a if not isinstance(a, dict) else a.get("display_name") or "").strip()
                      for a in authors]
     catalog_names = [n for n in catalog_names if n]
-    # B9 无损继承（作者属性）：目录侧只保存显示名，party_roles/ORCID 等
-    # 属性仅存于研究元数据。 先按显示名匹配既有身份，因而重排时属性跟随
-    # 作者、替换/新增作者不继承被替换位置的 ORCID。重复同名按既有顺序消费，
-    # 不臆造一个更强的身份解析平台。
-    head_authors = [a for a in (payload.get("authors") or [])
-                    if isinstance(a, dict) and str(a.get("display_name") or "").strip()]
-    author_items = []
-    remaining = list(head_authors)
-    for name in catalog_names:
-        kept = next((a for a in remaining
-                     if str(a.get("display_name")).strip() == name), None)
-        if kept is not None:
-            remaining.remove(kept)
-            merged = dict(kept)
-            merged["display_name"] = name
-            author_items.append(merged)
-        else:
-            author_items.append({"display_name": name})
+    if touched("authors"):
+        # B9 无损继承（作者属性）：目录侧只保存显示名，party_roles/ORCID 等
+        # 属性仅存于研究元数据。先按显示名匹配既有身份，重排时属性跟随
+        # 作者、替换/新增作者不继承被替换位置的 ORCID。重复同名按既有顺序
+        # 消费，不臆造一个更强的身份解析平台。
+        head_authors = [a for a in (payload.get("authors") or [])
+                        if isinstance(a, dict) and str(a.get("display_name") or "").strip()]
+        author_items = []
+        remaining = list(head_authors)
+        for name in catalog_names:
+            kept = next((a for a in remaining
+                         if str(a.get("display_name")).strip() == name), None)
+            if kept is not None:
+                remaining.remove(kept)
+                merged = dict(kept)
+                merged["display_name"] = name
+                author_items.append(merged)
+            else:
+                author_items.append({"display_name": name})
+        payload["authors"] = author_items
     language = row["language"] if "language" in keys and row["language"] else "unknown"
     # issue #19：目录文献语言必须进入正式 payload.language。此前新语言只写进
     # original_title.language 与 catalog-sync 扩展；批准后 propagate_metadata
     # 以正式 language 为传播值，会把目录语言改回旧值。目录语言未知时不覆盖
     # 既有正式值（无损继承）。
-    if language != "unknown":
+    if touched("language") and language != "unknown":
         payload["language"] = language
     # 文献语言（work 本体）与原题语言分开：题目文本未变时保留已核查的
     # original_title.language，不因一次语言/其他字段编辑重贴原题语言标签；
     # 题目实际变更或首次桥接时才按当前目录语言标注原题。
-    head_original_title = (head_payload or {}).get("original_title") or {}
-    head_title = str(head_original_title.get("text") or "").strip()
-    if head_title and head_title == str(row["title"] or "").strip():
-        title_language = str(head_original_title.get("language") or "").strip() or language
-    else:
-        title_language = language
-    payload["original_title"] = {"text": row["title"] or "", "language": title_language}
-    payload["authors"] = author_items
-    if "year" in keys and row["year"] is not None:
+    if touched("title"):
+        head_original_title = (head_payload or {}).get("original_title") or {}
+        head_title = str(head_original_title.get("text") or "").strip()
+        if head_title and head_title == str(row["title"] or "").strip():
+            title_language = str(head_original_title.get("language") or "").strip() or language
+        else:
+            title_language = language
+        payload["original_title"] = {"text": row["title"] or "", "language": title_language}
+    if touched("year") and "year" in keys and row["year"] is not None:
         payload["citation_year"] = str(row["year"])
-    if "doi" in keys and row["doi"]:
-        payload["doi"] = row["doi"]
+    if full_build:
+        if "doi" in keys and row["doi"]:
+            payload["doi"] = row["doi"]
+        else:
+            payload.pop("doi", None)
+    if full_build:
+        watched = ("title", "authors", "year", "arxiv_id", "doi", "doc_type", "language",
+                   "venue", "abstract", "publication_date_json", "is_core_literature")
+        current = {key: row[key] for key in watched if key in keys and row[key] is not None}
     else:
-        payload.pop("doi", None)
-    watched = ("title", "authors", "year", "arxiv_id", "doi", "doc_type", "language",
-               "venue", "abstract", "publication_date_json", "is_core_literature")
-    changed = {key: row[key] for key in watched if key in keys and row[key] is not None}
+        current = {key: row[key] for key in sorted(changed)
+                   if key in keys and row[key] is not None}
     extensions = [e for e in (payload.get("extensions") or [])
                   if isinstance(e, dict) and e.get("name") != "catalog-sync"]
     extensions.append({
         "name": "catalog-sync",
-        "content": {"changed_fields": sorted(changed), "current_values": changed},
+        "content": {"changed_fields": sorted(current), "current_values": current},
         "source": "PATCH /works/{work_id} 目录便捷修改",
         "scope": "record",
         "needs_verification": True,
@@ -170,11 +190,16 @@ def _work_catalog_metadata_payload(row, head_payload: dict | None = None) -> dic
     return payload
 
 
-def _bridge_work_metadata_revision(work_id: str) -> dict | None:
+def _bridge_work_metadata_revision(work_id: str,
+                                   changed_fields: set[str] | None = None) -> dict | None:
     """v5 stores: a catalog metadata edit must enter the unified revision
     mechanism as a metadata revision — otherwise the research layer keeps a
     second, divergent "current value" (contract v5 B9).  v4/legacy stores are
-    left untouched: catalog-only edit, reported as legacy_catalog_update."""
+    left untouched: catalog-only edit, reported as legacy_catalog_update.
+
+    审计 F4: 只有实际修改的书目字段（title/authors/year/language）才触发桥接
+    并覆盖对应正式键；read_status 等非书目修改不生成书目修订、不 supersede
+    待审核 A 头。"""
     try:
         from contextlib import closing
 
@@ -199,7 +224,9 @@ def _bridge_work_metadata_revision(work_id: str) -> dict | None:
         if row is None:
             return None
         head_payload = json.loads(head["payload_json"]) if head else None
-        payload = _work_catalog_metadata_payload(row, head_payload)
+        payload = _work_catalog_metadata_payload(
+            row, head_payload,
+            changed=None if head_payload is None else set(changed_fields or ()))
         nxt = ResearchNextService(ctx)
         env_id = nxt.environment_id()
         try:
@@ -253,6 +280,8 @@ def _bridge_type_metadata_revision(work_id: str, type_changes: dict) -> dict | N
 
     The catalog row is NOT touched here; the revision enters the unified
     mechanism and only an approved revision propagates the projection.
+    审计 F4: 仅 document_type/publication_status 进入修订；其余书目键全部
+    无损继承当前头（changed=∅），目录行不得借道倒灌。
     """
     try:
         from contextlib import closing
@@ -277,7 +306,9 @@ def _bridge_type_metadata_revision(work_id: str, type_changes: dict) -> dict | N
         if row is None:
             return None
         head_payload = json.loads(head["payload_json"]) if head else None
-        payload = _work_catalog_metadata_payload(row, head_payload)
+        payload = _work_catalog_metadata_payload(
+            row, head_payload,
+            changed=None if head_payload is None else set())
         if type_changes.get("doc_type") is not None:
             payload["document_type"] = str(type_changes["doc_type"])
         if type_changes.get("publication_status") is not None:
@@ -663,6 +694,21 @@ def update_work(work_id: str, body: WorkUpdate):
         if updates:
             from datetime import datetime, timezone
 
+            # 审计 F4（issue #19 横向修正）：只有实际修改的书目字段才进入
+            # 元数据桥接。read_status 等非书目修改不得触发书目修订，也不得
+            # supersede 正在待审核的 A 头。authors 与行内 JSON 规范化比较。
+            def _row_value(field: str):
+                raw = row[field] if field in row.keys() else None
+                if field == "authors":
+                    parsed = _safe_json(raw, default=None) if raw else None
+                    return parsed if isinstance(parsed, list) else ([str(raw)] if raw else [])
+                return raw
+
+            bridging_changes = {
+                field for field in ("title", "authors", "year", "language")
+                if body_data.get(field) is not None
+                and _row_value(field) != body_data[field]
+            }
             updates.append("updated_at = ?")
             params.append(datetime.now(timezone.utc).isoformat(timespec="seconds"))
             params.append(work_id)
@@ -681,7 +727,8 @@ def update_work(work_id: str, body: WorkUpdate):
             # v5: the same change must exist as a metadata revision in the
             # unified mechanism — otherwise the research layer keeps a second
             # "current value" (contract v5 B9). Never blocks the catalog edit.
-            bridge = _bridge_work_metadata_revision(work_id)
+            bridge = (_bridge_work_metadata_revision(work_id, bridging_changes)
+                      if bridging_changes else None)
         else:
             projection_sync = None
             bridge = None

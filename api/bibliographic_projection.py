@@ -21,7 +21,8 @@ import json
 import uuid
 from contextlib import closing
 from datetime import datetime, timezone
-from .research_stability import clean_identifier, official_publication_url, select_catalog_abstract
+from .research_stability import (clean_identifier, official_publication_url,
+                                 catalog_abstract_statement)
 from typing import Any
 
 from .db import table_exists
@@ -135,12 +136,17 @@ def merge_v5_payload(base: dict, v5_payload: dict) -> dict:
         value = str(v5_payload.get(src) or "").strip()
         if value:
             overlay[dst] = value
-    # issue #17：摘要经共享选择规则覆盖——original_abstracts 优先、译文/
-    # 概览不冒充原摘要、兼容旧顶层 abstract；与 propagate_metadata 写入
-    # works 行的选择是同一函数，Work 与投影对同一记录不会返回不同摘要。
-    abstract = select_catalog_abstract(v5_payload)
-    if abstract:
+    # issue #17 / 审计 F2-F3：摘要与目录行同一条状态机——selected 才覆盖；
+    # explicit_missing（换版后显式无摘要）清除 base 里与旧版本绑定的摘要并留
+    # 缺失说明（历史在被取代投影中保留）；version_ambiguous/absent 不写不清，
+    # ambiguous 附待确认说明。译文/概览不冒充原摘要；兼容旧顶层 abstract。
+    abstract, abstract_state = catalog_abstract_statement(v5_payload)
+    if abstract_state == "selected" and abstract:
         overlay["abstract"] = abstract
+    elif abstract_state == "explicit_missing":
+        overlay["abstract_note"] = "该版本未提供作者原始摘要；此前版本的摘要不再作为当前投影值（历史见被取代投影）。"
+    elif abstract_state == "version_ambiguous":
+        overlay["abstract_note"] = "original_abstracts 跨多个论文版本且未声明所引版本，摘要待确认；未写入新值。"
     for src, dst in (("document_type", "doc_type"),
                      ("publication_status", "publication_status")):
         value = str(v5_payload.get(src) or "").strip()
@@ -148,6 +154,10 @@ def merge_v5_payload(base: dict, v5_payload: dict) -> dict:
             overlay[dst] = value
     merged = dict(base)
     merged.update({k: v for k, v in overlay.items() if v})
+    if abstract_state == "explicit_missing":
+        # 换版缺摘要：base 携带的旧版本摘要（如从 works 行快照带入）不与
+        # 新版本身份混用（audit F3）。
+        merged.pop("abstract", None)
     return merged
 
 

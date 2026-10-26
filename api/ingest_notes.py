@@ -62,8 +62,20 @@ def check_request(conn, rid, purpose, targets=None):
     return bool(row)
 
 
-def validate_targets(conn, targets, *, planned=()):
+def validate_targets(conn, targets, *, planned=(), pending_sources=()):
+    """Validate purpose targets before any write.
+
+    ``planned`` lists work ids the caller will CREATE, so nothing can be
+    checked against them yet.  ``pending_sources`` lists exact
+    ``(work_id, source_file_id)`` pairs the caller will INSERT into already
+    existing works inside this same operation (issue #15): their ownership
+    check defers to :func:`write_notes`, which re-runs this validation after
+    the insert within the same transaction.  The work lifecycle checks still
+    apply, and a source id that already exists under a different work is
+    rejected here instead of failing the insert later.
+    """
     planned = set(planned)
+    pending = {(wid, sfid) for wid, sfid in pending_sources if sfid}
     for wid, sfid in targets.items():
         if wid in planned:
             continue
@@ -72,7 +84,14 @@ def validate_targets(conn, targets, *, planned=()):
             raise ValueError(f'work {wid} not found')
         if row[0] == 'quarantined':
             raise ValueError(f'work {wid} is quarantined; review its lifecycle before adding a purpose')
-        if sfid and not conn.execute('SELECT 1 FROM source_files WHERE id=? AND work_id=?', (sfid, wid)).fetchone():
+        if not sfid:
+            continue
+        if (wid, sfid) in pending:
+            owner = conn.execute('SELECT work_id FROM source_files WHERE id=?', (sfid,)).fetchone()
+            if owner is not None and owner[0] != wid:
+                raise ValueError('source_file_id already belongs to another work')
+            continue
+        if not conn.execute('SELECT 1 FROM source_files WHERE id=? AND work_id=?', (sfid, wid)).fetchone():
             raise ValueError('source_file_id does not belong to this work')
 
 

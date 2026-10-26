@@ -54,41 +54,76 @@ def _language_matches(candidate: Any, reference: Any) -> bool:
     return left.split("-")[0] == right.split("-")[0]
 
 
-def select_catalog_abstract(payload: dict) -> str | None:
-    """Deterministic abstract selection for the catalog row and the active
-    bibliographic projection (issue #17).
+def _entry_bound_version(item: dict) -> str:
+    """Normalized paper-version label of an ``original_abstracts`` entry."""
+    value = item.get("bound_version")
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value).strip()
 
-    Rule order, so the works row and the projection can never disagree
-    (both call this one function):
 
+def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
+    """Deterministic abstract statement for the catalog row and the active
+    bibliographic projection (issues #17 / audit F2-F3).
+
+    Returns ``(text, state)``; ``text`` is only meaningful for
+    ``state == "selected"``:
+
+    ``selected``
+        entries agree on one paper version (or carry no version labels at
+        all, legacy data); the language rule picks the text;
+    ``version_ambiguous``
+        entries span several ``bound_version`` values while the payload
+        declares no record-level version scope — array order is not version
+        evidence, so nothing is projected and the entries stay verbatim;
+    ``explicit_missing``
+        ``original_abstracts`` is an explicit empty list: the record addresses
+        this version's abstracts and found none — a previously propagated
+        value bound to another version must not survive as the current one;
+    ``absent``
+        the record does not address abstracts at all; callers keep their
+        explicit missing semantics (no write, no clear) and may fall back to
+        the legacy top-level ``abstract`` string read-only.
+
+    Language rule within the confirmed scope (issue #17):
     1. consider only ``original_abstracts`` entries with non-empty text —
-       translations (``abstract_translations``) and agent overviews
-       (``descriptive_overview``) never masquerade as the original;
-    2. prefer the entry whose language matches the formal ``language`` field;
-    3. else prefer the entry matching ``original_title.language``;
-    4. else the sole entry; otherwise the first entry in stored order
-       (deterministic, never "arbitrary latest");
-    5. legacy fallback: a pre-contract top-level ``abstract`` string keeps
-       already-approved records exporting — it is read-only compatibility,
-       not a parallel authority to write into.
-
-    Returns ``None`` when the record addresses no abstract: callers keep the
-    explicit missing semantics instead of fabricating one.
+       translations and agent overviews never masquerade as the original;
+    2. prefer version-labelled entries over unlabelled ones (a label is
+       evidence, its absence is not);
+    3. prefer the entry matching the formal ``language`` field, then
+       ``original_title.language`` (primary-subtag match);
+    4. else the sole entry; otherwise the first entry in stored order.
     """
-    entries = [
-        item for item in (payload.get("original_abstracts") or [])
-        if isinstance(item, dict)
-        and str(item.get("text") or "").strip()
-    ]
-    if entries:
-        for reference in (payload.get("language"),
-                          (payload.get("original_title") or {}).get("language")):
-            for item in entries:
-                if _language_matches(item.get("language"), reference):
-                    return str(item["text"]).strip()
-        return str(entries[0]["text"]).strip()
-    legacy = str(payload.get("abstract") or "").strip()
-    return legacy or None
+    raw = payload.get("original_abstracts")
+    if raw is None:
+        legacy = str(payload.get("abstract") or "").strip()
+        return (legacy or None, "selected" if legacy else "absent")
+    entries = [item for item in raw if isinstance(item, dict)
+               and str(item.get("text") or "").strip()]
+    if not entries:
+        return None, "explicit_missing"
+    versions = {_entry_bound_version(item) for item in entries} - {""}
+    if len(versions) > 1:
+        return None, "version_ambiguous"
+    ordered = ([item for item in entries if _entry_bound_version(item)]
+               + [item for item in entries if not _entry_bound_version(item)])
+    for reference in (payload.get("language"),
+                      (payload.get("original_title") or {}).get("language")):
+        for item in ordered:
+            if _language_matches(item.get("language"), reference):
+                return str(item["text"]).strip(), "selected"
+    return str(ordered[0]["text"]).strip(), "selected"
+
+
+def select_catalog_abstract(payload: dict) -> str | None:
+    """Selected catalog abstract or ``None`` (audit F2: never a guess across
+    ambiguous paper versions; explicit-missing and absent states also return
+    ``None`` — callers use :func:`catalog_abstract_statement` to tell them
+    apart)."""
+    text, state = catalog_abstract_statement(payload)
+    return text if state == "selected" else None
 
 
 def official_publication_url(payload: dict) -> str | None:

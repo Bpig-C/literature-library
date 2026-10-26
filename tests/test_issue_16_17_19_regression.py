@@ -337,3 +337,202 @@ def test_issue19_unknown_catalog_language_keeps_head_value(stores):
     payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), head_payload)
     # 目录语言未知：无损继承，不把正式语言改写成 unknown。
     assert payload["language"] == "en"
+
+
+# ------------------------------------------- 2026-10-26 独立复核缺陷回归
+# 审计 F2/F3（#17）：摘要选择核对 bound_version；换版缺摘要不得把旧版本
+# 摘要继续当作当前目录/投影值。
+
+def test_audit_f2_abstract_selection_checks_bound_version():
+    from api.research_stability import catalog_abstract_statement
+    # 同语言、v1 摘要排在 v2 之前：不得以数组顺序代替版本证据。
+    payload = {"language": "en",
+               "original_abstracts": [
+                   {"text": "v1 abstract", "language": "en", "bound_version": "v1"},
+                   {"text": "v2 abstract", "language": "en", "bound_version": "v2"}]}
+    assert catalog_abstract_statement(payload) == (None, "version_ambiguous")
+    assert select_catalog_abstract(payload) is None
+    # 全部条目同一版本（整数与字符串归一化等价）：范围内按语言选择。
+    payload = {"language": "en",
+               "original_abstracts": [
+                   {"text": "v1 abstract", "language": "en", "bound_version": 1},
+                   {"text": "v1摘要", "language": "en", "bound_version": "1"},
+                   {"text": "zh text", "language": "zh", "bound_version": 1}]}
+    assert select_catalog_abstract(payload) == "v1 abstract"
+    # 范围一致时，带版本标签的条目优先于无标签条目（标签是版本证据）。
+    payload = {"language": "en",
+               "original_abstracts": [
+                   {"text": "unlabelled first", "language": "en"},
+                   {"text": "labelled v1", "language": "en", "bound_version": "v1"}]}
+    assert select_catalog_abstract(payload) == "labelled v1"
+    # 完全无版本标签（legacy 数据）：维持既有语言规则，不因缺标签而拒绝。
+    payload = {"language": "en",
+               "original_abstracts": [{"text": "only", "language": "en"}]}
+    assert select_catalog_abstract(payload) == "only"
+
+
+def test_audit_f3_explicit_empty_abstracts_clear_stale_version_value(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    v1_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                  "authors": [{"display_name": "Alice"}], "language": "en",
+                  "original_abstracts": [{"text": "v1 abstract text", "language": "en",
+                                          "bound_version": "v1"}]}
+    _insert_metadata(ctx, "W-reg", v1_payload, version=1, record_id="RM-f3-v1")
+    propagate_metadata(ctx, "W-reg", v1_payload, record_id="RM-f3-v1")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT abstract FROM works WHERE id='W-reg'"
+                            ).fetchone()["abstract"] == "v1 abstract text"
+
+    # 换版新头：显式 original_abstracts=[]（该版本无摘要），不得保留 v1 摘要
+    # 与 v2 身份混用；缺失说明写入当前投影，历史在被取代投影中可回查。
+    v2_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                  "authors": [{"display_name": "Alice"}], "language": "en",
+                  "original_abstracts": []}
+    _insert_metadata(ctx, "W-reg", v2_payload, version=2, record_id="RM-f3-v2")
+    propagate_metadata(ctx, "W-reg", v2_payload, record_id="RM-f3-v2")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT abstract FROM works WHERE id='W-reg'"
+                            ).fetchone()["abstract"] is None
+        active = get_active_projection(conn, "W-reg")
+        assert "abstract" not in active["payload"]
+        assert "abstract_note" in active["payload"]
+        superseded = conn.execute(
+            "SELECT payload_json FROM bibliographic_projections "
+            "WHERE work_id='W-reg' AND status!='active' ORDER BY created_at"
+        ).fetchall()
+        assert any(json.loads(row["payload_json"]).get("abstract") == "v1 abstract text"
+                   for row in superseded)
+
+    # 字段缺失（不是显式空列表）：记录未涉及摘要——既有目录值保持缺失语义。
+    v3_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                  "authors": [{"display_name": "Alice"}], "language": "en",
+                  "original_abstracts": [
+                      {"text": "v1 abstract text", "language": "en",
+                       "bound_version": "v1"}]}
+    v3_payload_2 = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "en"}
+    _insert_metadata(ctx, "W-reg", v3_payload, version=3, record_id="RM-f3-v3")
+    propagate_metadata(ctx, "W-reg", v3_payload, record_id="RM-f3-v3")
+    _insert_metadata(ctx, "W-reg", v3_payload_2, version=4, record_id="RM-f3-v4")
+    propagate_metadata(ctx, "W-reg", v3_payload_2, record_id="RM-f3-v4")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT abstract FROM works WHERE id='W-reg'"
+                            ).fetchone()["abstract"] == "v1 abstract text"
+
+
+def test_audit_f3_merge_overlay_version_ambiguous_and_missing():
+    base = {"title": "T", "abstract": "stale row abstract"}
+    # 版本歧义：不写不清，附待确认说明。
+    merged = merge_v5_payload(base, {"language": "en", "original_abstracts": [
+        {"text": "a v1", "language": "en", "bound_version": "v1"},
+        {"text": "a v2", "language": "en", "bound_version": "v2"}]})
+    assert merged["abstract"] == "stale row abstract"
+    assert "待确认" in merged["abstract_note"]
+    # 显式空列表：base 携带的旧摘要被移除，不与新版本身份混用。
+    merged = merge_v5_payload(base, {"language": "en", "original_abstracts": []})
+    assert "abstract" not in merged
+    assert "abstract_note" in merged
+
+
+# 审计 F4（#19 横向）：非书目修改不得触发桥接；书目修改仅覆盖实际编辑的
+# 字段，未编辑 language 继承当前 A。
+
+def _research_head(ctx, work_id="W-reg"):
+    with closing(ctx.connect()) as conn:
+        row = conn.execute(
+            """SELECT id, version, payload_json, agent_review_status, validity_status
+               FROM research_metadata_records WHERE work_id=?
+               ORDER BY version DESC LIMIT 1""", (work_id,)).fetchone()
+        return (dict(row) | {"payload": json.loads(row["payload_json"])}) if row else None
+
+
+def test_audit_f4_read_status_only_patch_never_bridges(stores, monkeypatch):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    # 目录 en；待审核 A 头已把语言修订为 zh（来自研究侧修订，未投影目录）。
+    pending = {"original_title": {"text": "Regression Work", "language": "en"},
+               "authors": [{"display_name": "Alice"}], "language": "zh"}
+    _insert_metadata(ctx, "W-reg", pending, version=1, review="pending",
+                     content="needs_review", record_id="RM-f4-pend")
+
+    from fastapi.testclient import TestClient
+    from api.main import app
+    from api.routes import works as works_route
+
+    def fake_conn():
+        conn = sqlite3.connect(catalog_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(works_route, "get_conn", fake_conn)
+    monkeypatch.setattr(works_route, "LIBRARY_ROOT", catalog_path.parent)
+    client = TestClient(app)
+    response = client.patch("/api/works/W-reg", json={"read_status": "read"})
+    assert response.status_code == 200, response.text
+    assert response.json()["metadata_bridge"] is None
+
+    head = _research_head(ctx)
+    # 无关目录编辑不生成新头、不 supersede 待审核 zh 修订。
+    assert head["id"] == "RM-f4-pend"
+    assert head["payload"]["language"] == "zh"
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT read_status FROM works WHERE id='W-reg'"
+                            ).fetchone()["read_status"] == "read"
+
+
+def test_audit_f4_title_edit_inherits_pending_language(stores, monkeypatch):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    pending = {"original_title": {"text": "Regression Work", "language": "en"},
+               "authors": [{"display_name": "Alice"}], "language": "zh"}
+    _insert_metadata(ctx, "W-reg", pending, version=1, review="pending",
+                     content="needs_review", record_id="RM-f4-pend")
+
+    from fastapi.testclient import TestClient
+    from api.main import app
+    from api.routes import works as works_route
+
+    def fake_conn():
+        conn = sqlite3.connect(catalog_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    monkeypatch.setattr(works_route, "get_conn", fake_conn)
+    monkeypatch.setattr(works_route, "LIBRARY_ROOT", catalog_path.parent)
+    client = TestClient(app)
+    response = client.patch("/api/works/W-reg", json={"title": "Edited Title"})
+    assert response.status_code == 200, response.text
+
+    head = _research_head(ctx)
+    # 书目修改触发桥接：新头携带新题，但未编辑 language 继承待审核 zh 值，
+    # 不被目录行 en 倒灌；旧头被 supersede。
+    assert head["id"] != "RM-f4-pend"
+    assert head["payload"]["original_title"]["text"] == "Edited Title"
+    assert head["payload"]["language"] == "zh"
+    with closing(ctx.connect()) as conn:
+        old = conn.execute(
+            "SELECT validity_status FROM research_metadata_records "
+            "WHERE id='RM-f4-pend'").fetchone()
+        assert old["validity_status"] == "superseded"
+
+
+def test_audit_f4_type_bridge_only_carries_type_fields(stores):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    head_payload = {"original_title": {"text": "Regression Work", "language": "en"},
+                    "authors": [{"display_name": "Alice"}], "language": "zh",
+                    "citation_year": "2025"}
+    from api.routes.works import _work_catalog_metadata_payload
+    # 类型桥接 changed=∅：书目键全部继承头，不得被目录行 en/2026 倒灌。
+    payload = _work_catalog_metadata_payload(_catalog_row(catalog_path), head_payload,
+                                             changed=set())
+    assert payload["language"] == "zh"
+    assert payload["citation_year"] == "2025"
+    assert payload["original_title"] == {"text": "Regression Work", "language": "en"}
+    sync = next(e for e in payload["extensions"] if e.get("name") == "catalog-sync")
+    assert sync["content"]["changed_fields"] == []
