@@ -379,7 +379,11 @@ function formatDate(w) {
   return w.year || ''
 }
 
+// issue #18：目录查询绑定请求代次——快速切换筛选/翻页时，旧请求的迟到
+// 成功不得覆盖新结果，旧失败不得清空已成功的新列表。
+let querySequence = 0
 async function loadData() {
+  const sequence = ++querySequence
   const params = {
     ...paginationParams.value,
     search: search.value,
@@ -414,12 +418,14 @@ async function loadData() {
   const q = searchParams.toString()
   try {
     const res = await getWorks(q ? '?' + q : '')
+    if (sequence !== querySequence) return
     riskFilterNote.value = res.risk_filter_note || ''
     loadError.value = ''
     works.value = res.works
     total.value = res.total
     totalMatching.value = res.total_matching
   } catch (e) {
+    if (sequence !== querySequence) return
     // R1 B2：风险筛选 fail-closed（503）等错误必须可见，且不得让旧列表
     // 冒充当前筛选结果。
     works.value = []

@@ -148,6 +148,7 @@
         <router-link to="/metadata" class="goto-upload" title="旧元数据审核已退役为只读历史">
           旧书目候选复核（只读归档）→
         </router-link>
+        <span v-if="stages.researchStage.statsNote" class="stats-note" role="alert">{{ stages.researchStage.statsNote }}</span>
       </template>
 
       <SelectableFileList
@@ -319,6 +320,7 @@ const stages = ref({
     selectedIds: new Set(),
     page: 1,
     filter: '',
+    statsNote: '',
   },
 })
 
@@ -427,22 +429,32 @@ async function loadParse() {
 }
 
 async function loadResearchStage() {
-  try {
-    const [stats, res] = await Promise.all([
-      getPipelineStats(),
-      getUnstagedWorks({ per_page: 100, page: stages.value.researchStage.page }),
-    ])
-    stages.value.researchStage.count = stats.research?.parsed_not_staged ?? res.total ?? 0
-    stages.value.researchStage.stagedWorks = stats.research?.staged_works || 0
-    stages.value.researchStage.items = (res.items || []).map(item => ({
-      ...item,
-      id: item.work_id,
-      display_title: item.title || item.work_id,
-    }))
-  } catch (e) {
-    console.error('Failed to load research stage:', e)
-    showError(new Error(`研究流程阶段加载失败: ${e.message}`))
+  // issue #20 同类：未入库清单是主数据，pipeline 统计是辅助读取——
+  // 统计失败只降级计数（回退用清单 total），不得丢弃已成功的清单。
+  const [statsRes, itemsRes] = await Promise.allSettled([
+    getPipelineStats(),
+    getUnstagedWorks({ per_page: 100, page: stages.value.researchStage.page }),
+  ])
+  if (itemsRes.status === 'rejected') {
+    console.error('Failed to load research stage items:', itemsRes.reason)
+    showError(new Error(`研究流程阶段加载失败: ${itemsRes.reason?.message || itemsRes.reason}`))
+    return
   }
+  const res = itemsRes.value
+  const stats = statsRes.status === 'fulfilled' ? statsRes.value : null
+  if (statsRes.status === 'rejected') {
+    console.error('Failed to load pipeline stats:', statsRes.reason)
+    stages.value.researchStage.statsNote = '统计读取失败，可选材料数按清单回退，“已在研究库”累计未确认。'
+  } else {
+    stages.value.researchStage.statsNote = ''
+  }
+  stages.value.researchStage.count = stats?.research?.parsed_not_staged ?? res.total ?? 0
+  stages.value.researchStage.stagedWorks = stats?.research?.staged_works || 0
+  stages.value.researchStage.items = (res.items || []).map(item => ({
+    ...item,
+    id: item.work_id,
+    display_title: item.title || item.work_id,
+  }))
 }
 
 // 批量操作
@@ -623,6 +635,16 @@ onMounted(loadAll)
 .filter-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* issue #20：研究阶段统计降级提示（清单仍可用，计数未确认） */
+.stats-note {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: var(--warn-fg);
+  background: var(--warn-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
 }
 
 .goto-upload {

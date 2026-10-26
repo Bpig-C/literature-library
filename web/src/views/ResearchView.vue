@@ -14,7 +14,10 @@
         <strong>按批次查看研究记录</strong>
         <span>查看这一批文献的原文、解释与审核状态。中文工作稿可以单独编辑，原记录保留。</span>
         <span>完整书目 A 按 Work 独立抽取与核查；<router-link to="/metadata-workspace">去元数据工作台查看或批量补全 →</router-link> 本页只安排 C 原文与 D 解释分类。</span>
-        <span v-if="usableSummary">可用基线：<b>{{ usableSummary.usable_count }}</b> / {{ usableSummary.total }} 条两层内容均“稳定”；另 {{ usableSummary.waiting_human }} 条稳定但人工判断待定（不阻断使用）。</span>
+        <span v-if="usableSummary?.unavailable" class="dependency-warning" role="alert">
+          可用基线读取失败（{{ usableSummary.error }}）：上方研究记录仍可阅读，但“稳定可用”未确认，不能据此推断可用基线数量；可重新查询恢复。
+        </span>
+        <span v-else-if="usableSummary">可用基线：<b>{{ usableSummary.usable_count }}</b> / {{ usableSummary.total }} 条两层内容均“稳定”；另 {{ usableSummary.waiting_human }} 条稳定但人工判断待定（不阻断使用）。</span>
         <span v-if="usableSummary?.source_dependency_review_pending" class="dependency-warning">
           其中 {{ usableSummary.source_dependency_review_pending }} 条解释沿用固定原文版本；后续原文仅定位信息变化，解释仍可用，但来源定位待复核。
         </span>
@@ -665,6 +668,19 @@ async function loadData() {
     const fetched = responseRows(response)
     rows.value = fetched.filter(matchesClientFilters)
     total.value = rows.value.length < fetched.length ? rows.value.length : responseTotal(response, rows.value.length)
+  } catch (err) {
+    if (sequence !== querySequence) return
+    error.value = `研究数据暂时不可用：${err?.message || '请求失败'}。文献库其他功能不受影响。`
+    rows.value = []
+    total.value = 0
+    usableSummary.value = null
+  } finally {
+    if (sequence === querySequence) loading.value = false
+  }
+  // issue #20：/usable 是辅助读取——它失败时保留已成功的主查询结果，
+  // 可用性标为“未确认”，不得共用主查询的 catch 清空研究行。
+  if (sequence !== querySequence) return
+  try {
     const usable = await getResearchUsable(requestedBatch)
     if (sequence !== querySequence) return
     usableSummary.value = {
@@ -676,12 +692,7 @@ async function loadData() {
     }
   } catch (err) {
     if (sequence !== querySequence) return
-    error.value = `研究数据暂时不可用：${err?.message || '请求失败'}。文献库其他功能不受影响。`
-    rows.value = []
-    total.value = 0
-    usableSummary.value = null
-  } finally {
-    if (sequence === querySequence) loading.value = false
+    usableSummary.value = { unavailable: true, error: err?.message || '请求失败' }
   }
 }
 

@@ -52,9 +52,10 @@
 
     <section class="prompt-box">
       <h2>批量 Agent 工单 <small>已选 {{ selected.length }} 篇</small></h2>
+      <p v-if="schemaError" class="alert" role="alert">研究环境（schema）读取失败：{{ schemaError }}。A 清单不受影响；工单须绑定执行环境，生成已禁用。点上方“刷新状态”重试。</p>
       <div class="prompt-controls"><select v-model="mode" aria-label="选择工单模式"><option v-for="entry in METADATA_PROMPT_MODES" :key="entry.value" :value="entry.value">{{ entry.label }}</option></select>
         <input v-model="focus" placeholder="补充您特别关注的字段/问题（可留空）" />
-        <button type="button" @click="generate" :disabled="!selected.length">生成可编辑工单</button>
+        <button type="button" @click="generate" :disabled="!selected.length || !!schemaError" :title="schemaError ? 'schema 未取得，工单缺少执行环境绑定' : ''">生成可编辑工单</button>
         <button type="button" @click="copy" :disabled="!prompt">{{ copied ? '已复制' : '复制工单' }}</button></div>
       <p class="hint">“自动分流”适合新旧记录混合的批量任务；独立复核与人工采纳是不同步骤。生成后的内容可以自行修改再交给外部 Agent。</p>
       <textarea v-model="prompt" rows="17" aria-label="可编辑的元数据 Agent 工单" placeholder="选中 Work 后生成提示词"></textarea>
@@ -77,7 +78,7 @@ const route = useRoute()
 const router = useRouter()
 const detailSection = ref(null)
 let detailRequest = 0
-const data = ref(null), schema = ref(null), materialsList = ref(null), loading = ref(false), error = ref('')
+const data = ref(null), schema = ref(null), materialsList = ref(null), loading = ref(false), error = ref(''), schemaError = ref('')
 const search = ref(''), filter = ref('all'), includeStable = ref(false), selected = ref([])
 const mode = ref('auto'), focus = ref(''), prompt = ref(''), copied = ref(false)
 const detailItem = ref(null), detail = ref(null), detailLoading = ref(false), detailError = ref('')
@@ -95,11 +96,20 @@ function canSelect(item) { return item.parse_ready && item.read_status !== 'quar
 function toggle(id) { selected.value = selected.value.includes(id) ? selected.value.filter(x => x !== id) : [...selected.value,id] }
 function selectActionable() { selected.value = [...new Set([...selected.value,...paged.value.filter(canSelect).map(item => item.id)])] }
 async function load() {
-  loading.value = true; error.value = ''
-  try { const [list, release, materials] = await Promise.all([getMetadataWorklist(), getResearchSchema(), getMaterials()]); data.value = list; schema.value = release; materialsList.value = materials;
+  loading.value = true; error.value = ''; schemaError.value = ''
+  // issue #20：A 工作清单是主数据；schema/materials 是辅助读取。辅助失败
+  // 不得阻断清单与按 work_id 打开 A 详情；schema 缺失时禁用工单生成并说明。
+  try {
+    const list = await getMetadataWorklist()
+    data.value = list
     selected.value = selected.value.filter(id => list.items.some(item => item.id === id && canSelect(item)))
     await openRequestedDetail()
   } catch (e) { error.value = `A 清单暂不可用：${e.detail || e.message}` } finally { loading.value = false }
+  const [releaseResult, materialsResult] = await Promise.allSettled([getResearchSchema(), getMaterials()])
+  if (releaseResult.status === 'fulfilled') schema.value = releaseResult.value
+  else { schema.value = null; schemaError.value = releaseResult.reason?.detail || releaseResult.reason?.message || '读取失败' }
+  if (materialsResult.status === 'fulfilled') materialsList.value = materialsResult.value
+  else materialsList.value = null
 }
 async function focusDetail() {
   await nextTick()

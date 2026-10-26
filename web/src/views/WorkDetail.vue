@@ -455,7 +455,13 @@
       </div>
     </div>
     <div v-else class="detail-panel empty-panel">
-      <n-spin size="large" />
+      <!-- issue #18：当前 Work 读取失败时明确报错并可重试；不能把上一篇
+           的标题/A 状态当成本篇内容展示。 -->
+      <template v-if="workError">
+        <p role="alert" class="work-load-error">{{ workError }}</p>
+        <n-button size="small" @click="loadWork">重试读取</n-button>
+      </template>
+      <n-spin v-else size="large" />
     </div>
 
     <ResizeHandle v-if="showPdf" @resize="onResizeDetail" />
@@ -556,6 +562,8 @@ function fixedPdfUrl(sourceId) {
 const selectedPdfUrl = computed(() => fixedPdfUrl(selectedPdfSourceId.value))
 let materialLoadGeneration = 0
 const contentError = ref('')
+// issue #18：当前 Work 主数据读取失败的页面级错误；与正文读取失败分开。
+const workError = ref('')
 const imageError = ref('')
 const failedImages = new Set()
 function onImageError(event) {
@@ -1025,7 +1033,10 @@ function toggleSortDir() {
   loadList()
 }
 
+// issue #18：侧栏列表读取加请求代次；旧筛选/翻页的迟到响应不得覆盖新结果。
+let listRequest = 0
 async function loadList() {
+  const request = ++listRequest
   // On first call, read filter state from sessionStorage (set by Works page)
   if (!savedFilters.value) {
     try {
@@ -1080,6 +1091,7 @@ async function loadList() {
   }
   const q = searchParams.toString()
   const res = await getWorks('?' + q)
+  if (request !== listRequest) return
   worksList.value = res.works
   listTotal.value = res.total_matching
 }
@@ -1106,6 +1118,7 @@ async function loadWork() {
   // Clear rendered text before changing any selector, including a Work switch.
   content.value = ''
   contentError.value = ''
+  workError.value = ''
   imageError.value = ''
   failedImages.clear()
   mergedContent.value = ''
@@ -1113,10 +1126,12 @@ async function loadWork() {
   pdfSelections.value = {}
   pdfSelectionError.value = ''
   let selector
+  let detailLoaded = false
   try {
     const detail = await getWork(workId)
     if (generation !== materialLoadGeneration) return
     work.value = detail
+    detailLoaded = true
     const selections = await Promise.allSettled((detail.source_files || []).filter(s => s.file_ext === '.pdf').map(s => getPdfSelection(workId,s.id)))
     if (generation !== materialLoadGeneration) return
     for (const result of selections) {
@@ -1140,7 +1155,18 @@ async function loadWork() {
   } catch (error) {
     if (generation !== materialLoadGeneration) return
     contentError.value = error.message || '正文读取失败，请重试。'
-    if (!selector) { await loadResearch(); return }
+    if (!detailLoaded) {
+      // issue #18：本篇主数据读取失败——旧 Work 的标题/A 状态/研究内容
+      // 不能继续冒充当前路由对象；清空并给出页面级错误与重试入口。
+      work.value = null
+      researchDetail.value = null
+      researchProfile.value = null
+      workError.value = error?.message
+        ? `文献 ${workId} 读取失败：${error.message}`
+        : `文献 ${workId} 读取失败，请重试。`
+      return
+    }
+    if (!selector) { await loadResearch(generation); return }
   }
   // 合并版旁路资产（仅云 VLM 解析有）：404=产物不存在（如本地 pipeline 路线）；
   // 其他状态=读取失败。no-store：force 重解析会同路径覆盖产物，绝不能读缓存旧响应
@@ -1163,10 +1189,13 @@ async function loadWork() {
   if (mergedUnavailableReason.value && contentMode.value === 'merged') {
     contentMode.value = 'render'
   }
-  if (generation === materialLoadGeneration) await loadResearch()
+  if (generation === materialLoadGeneration) await loadResearch(generation)
 }
 
-async function loadResearch() {
+// issue #18：研究卡读取绑定 Work 身份与请求代次——A 的迟到成功/失败
+// 不得覆盖 B 的内容，也不得把 B 已成功的结果清空。
+async function loadResearch(generation = materialLoadGeneration) {
+  const workId = props.id
   if (!researchBatchId.value) {
     researchLoading.value = false
     researchError.value = false
@@ -1177,12 +1206,17 @@ async function loadResearch() {
   researchError.value = false
   researchDetail.value = null
   try {
-    researchDetail.value = await getResearchWork(props.id, { batch_id: researchBatchId.value })
+    const detail = await getResearchWork(workId, { batch_id: researchBatchId.value })
+    if (generation !== materialLoadGeneration || props.id !== workId) return
+    researchDetail.value = detail
   } catch (error) {
+    if (generation !== materialLoadGeneration || props.id !== workId) return
     if (error?.status === 404) researchDetail.value = { items: [] }
     else researchError.value = true
   } finally {
-    researchLoading.value = false
+    if (generation === materialLoadGeneration && props.id === workId) {
+      researchLoading.value = false
+    }
   }
 }
 
@@ -1381,16 +1415,26 @@ function restore() {
 const researchProfile = ref(null)
 const profileLoading = ref(false)
 const profileError = ref(false)
+// issue #18：谱系读取绑定 Work 身份与请求代次，并随路由切换重载；
+// 此前只在 onMounted 加载一次，切到 B 后仍显示 A 的谱系/A 头计数。
+let profileRequest = 0
 async function loadResearchProfile() {
+  const request = ++profileRequest
+  const workId = props.id
   profileLoading.value = true
   profileError.value = false
   researchProfile.value = null
   try {
-    researchProfile.value = await getResearchWorkProfile(props.id)
+    const profile = await getResearchWorkProfile(workId)
+    if (request !== profileRequest || props.id !== workId) return
+    researchProfile.value = profile
   } catch (error) {
+    if (request !== profileRequest || props.id !== workId) return
     if (error?.status !== 404) profileError.value = true
   } finally {
-    profileLoading.value = false
+    if (request === profileRequest && props.id === workId) {
+      profileLoading.value = false
+    }
   }
 }
 const profileBaselines = computed(() => researchProfile.value?.recommended_baselines || [])
@@ -1401,8 +1445,8 @@ onMounted(() => {
   stageBatchChoice.value = researchBatchId.value || null
   loadStageBatches()
   loadList()
-  loadResearchProfile()
 })
+watch(() => props.id, loadResearchProfile, { immediate: true })
 watch(() => [props.id, researchBatchId.value], loadWork, { immediate: true })
 </script>
 
@@ -1464,6 +1508,8 @@ watch(() => [props.id, researchBatchId.value], loadWork, { immediate: true })
   overflow-y: auto; padding: 16px 24px; min-width: 0; min-height: 0;
 }
 .empty-panel { display: flex; align-items: center; justify-content: center; }
+.empty-panel { flex-direction: column; gap: 10px; padding: 24px; }
+.work-load-error { color: #a3361f; font-size: 13px; max-width: 420px; overflow-wrap: anywhere; margin: 0; }
 
 .detail-header {
   display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-bottom: 12px;
