@@ -204,7 +204,8 @@ def propagate_metadata(context: ResearchContext, work_id: str, payload: dict, *,
             # catalog_abstract_statement。
             assignments.append("abstract=?")
             values.append(abstract)
-        elif abstract_state == "explicit_missing" and "abstract" in works_keys:
+        elif (abstract_state in {"explicit_missing", "version_ambiguous"} or
+              (abstract_state == "absent" and arxiv and arxiv != row["arxiv_id"])) and "abstract" in works_keys:
             # 换版缺摘要：旧版本摘要不再作为当前目录值（audit F3）。
             assignments.append("abstract=NULL")
         if document_type and "doc_type" in works_keys:

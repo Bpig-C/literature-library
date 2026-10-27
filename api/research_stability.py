@@ -61,7 +61,8 @@ def _entry_bound_version(item: dict) -> str:
         return ""
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    return str(value).strip()
+    text = str(value).strip().lower()
+    return text[1:] if re.fullmatch(r"v\d+", text) else text
 
 
 def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
@@ -72,19 +73,18 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
     ``state == "selected"``:
 
     ``selected``
-        entries agree on one paper version (or carry no version labels at
-        all, legacy data); the language rule picks the text;
+        entries match the explicitly cited arXiv version, or agree on one
+        scope when no version is cited; language is considered afterwards;
     ``version_ambiguous``
-        entries span several ``bound_version`` values while the payload
-        declares no record-level version scope — array order is not version
-        evidence, so nothing is projected and the entries stay verbatim;
+        entries conflict or none matches the cited arXiv version; current
+        projections must not retain a stale abstract. Source entries remain intact;
     ``explicit_missing``
         ``original_abstracts`` is an explicit empty list: the record addresses
         this version's abstracts and found none — a previously propagated
         value bound to another version must not survive as the current one;
     ``absent``
         the record does not address abstracts at all; callers keep their
-        explicit missing semantics (no write, no clear) and may fall back to
+        value only if the cited paper identity has not changed, and may fall back to
         the legacy top-level ``abstract`` string read-only.
 
     Language rule within the confirmed scope (issue #17):
@@ -104,11 +104,19 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
                and str(item.get("text") or "").strip()]
     if not entries:
         return None, "explicit_missing"
+    arxiv = clean_identifier(payload.get("arxiv"), kind="arxiv") or ""
+    current = re.search(r"v(\d+)$", arxiv, re.I)
+    if current:
+        entries = [item for item in entries
+                   if _entry_bound_version(item) in {current[1], arxiv.lower()}]
+        if not entries:
+            return None, "version_ambiguous"
     versions = {_entry_bound_version(item) for item in entries} - {""}
+    if current:
+        versions = {current[1]}
     if len(versions) > 1:
         return None, "version_ambiguous"
-    ordered = ([item for item in entries if _entry_bound_version(item)]
-               + [item for item in entries if not _entry_bound_version(item)])
+    ordered = [item for item in entries if _entry_bound_version(item)] or entries
     for reference in (payload.get("language"),
                       (payload.get("original_title") or {}).get("language")):
         for item in ordered:

@@ -102,6 +102,7 @@ async function load() {
   // materials（无论成功或失败）不得覆盖新一轮已生效的结果。
   const seq = ++loadSeq
   loading.value = true; error.value = ''; schemaError.value = ''
+  schema.value = null; materialsList.value = null; prompt.value = ''; copied.value = false
   // issue #20：A 工作清单是主数据；schema/materials 是辅助读取。辅助失败
   // 不得阻断清单与按 work_id 打开 A 详情；schema 缺失时禁用工单生成并说明。
   try {
@@ -112,12 +113,12 @@ async function load() {
     await openRequestedDetail()
   } catch (e) { if (seq === loadSeq) error.value = `A 清单暂不可用：${e.detail || e.message}` }
   finally { if (seq === loadSeq) loading.value = false }
-  const [releaseResult, materialsResult] = await Promise.allSettled([getResearchSchema(), getMaterials()])
-  if (seq !== loadSeq) return
-  if (releaseResult.status === 'fulfilled') schema.value = releaseResult.value
-  else { schema.value = null; schemaError.value = releaseResult.reason?.detail || releaseResult.reason?.message || '读取失败' }
-  if (materialsResult.status === 'fulfilled') materialsList.value = materialsResult.value
-  else materialsList.value = null
+  await Promise.allSettled([
+    getResearchSchema().then(value => { if (seq === loadSeq) schema.value = value },
+      reason => { if (seq === loadSeq) schemaError.value = reason?.detail || reason?.message || '读取失败' }),
+    getMaterials().then(value => { if (seq === loadSeq) materialsList.value = value },
+      () => { if (seq === loadSeq) materialsList.value = null }),
+  ])
 }
 async function focusDetail() {
   await nextTick()

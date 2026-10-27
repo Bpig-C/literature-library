@@ -430,7 +430,7 @@ def test_audit_f3_merge_overlay_version_ambiguous_and_missing():
     merged = merge_v5_payload(base, {"language": "en", "original_abstracts": [
         {"text": "a v1", "language": "en", "bound_version": "v1"},
         {"text": "a v2", "language": "en", "bound_version": "v2"}]})
-    assert merged["abstract"] == "stale row abstract"
+    assert "abstract" not in merged
     assert "待确认" in merged["abstract_note"]
     # 显式空列表：base 携带的旧摘要被移除，不与新版本身份混用。
     merged = merge_v5_payload(base, {"language": "en", "original_abstracts": []})
@@ -536,3 +536,38 @@ def test_audit_f4_type_bridge_only_carries_type_fields(stores):
     assert payload["original_title"] == {"text": "Regression Work", "language": "en"}
     sync = next(e for e in payload["extensions"] if e.get("name") == "catalog-sync")
     assert sync["content"]["changed_fields"] == []
+
+
+@pytest.mark.parametrize("entries,expected", [
+    ([{"text": "old", "bound_version": "v1"}, {"text": "current", "bound_version": "v2"}], "current"),
+    ([{"text": "old", "bound_version": "v1"}], None),
+    ([{"text": "unscoped"}], None),
+    ([{"text": "current", "bound_version": "2601.00001v2"}], "current"),
+])
+def test_explicit_arxiv_version_selects_only_matching_abstract(entries, expected):
+    payload = {"arxiv": "2601.00001v2", "original_abstracts": entries}
+    assert select_catalog_abstract(payload) == expected
+    merged = merge_v5_payload({"abstract": "stale", "arxiv_id": "2601.00001v1"}, payload)
+    assert merged.get("abstract") == expected
+
+
+@pytest.mark.parametrize("abstracts", [None, [{"text": "old", "bound_version": "v1"}]])
+def test_version_change_without_matching_abstract_clears_catalog_and_projection(stores, abstracts):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, language="en")
+    base = {"original_title": {"text": "Regression Work", "language": "en"},
+            "authors": [{"display_name": "Alice"}], "language": "en"}
+    old = {**base, "arxiv": "2601.00001v1", "original_abstracts": [{"text": "old", "bound_version": "v1"}]}
+    _insert_metadata(ctx, "W-reg", old, version=1, record_id="RM-old")
+    propagate_metadata(ctx, "W-reg", old, record_id="RM-old")
+    new = {**base, "arxiv": "2601.00001v2"}
+    if abstracts is not None:
+        new["original_abstracts"] = abstracts
+    _insert_metadata(ctx, "W-reg", new, version=2, record_id="RM-new")
+    propagate_metadata(ctx, "W-reg", new, record_id="RM-new")
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT abstract FROM works WHERE id='W-reg'").fetchone()[0] is None
+        assert not get_active_projection(conn, "W-reg")["payload"].get("abstract")
+        assert any(json.loads(r[0]).get("abstract") == "old" for r in conn.execute(
+            "SELECT payload_json FROM bibliographic_projections WHERE status='superseded'"))

@@ -1123,6 +1123,7 @@ async function loadWork() {
     editing.value = false
     editForm.value = {}
     editWorkId.value = ''
+    work.value = null
   }
   // Clear rendered text before changing any selector, including a Work switch.
   content.value = ''
@@ -1257,17 +1258,19 @@ function onTitleBlur(e) {
   // saveEdit() submits editForm, so the edited title must land there — otherwise
   // the user's title change is silently dropped on save.
   const t = (e.target.innerText || '').trim()
+  if (!work.value || work.value.id !== props.id) return
   work.value.title = t
   if (editForm.value) editForm.value.title = t
 }
 
 async function saveEdit() {
   // 审计 F1：表单不再属于当前 Work（切换后失效/身份不符）时丢弃，绝不提交。
-  if (!editing.value || !editWorkId.value || editWorkId.value !== work.value?.id) {
+  if (!editing.value || !editWorkId.value || editWorkId.value !== props.id || editWorkId.value !== work.value?.id) {
     editing.value = false
     return
   }
   const targetId = editWorkId.value
+  const generation = materialLoadGeneration
   const data = { ...editForm.value }
   data.authors = data.authors_str.split(';').map(s => s.trim()).filter(Boolean)
   delete data.authors_str
@@ -1281,7 +1284,7 @@ async function saveEdit() {
   try {
     const result = await updateWork(targetId, data)
     // 提交期间用户可能已切到另一篇：只对表单所属的 Work 应用后续刷新。
-    if (targetId === props.id && targetId === work.value?.id) {
+    if (generation === materialLoadGeneration && targetId === props.id && targetId === work.value?.id) {
       editing.value = false
       await loadWork()
     }

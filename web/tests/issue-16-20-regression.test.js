@@ -286,6 +286,8 @@ it('audit F1 (issue #18): switching works immediately closes the open edit form 
   await router.push('/works/W-b'); await settle()
   // 切换立即使旧表单失效：保存入口消失，旧表单不可能提交到 W-b。
   expect(findButton('保存')).toBeFalsy()
+  expect(findButton('编辑')).toBeFalsy()
+  expect(host.textContent).not.toContain('Title W-a')
   expect(api.updateWork).not.toHaveBeenCalled()
   slowWorkB.resolve(workFixture('W-b')); await settle()
   expect(api.updateWork).not.toHaveBeenCalled()
@@ -387,4 +389,23 @@ it('audit F7 (issue #18): a failed record switch clears the previous work title 
   expect(host.textContent).not.toContain('Title W-a')
   expect(host.textContent).not.toContain('HTTP 503')
   expect(host.textContent).toContain('HTTP 500')
+})
+
+
+it('refresh invalidates schema immediately and materials cannot hold schema readiness hostage', async () => {
+  const pendingSchema = deferred(), pendingMaterials = deferred()
+  api.getMetadataWorklist.mockResolvedValue({items: [{id: 'W-a', title: 'A', status: 'absent', parse_ready: true}], counts: {}})
+  api.getResearchSchema.mockResolvedValueOnce({environment_id: 'OLD'}).mockImplementation(() => pendingSchema.promise)
+  api.getMaterials.mockImplementation(() => pendingMaterials.promise)
+  await mount('/metadata-workspace', [routesFor['/metadata-workspace']])
+  const checkbox = host.querySelector('tbody input[aria-label="选择 W-a"]')
+  checkbox.checked = true; checkbox.dispatchEvent(new Event('change')); await settle()
+  expect(findButton('生成可编辑工单').disabled).toBe(false)
+  findButton('生成可编辑工单').click(); await settle()
+  findButton('刷新状态').click(); await settle()
+  expect(findButton('生成可编辑工单').disabled).toBe(true)
+  expect(host.querySelector('textarea[aria-label="可编辑的元数据 Agent 工单"]').value).toBe('')
+  pendingSchema.resolve({environment_id: 'NEW'}); await settle()
+  expect(findButton('生成可编辑工单').disabled).toBe(false)
+  pendingMaterials.resolve({items: []}); await settle()
 })
