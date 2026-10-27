@@ -82,6 +82,9 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
         ``original_abstracts`` is an explicit empty list: the record addresses
         this version's abstracts and found none — a previously propagated
         value bound to another version must not survive as the current one;
+    ``selection_ambiguous``
+        several different texts remain after version/language filtering;
+        array order cannot decide which is authoritative;
     ``absent``
         the record does not address abstracts at all; callers keep their
         value only if the cited paper identity has not changed, and may fall back to
@@ -94,7 +97,7 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
        evidence, its absence is not);
     3. prefer the entry matching the formal ``language`` field, then
        ``original_title.language`` (primary-subtag match);
-    4. else the sole entry; otherwise the first entry in stored order.
+    4. select only a unique text; otherwise leave the selection unconfirmed.
     """
     raw = payload.get("original_abstracts")
     if raw is None:
@@ -119,10 +122,14 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
     ordered = [item for item in entries if _entry_bound_version(item)] or entries
     for reference in (payload.get("language"),
                       (payload.get("original_title") or {}).get("language")):
-        for item in ordered:
-            if _language_matches(item.get("language"), reference):
-                return str(item["text"]).strip(), "selected"
-    return str(ordered[0]["text"]).strip(), "selected"
+        matching = [item for item in ordered if _language_matches(item.get("language"), reference)]
+        if matching:
+            ordered = matching
+            break
+    texts = {str(item["text"]).strip() for item in ordered}
+    if len(texts) != 1:
+        return None, "selection_ambiguous"
+    return next(iter(texts)), "selected"
 
 
 def select_catalog_abstract(payload: dict) -> str | None:

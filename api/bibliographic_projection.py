@@ -145,8 +145,8 @@ def merge_v5_payload(base: dict, v5_payload: dict) -> dict:
         overlay["abstract"] = abstract
     elif abstract_state == "explicit_missing":
         overlay["abstract_note"] = "该版本未提供作者原始摘要；此前版本的摘要不再作为当前投影值（历史见被取代投影）。"
-    elif abstract_state == "version_ambiguous":
-        overlay["abstract_note"] = "原始摘要的版本范围与当前引用无法确认一致，摘要待确认；历史摘要不作为当前值。"
+    elif abstract_state in {"version_ambiguous", "selection_ambiguous"}:
+        overlay["abstract_note"] = "原始摘要的版本范围或文本选择仍待确认；历史摘要不作为当前值。"
     for src, dst in (("document_type", "doc_type"),
                      ("publication_status", "publication_status")):
         value = str(v5_payload.get(src) or "").strip()
@@ -154,7 +154,7 @@ def merge_v5_payload(base: dict, v5_payload: dict) -> dict:
             overlay[dst] = value
     merged = dict(base)
     merged.update({k: v for k, v in overlay.items() if v})
-    if (abstract_state in {"explicit_missing", "version_ambiguous"} or
+    if (abstract_state in {"explicit_missing", "version_ambiguous", "selection_ambiguous"} or
             (abstract_state == "absent" and identifiers["arxiv_id"] and
              identifiers["arxiv_id"] != base.get("arxiv_id"))):
         # 换版缺摘要：base 携带的旧版本摘要（如从 works 行快照带入）不与

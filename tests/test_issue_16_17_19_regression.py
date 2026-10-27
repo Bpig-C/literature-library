@@ -181,13 +181,13 @@ def test_issue17_abstract_selector_rules():
                    {"text": "English abstract", "language": "en"},
                    {"text": "Résumé français", "language": "fr"}]}
     assert select_catalog_abstract(payload) == "Résumé français"
-    # 无语言可匹配：唯一条目直接取；多条目按存储顺序取第一条（确定性）。
+    # 无语言可匹配：唯一文本可选；多个文本不按存储顺序猜测。
     payload = {"original_abstracts": [{"text": "Only one", "language": "de"}]}
     assert select_catalog_abstract(payload) == "Only one"
     payload = {"original_abstracts": [
         {"text": "First stored", "language": "de"},
         {"text": "Second stored", "language": "ja"}]}
-    assert select_catalog_abstract(payload) == "First stored"
+    assert select_catalog_abstract(payload) is None
     # 空文本条目跳过；译文与概览绝不冒充原摘要。
     payload = {"original_abstracts": [{"text": "  ", "language": "en"}],
                "abstract_translations": [{"text": "翻译", "language": "zh"}],
@@ -358,7 +358,8 @@ def test_audit_f2_abstract_selection_checks_bound_version():
                    {"text": "v1 abstract", "language": "en", "bound_version": 1},
                    {"text": "v1摘要", "language": "en", "bound_version": "1"},
                    {"text": "zh text", "language": "zh", "bound_version": 1}]}
-    assert select_catalog_abstract(payload) == "v1 abstract"
+    assert select_catalog_abstract(payload) is None
+    assert catalog_abstract_statement(payload)[1] == "selection_ambiguous"
     # 范围一致时，带版本标签的条目优先于无标签条目（标签是版本证据）。
     payload = {"language": "en",
                "original_abstracts": [
