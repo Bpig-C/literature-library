@@ -544,6 +544,9 @@ def test_audit_f4_type_bridge_only_carries_type_fields(stores):
     ([{"text": "old", "bound_version": "v1"}], None),
     ([{"text": "unscoped"}], None),
     ([{"text": "current", "bound_version": "2601.00001v2"}], "current"),
+    ([{"text": "current", "bound_version": "arXiv:2601.00001v2"}], "current"),
+    ([{"text": "current", "bound_version": "arXiv:2601.00001v2 fixed PDF"}], "current"),
+    ([{"text": "other paper", "bound_version": "arXiv:2601.00002v2 fixed PDF"}], None),
 ])
 def test_explicit_arxiv_version_selects_only_matching_abstract(entries, expected):
     payload = {"arxiv": "2601.00001v2", "original_abstracts": entries}

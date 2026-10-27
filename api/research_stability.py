@@ -62,6 +62,12 @@ def _entry_bound_version(item: dict) -> str:
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     text = str(value).strip().lower()
+    # Existing reviewed records use arXiv:<id>vN and the explicit "fixed PDF"
+    # qualifier. Normalize only recognized identifier syntax, not arbitrary
+    # prose containing a version number; keep the complete paper identity.
+    identifier = clean_identifier(re.sub(r"\s+fixed pdf$", "", text), kind="arxiv")
+    if identifier:
+        return identifier.lower()
     return text[1:] if re.fullmatch(r"v\d+", text) else text
 
 
