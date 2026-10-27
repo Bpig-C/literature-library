@@ -155,3 +155,13 @@ not_submitted 不退还原尝试预算，后续仍需剩余预算或新计划。
 5. 维护用 --maintenance drain --owner 工单ID 阻止新接收/prepare，排空后才进入 snapshot；备份执行器已协调屏障。冷恢复通过 scheduler 读取 maintenance_owner，核对实际写者后，以 --maintenance resume --owner 原工单ID 显式解除保留的屏障。未登记资产/部分不可变包仍需先协调。
 
 parse_queue_control/jobs/events、parse_cloud_batches/members 为增量控制表，研究 schema/contract 不变。密文随数据库恢复，密钥独立配置；所有目录写入经短 epoch/租约事务。Source/最新版本在 resume/resolve/claim/发布检查，历史任务不能绕过新版本恢复。代码交付不安装 worker/定时任务、不自动迁移旧执行作业，不代表生产验收。
+
+### 网页后台解析
+
+Work 详情的解析/重解析按钮及流水线批量解析进入同一预览面板。先明确 VLM 或 PyMuPDF；同 Work 多原件时在详情选择具体 Source，批量入口不会猜选最新文件。预览展示可处理原件与排除原因，再确认文件数、云端文件尝试数和累计页数上限。默认只处理一份、最多一次云端尝试、最多 100 页；这些是本地预算，不是账户余额。VLM 不自动降级。
+
+确认前先在当前浏览器保存冻结计划、预算和 request_id，再接收计划和持久入队。响应丢失时以“使用原请求继续入队”恢复同一请求，不重建新计划；本地保存失败则不提交。关闭面板或网页不会取消已接收任务。再次打开相同 Work 集合可以读回计划，使用“查询任务状态”查看后台阶段；只在已登记成功后提示完成。剩余项、预算耗尽、失败、待检查、取消不等于全部完成。
+
+保留请求/计划/任务 ID，可通过上述 CLI 查询和受控恢复。浏览器记录仅是恢复入口，不是服务器任务账本；切换浏览器或清除站点数据前应保存这些 ID。状态查询不重复提交云任务，预算不会自动扩充。需要暂停、取消或核对未知上游任务时，沿用已有 CLI 的显式控制流程。
+
+MinerU 结果包的 `content_list.json` 和单个 `*_content_list.json` 均映射到正式 `content.json`；多个候选结构化清单返回 `ambiguous_content_list`，不按文件顺序猜选。无清单时占位说明显式标注 `content_list_available=false`。该兼容修复不会改写旧 Parse 的不可变资产；旧占位 JSON 的修复需从保留的原包生成新的、可追溯的登记版本，不需要重新向 MinerU 提交原文。

@@ -468,7 +468,15 @@ class CloudClient(PdfParseClient):
             self._safe_extract_zip(zf, raw_dir)
 
         full_md = self._find(raw_dir, "full.md")
-        content_list = self._find(raw_dir, "content_list.json")
+        # Current MinerU archives prefix content-list names with the document
+        # identity. Never replace an existing structured result with a stub,
+        # and never guess between different documents in an unexpected bundle.
+        candidates = sorted({*raw_dir.rglob("content_list.json"),
+                             *raw_dir.rglob("*_content_list.json")})
+        candidates = [path for path in candidates if path.is_file()]
+        if len(candidates) > 1:
+            raise CloudStageError('ambiguous_content_list')
+        content_list = candidates[0] if candidates else None
 
         if not full_md:
             raise MissingMarkdown('missing full.md; original package retained')
@@ -480,7 +488,8 @@ class CloudClient(PdfParseClient):
         else:
             # 兜底：无 content_list.json 时写入最小结构
             (output_dir / "content.json").write_text(
-                json.dumps({"source": "mineru_cloud", "full_md": "content.md"}, ensure_ascii=False, indent=2),
+                json.dumps({"source": "mineru_cloud", "full_md": "content.md",
+                            "content_list_available": False}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 

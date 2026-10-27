@@ -251,20 +251,22 @@
         </div>
       </div>
     </div>
+    <ParseQueuePanel v-if="parsePanel" :key="JSON.stringify(parsePanel)" :work-ids="parsePanel" @close="parsePanel = null" @complete="loadAll" />
   </div>
 </template>
 
 <script setup>
+import ParseQueuePanel from '../components/ParseQueuePanel.vue'
+
 
 import { useRuntimeMode } from '../composables/useRuntimeMode'
 const { readOnly } = useRuntimeMode()
+const parsePanel = ref(null)
 import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
-import { parseSummary } from '../utils/storage-feedback'
 import {
   getIngestPlan,
   executeIngest,
   parseStatus,
-  parseTrigger,
   getPipelineStats,
   getUnstagedWorks,
   stageWorkToResearch,
@@ -483,24 +485,9 @@ async function batchIngest() {
   })
 }
 
-async function batchParse() {
+function batchParse() {
   const ids = Array.from(stages.value.parse.selectedIds)
-  if (!ids.length) return
-  showConfirm('批量解析', `即将解析选中的 ${ids.length} 个文档，确定继续？`, async () => {
-    confirm.value.show = false
-    stages.value.parse.loading = true
-    try {
-      const result = await parseTrigger({ work_ids: ids })
-      clearAllSelections()
-      await loadAll()
-      // 下一步（元数据抽取）就在本页下一阶段，接力提示不跳转
-      notifyNext(parseSummary(result), { label: '继续送入研究库' })
-    } catch (e) {
-      showError(e)
-    } finally {
-      stages.value.parse.loading = false
-    }
-  })
+  if (ids.length) parsePanel.value = ids
 }
 
 async function batchStageResearch() {

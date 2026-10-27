@@ -57,6 +57,32 @@ def _make_result_zip() -> bytes:
     return buf.getvalue()
 
 
+@pytest.mark.parametrize('name', ['content_list.json', 'doc_content_list.json', 'nested/doc_content_list.json'])
+def test_materialize_preserves_prefixed_structured_content(monkeypatch, tmp_path, name):
+    content = [{"type": "text", "text": "Verified structured original", "page_idx": 0}]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as archive:
+        archive.writestr('full.md', '# Original')
+        archive.writestr(name, json.dumps(content))
+        archive.writestr('doc_content_list_v2.json', '[{"different_schema": true}]')
+    monkeypatch.setattr(cc.requests, 'get', lambda *a, **k: _FakeResp(content=buf.getvalue()))
+    cc.CloudClient()._materialize('https://example.invalid/result', tmp_path, 'doc')
+    assert json.loads((tmp_path/'content.json').read_text()) == content
+
+
+def test_materialize_refuses_ambiguous_document_lists(monkeypatch, tmp_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as archive:
+        archive.writestr('full.md', '# Original')
+        archive.writestr('a_content_list.json', '[]')
+        archive.writestr('b_content_list.json', '[]')
+    monkeypatch.setattr(cc.requests, 'get', lambda *a, **k: _FakeResp(content=buf.getvalue()))
+    with pytest.raises(cc.CloudStageError, match='ambiguous_content_list'):
+        cc.CloudClient()._materialize('https://example.invalid/result', tmp_path, 'doc')
+    assert (tmp_path/'package.zip').exists()
+    assert not (tmp_path/'content.json').exists()
+
+
 def test_async_submit_returns_before_polling_and_persists_id_before_upload(monkeypatch,tmp_path):
     pdf=tmp_path/'pinned.asset';pdf.write_bytes(b'%PDF synthetic');events=[];calls=[]
     def request(method,url,**kwargs):

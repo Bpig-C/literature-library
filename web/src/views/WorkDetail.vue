@@ -473,6 +473,7 @@
     <AgentTaskFab v-if="work" :record="{ work_id: work.id }" initial-mode="organize" />
 
     <!-- Quarantine Modal -->
+    <ParseQueuePanel v-if="parsePanel" :key="parsePanel.workIds[0]" :work-ids="parsePanel.workIds" :sources="parsePanel.sources" :initial-backend="parsePanel.backend" :initial-reparse="parsePanel.reparse" @close="parsePanel = null" @complete="loadWork" />
     <n-modal v-model:show="showQuarantineModal" preset="card" title="隔离文献" style="width: 460px">
       <p class="modal-desc">隔离后，这篇文献会从默认列表和批量操作中移出。</p>
       <div class="modal-reasons">
@@ -490,13 +491,14 @@
 </template>
 
 <script setup>
+import ParseQueuePanel from '../components/ParseQueuePanel.vue'
 import IngestPurposeHistory from '../components/IngestPurposeHistory.vue'
 import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useRuntimeMode } from '../composables/useRuntimeMode'
 const { readOnly } = useRuntimeMode()
-import { getWorks, getWork, getOverview, getResearchWork, getResearchWorkProfile, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, workImageUrl, mergedContentUrl, workDetailJsonUrl, parseTrigger, stageWorkToResearch, getMaterialSelection } from '../api'
+import { getWorks, getWork, getOverview, getResearchWork, getResearchWorkProfile, updateWork, createRelation, deleteRelation, quarantineWork, restoreWork, contentUrl, pdfUrl, workImageUrl, mergedContentUrl, workDetailJsonUrl, stageWorkToResearch, getMaterialSelection } from '../api'
 import { renderMarkdown } from '../utils/markdown'
 import { readMaterial, freezeMaterialSelection } from '../utils/storage-feedback'
 import { getPdfSelection } from '../api'
@@ -586,10 +588,10 @@ const mergedContent = ref('')
 // 合并版不可用的真实原因：区分“产物不存在”与“读取失败”，并说明解析路线；
 // 不误报“图片型 PDF 不支持”，也不默认触发付费云重解析。
 const mergedUnavailableReason = ref('')
-// 重解析后端选择：auto=D13 自动路由；pymupdf/vlm=强制后端
-const parseBackend = ref('auto')
+// 异步计划明确选择后端，不把 VLM 失败静默降级为本地解析。
+const parseBackend = ref('vlm')
+const parsePanel = ref(null)
 const parseBackendOptions = [
-  { label: '路由：自动', value: 'auto' },
   { label: '强制 PyMuPDF（本地，快）', value: 'pymupdf' },
   { label: '强制云 VLM（保留版面图）', value: 'vlm' },
 ]
@@ -1118,6 +1120,7 @@ const parseRouteLabel = computed(() => {
 async function loadWork() {
   const generation = ++materialLoadGeneration
   const workId = props.id
+  if (parsePanel.value?.workIds[0] !== workId) parsePanel.value = null
   // 审计 F1：切换到另一篇时旧编辑表单立即失效（同篇重载不影响进行中的编辑）。
   if (work.value?.id && work.value.id !== workId) {
     editing.value = false
@@ -1328,50 +1331,9 @@ function quarantine() {
   showQuarantineModal.value = true
 }
 
-// 同步解析：born-digital 走 PyMuPDF（秒级）；扫描型走 cloud vlm 可能耗时数分钟，
-// 期间按钮置 loading。成功后用 loadWork() 全量刷新（含 content.md 预览）。
-async function triggerParse() {
-  parseLoading.value = true
-  try {
-    const res = await parseTrigger({ work_ids: [props.id] })
-    const r = (res.results || [])[0] || {}
-    // 解析成功后的下一步（元数据抽取）在本页工作流条上操作，接力提示不跳转
-    if (r.status === 'succeeded') {
-      notifyNext(`解析完成${r.backend ? ' (' + r.backend + ')' : ''}，可以继续元数据抽取`, { label: '继续元数据抽取' })
-    } else {
-      message.success(`解析：${r.status || '?'}${r.backend ? ' (' + r.backend + ')' : ''}`)
-    }
-    await loadWork()  // 刷新 parse_status 徽标 + content.md 预览
-  } catch (e) {
-    message.error('触发解析失败：' + e.message)
-  } finally {
-    parseLoading.value = false
-  }
-}
-
-// 强制重解析（force=true，不限 pending 状态），后端按下拉选择：
-// PyMuPDF 本地快但只有文本层栅格图；云 VLM 保留版面图表但耗时数分钟且耗额度。
-async function reparseWork() {
-  parseLoading.value = true
-  try {
-    const res = await parseTrigger({
-      work_ids: [props.id],
-      force: true,
-      backend: parseBackend.value,
-    })
-    const r = (res.results || [])[0] || {}
-    if (r.status === 'succeeded') {
-      notifyNext(`重解析完成 (${r.backend || parseBackend.value})，content.md 已更新`, { label: '查看内容预览' })
-    } else {
-      message.warning(`重解析：${r.status || '?'} — ${r.error || ''}`)
-    }
-    await loadWork()
-  } catch (e) {
-    message.error('重解析失败：' + e.message)
-  } finally {
-    parseLoading.value = false
-  }
-}
+// 打开固定 Work 范围的预览，不在点击时提交解析。
+function triggerParse() { parsePanel.value = { workIds: [props.id], sources: work.value?.source_files || [], backend: parseBackend.value, reparse: false } }
+function reparseWork() { parsePanel.value = { workIds: [props.id], sources: work.value?.source_files || [], backend: parseBackend.value, reparse: true } }
 
 async function stageToResearch() {
   stageLoading.value = true
