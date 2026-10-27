@@ -1,5 +1,6 @@
 <template>
-  <section class="parse-queue" aria-label="后台解析">
+  <div class="parse-overlay" @click.self="$emit('close')" @keydown.esc="$emit('close')">
+  <section class="parse-queue" role="dialog" aria-modal="true" aria-label="后台解析">
     <header><h3>后台解析</h3><button @click="$emit('close')">关闭面板</button></header>
     <p>先确认原件和预算，再加入后台队列。关闭页面不会取消任务；入队不代表解析完成。</p>
     <p v-if="error" role="alert">{{ error }}</p>
@@ -43,6 +44,7 @@
       </template>
     </template>
   </section>
+  </div>
 </template>
 
 <script setup>
@@ -125,6 +127,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.parse-queue{padding:18px;border:1px solid #a3beb3;border-radius:10px;margin:16px 0;background:var(--bg-page,#fff)}
+.parse-overlay{position:fixed;inset:0;z-index:2000;background:#0006;display:flex;align-items:center;justify-content:center;padding:20px}
+.parse-queue{box-sizing:border-box;width:760px;max-width:100%;max-height:85vh;overflow:auto;padding:18px;border:1px solid #a3beb3;border-radius:10px;background:var(--bg-page,#fff)}
 header{display:flex;justify-content:space-between;align-items:center}label{display:block;margin:10px 0}button,input,select{font:inherit;padding:6px;margin:4px}li{overflow-wrap:anywhere;margin:6px 0}[role=alert]{color:#a53b24}button:disabled{opacity:.5}
 </style>
