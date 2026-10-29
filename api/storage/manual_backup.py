@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import time
 from contextlib import closing
 from pathlib import Path
 from urllib.request import Request, build_opener, ProxyHandler
@@ -130,9 +131,20 @@ def _execute(config, job_id, *, preview, phase):
             try:
                 if entered:
                     # Ownership must be unchanged before restarting this writer.
-                    authority.check_remote(); command('maintenance_exit')
-                    after=schema()
-                    require(after['manifest_sha256']==live['manifest_sha256'] and after['remote_writes_enabled'] and not after['read_only'], 'writer did not recover')
+                    # The exit adapter and the schema readback race the writer's
+                    # restart (a relaunched service needs far longer than the
+                    # adapter's initial wait to bind its port); the exit command
+                    # is idempotent, so a bounded retry closes that startup
+                    # window without masking a genuine restoration failure.
+                    for attempt in range(3):
+                        try:
+                            authority.check_remote(); command('maintenance_exit')
+                            after=schema()
+                            require(after['manifest_sha256']==live['manifest_sha256'] and after['remote_writes_enabled'] and not after['read_only'], 'writer did not recover')
+                            break
+                        except Exception:
+                            if attempt==2: raise
+                            time.sleep(20)
                     write(destination/'service-restored.json',{'at':now(),'manifest_sha256':after['manifest_sha256']})
                     restored=True
             finally:

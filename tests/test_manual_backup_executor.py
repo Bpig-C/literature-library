@@ -126,6 +126,35 @@ def test_legacy_failed_cloud_job_requires_recovery_before_snapshot(host):
     assert 'enter' not in events
 
 
+def test_exit_verification_race_retries_idempotent_exit(host,monkeypatch):
+    cfg,events,control,live=host
+    monkeypatch.setattr(backup.time,'sleep',lambda seconds:events.append(('sleep',seconds)))
+    exits={'count':0}
+    def command(argv,**kw):
+        events.append(argv[0])
+        if argv[0]=='exit':
+            exits['count']+=1
+            if exits['count']<3:raise RuntimeError('writer still binding port after restart')
+    monkeypatch.setattr(backup.subprocess,'run',command)
+    assert backup.execute(cfg,'BK-exit-race')['id']=='new'
+    assert exits['count']==3
+    assert events.count(('sleep',20))==2
+    assert (control/'receipts/BK-exit-race/service-restored.json').is_file()
+
+
+def test_exit_failure_after_bounded_retries_needs_attention(host,monkeypatch):
+    from api import backup_jobs as jobs
+    cfg,events,control,live=host
+    monkeypatch.setattr(backup.time,'sleep',lambda seconds:None)
+    def command(argv,**kw):
+        events.append(argv[0])
+        if argv[0]=='exit':raise RuntimeError('restoration failed')
+    monkeypatch.setattr(backup.subprocess,'run',command)
+    jobs.enqueue('exit-broken')
+    assert jobs.run_one(lambda jid:backup.execute(cfg,jid))['state']=='needs_attention'
+    assert events.count('exit')==3
+
+
 def test_backup_establishes_and_releases_scheduler_snapshot_barrier(host,monkeypatch):
     from api.parse_queue import initialize
     cfg,events,control,live=host
