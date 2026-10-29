@@ -207,6 +207,46 @@ def accept(registry, plan, request_id, max_items, max_submissions, max_pages=Non
     return status(registry, pid)
 
 
+def is_archived(conn,pid):
+    return bool(conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plan_archives'").fetchone() and
+                conn.execute('SELECT 1 FROM parse_plan_archives WHERE plan_id=?',(pid,)).fetchone())
+
+
+def require_open(conn,pid):
+    if is_archived(conn,pid):raise StorageError('revision_conflict','plan archived; create a new frozen plan')
+
+
+def archive(registry,pid):
+    """Caller holds authority. Atomically close safe plans, preserving all ledgers.
+
+    No lazy schema creation on reads/restore. An archive never refunds budget,
+    cancels a cloud task, or makes unfinished results successful.
+    """
+    with registry.conn(write=True) as conn:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plans'").fetchone() or not conn.execute('SELECT 1 FROM parse_plans WHERE id=?',(pid,)).fetchone():
+            raise StorageError('not_found','plan not found')
+        if is_archived(conn,pid):return status(registry,pid)
+        from .parse_queue import exists
+        tasks=list(conn.execute('SELECT * FROM parse_queue_jobs WHERE plan_id=?',(pid,))) if exists(conn) else []
+        if any(t['lease_token'] or t['state'] not in ('succeeded','failed','cancelled','blocked_budget') for t in tasks):
+            raise StorageError('producer_incomplete','stop active tasks before archiving')
+        from .producer_recovery import read
+        for item in conn.execute('SELECT * FROM parse_plan_items WHERE plan_id=?',(pid,)):
+            if item['state']=='running':raise StorageError('producer_incomplete','running item requires coordination')
+            if not item['job_id']:continue
+            job=conn.execute('SELECT * FROM storage_producer_jobs WHERE id=?',(item['job_id'],)).fetchone()
+            if not job:raise StorageError('producer_incomplete','producer unavailable')
+            if job['state']=='registered':continue
+            receipt=read(conn,job['id'])
+            if job['state']!='failed' or not receipt or receipt['submission'] not in ('not_started','rejected','verified_not_submitted','terminal_failed'):
+                raise StorageError('producer_incomplete','unknown or unfinished upstream task must be reconciled')
+            if job['task_id'] and receipt['submission']!='terminal_failed':
+                raise StorageError('producer_incomplete','known upstream result must be reconciled')
+        conn.execute('CREATE TABLE IF NOT EXISTS parse_plan_archives(plan_id TEXT PRIMARY KEY, archived_at TEXT NOT NULL)')
+        conn.execute('INSERT INTO parse_plan_archives VALUES(?,?)',(pid,now()))
+    return status(registry,pid)
+
+
 def status(registry, pid):
     with registry.conn(read_only=True) as conn:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plans'").fetchone():
@@ -226,7 +266,7 @@ def status(registry, pid):
         resolutions = []
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='parse_plan_resolutions'").fetchone():
             resolutions = [dict(r) for r in conn.execute('SELECT position,job_id,reason,resolved_at,outcome FROM parse_plan_resolutions WHERE plan_id=? ORDER BY rowid',(pid,))]
-        return dict(plan_id=pid, request_id=plan['request_id'], selection=payload['selection'],
+        return dict(plan_id=pid, archived=is_archived(conn,pid), request_id=plan['request_id'], selection=payload['selection'],
                     budget=dict(max_items=plan['max_items'], max_submissions=plan['max_submissions'], max_pages=plan['max_pages'],
                                 reserved_items=used, reserved_submissions=submissions,
                                 reserved_pages=sum(i['pages'] for i in items if i['reserved'])), items=items, resolutions=resolutions,
@@ -245,6 +285,7 @@ def step(service, pid, runner, *, count_pages=None):
             import fitz
             with fitz.open(str(path)) as pdf: return pdf.page_count
     registry = service.registry
+    with registry.conn(read_only=True) as conn: require_open(conn,pid)
     with file_lock(registry.catalog.with_suffix('.parse-plans.lock'), timeout=0):
         current = status(registry, pid)
         # Reconcile producer completion after loss of an HTTP response/process.

@@ -5,6 +5,11 @@
     <p>先确认原件和预算，再加入后台队列。关闭页面不会取消任务；入队不代表解析完成。</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="!available">正在核对后台解析能力；不可用时不提交。</p>
+    <details><summary>查询已有计划与本地历史</summary>
+      <label>计划 ID <input v-model="queryId" placeholder="PP-…" /></label><button :disabled="busy || !queryId.trim()" @click="queryKnown">查询已有计划</button>
+      <button v-for="past in history" :key="past.body.request_id" :disabled="busy" @click="queryId=past.planId; queryKnown()">{{ past.planId }}{{ past.archived ? '（已归档）' : '' }}</button>
+      <pre v-if="queried">{{ JSON.stringify(queried,null,2) }}</pre>
+    </details>
     <template v-if="!receipt">
       <label>解析方式 <select v-model="backend" :disabled="busy" @change="invalidate">
         <option value="vlm">MinerU VLM（消耗云端额度）</option><option value="pymupdf">PyMuPDF（本地文本）</option>
@@ -40,7 +45,8 @@
           <span v-if="task.tracking_upstream"> · 仍在跟踪已提交的云任务，不会立即取消云端执行</span>
         </li></ul>
         <p v-if="status.action === 'inspect_or_resume'">请按任务 ID 核对诊断后，通过 CLI 恢复原任务；不要重新提交解析。</p>
-        <button v-if="canFinish" :disabled="busy" @click="finish">本轮已登记，完成并返回</button>
+        <button v-if="canArchive && !canFinish" :disabled="busy || readOnly" @click="archive(false)">归档本轮并重新预览（不代表成功）</button>
+        <button v-if="canFinish" :disabled="busy || readOnly" @click="archive(true)">本轮已登记，完成并返回</button>
       </template>
     </template>
   </section>
@@ -50,8 +56,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { request } from '../api'
+import { withReceiptLock, currentReceipt, saveReceipt, archiveReceipt, receiptHistory } from '../utils/parse-receipts'
 import { useRuntimeMode } from '../composables/useRuntimeMode'
-const props = defineProps({ workIds: { type: Array, required: true }, sources: { type: Array, default: () => [] }, initialBackend: { type: String, default: 'vlm' }, initialReparse: Boolean })
+const props = defineProps({ workIds: { type: Array, required: true }, sourceIds: { type: Array, default: () => [] }, sources: { type: Array, default: () => [] }, initialBackend: { type: String, default: 'vlm' }, initialReparse: Boolean })
 const emit = defineEmits(['close', 'complete'])
 const { readOnly } = useRuntimeMode()
 // Parents key this component by its fixed selection; never retarget an in-flight request.
@@ -59,6 +66,8 @@ const scope = [...props.workIds].sort()
 const storageKey = `litlib.parse.pending:${JSON.stringify(scope)}`
 const backend = ref(props.initialBackend === 'pymupdf' ? 'pymupdf' : 'vlm'), reparse = ref(props.initialReparse)
 const sourceId = ref(''), plan = ref(null), receipt = ref(null), status = ref(null)
+const queryId=ref(''), queried=ref(null), history=ref([])
+const canArchive=computed(() => status.value && (status.value.tasks || []).every(t => !t.lease_token && ['succeeded','failed','cancelled','blocked_budget'].includes(t.state) && (t.state==='succeeded' || !t.submissions || ['done','failed','rejected','not_started'].includes(t.upstream_state))))
 const maxItems = ref(1), maxSubmissions = ref(1), maxPages = ref(100)
 const busy = ref(false), error = ref(''), available = ref(false)
 const canFinish = computed(() => status.value?.action === 'complete' ||
@@ -68,7 +77,7 @@ let alive = true
 onUnmounted(() => { alive = false })
 const validBudget = computed(() => plan.value?.items.length && Number.isInteger(maxItems.value) && maxItems.value >= 1 && maxItems.value <= plan.value.items.length && Number.isInteger(maxPages.value) && maxPages.value > 0 && (backend.value !== 'vlm' || (Number.isInteger(maxSubmissions.value) && maxSubmissions.value >= 1 && maxSubmissions.value <= 1000)))
 function invalidate() { plan.value = null }
-function persist(value) { localStorage.setItem(storageKey, JSON.stringify(value)); receipt.value = value }
+function persist(value, expected = value.body.request_id) { receipt.value = saveReceipt(storageKey, value, expected) }
 const reason = value => ({ select_exact_source: '存在多个原件，请在详情页明确选择 Source', target_backend_exists: '已有该后端成果', upstream_inspection_required: '旧云任务状态待核实', unfinished_job: '已有未完成任务', inactive: '已归档或隔离', missing_sha: '原件指纹缺失' }[value] || value)
 const actionText = value => ({ queued: '已入队，尚未全部完成', complete: '全部完成并登记', inspect_or_resume: '需要核查或恢复', budget_exhausted: '达到预算上限', complete_with_abandoned: '含取消项，非全部成功', no_queued_items: '尚无入队任务' }[value] || value)
 async function run(operation) {
@@ -80,28 +89,35 @@ async function run(operation) {
 async function preview() {
   await run(async () => {
     plan.value = null
-    const result = await request('/parse/plan', { method: 'POST', body: JSON.stringify({ work_ids: scope, source_file_ids: sourceId.value ? [sourceId.value] : [], backend: backend.value, reparse_completed: reparse.value, source_policy: 'single' }) })
+    const result = await request('/parse/plan', { method: 'POST', body: JSON.stringify({ work_ids: scope, source_file_ids: sourceId.value ? [sourceId.value] : [...props.sourceIds], backend: backend.value, reparse_completed: reparse.value, source_policy: 'single' }) })
     if (alive) { plan.value = result; maxItems.value = Math.min(result.items.length, 1) }
   })
 }
 async function submit() {
   if (readOnly.value || !available.value || (!receipt.value && !validBudget.value)) return
-  await run(async () => {
+  await run(() => withReceiptLock(storageKey, async () => {
+    if (!alive) return
     if (!receipt.value) {
-      // Persist BEFORE the first write. A lost response reuses precisely this body/key.
-      persist({ body: { plan: plan.value, request_id: `web-${crypto.randomUUID()}`, max_items: maxItems.value, max_submissions: backend.value === 'vlm' ? maxSubmissions.value : 0, max_pages: maxPages.value }, planId: null, enqueued: false })
+      persist({ body: { plan: plan.value, request_id: `web-${crypto.randomUUID()}`, max_items: maxItems.value, max_submissions: backend.value === 'vlm' ? maxSubmissions.value : 0, max_pages: maxPages.value }, planId: null, enqueued: false }, null)
     }
     let saved = receipt.value
+    if (currentReceipt(storageKey)?.body.request_id !== saved.body.request_id) throw new Error('请求已变化，请重新打开面板')
     if (!saved.planId) {
       const accepted = await request('/parse/plans', { method: 'POST', body: JSON.stringify(saved.body) })
       saved = { ...saved, planId: accepted.plan_id }; persist(saved)
     }
-    // Closing/switching the page never silently initiates the next write.
     if (!alive) return
+    // Enqueue is also a continuation endpoint: replaying it after success could
+    // admit further items. First reconcile a lost response against durable tasks.
+    const existing = await request(`/async/parse/plans/${encodeURIComponent(saved.planId)}`)
+    if (!alive) return
+    if (existing.archived || existing.tasks?.length) {
+      persist({ ...saved, enqueued: true }); status.value = existing; return
+    }
     const result = await request(`/async/parse/plans/${encodeURIComponent(saved.planId)}/enqueue`, { method: 'POST', body: JSON.stringify({ max_tasks: saved.body.max_items }) })
     persist({ ...saved, enqueued: true })
     if (alive) status.value = result
-  })
+  }))
 }
 async function refresh() {
   if (!receipt.value?.planId) return
@@ -110,13 +126,28 @@ async function refresh() {
     if (alive) status.value = result
   })
 }
-function finish() {
-  if (!canFinish.value) return
-  try { localStorage.removeItem(storageKey); emit('complete'); emit('close') }
-  catch (e) { error.value = e.message }
+async function archive(completed) {
+  if (readOnly.value || !receipt.value?.planId) return
+  await run(() => withReceiptLock(storageKey, async () => {
+    const saved=receipt.value
+    if (currentReceipt(storageKey)?.body.request_id !== saved.body.request_id) throw new Error('请求已变化，请重新打开面板')
+    await request(`/parse/plans/${encodeURIComponent(saved.planId)}/archive`, {method:'POST',body:'{}'})
+    archiveReceipt(storageKey,saved)
+    if (!alive) return
+    history.value=receiptHistory(storageKey); receipt.value=null; status.value=null; plan.value=null
+    if (completed) { emit('complete'); emit('close') }
+  }))
+}
+async function queryKnown() {
+  const id=queryId.value.trim()
+  await run(async () => {
+    const result=await request(`/async/parse/plans/${encodeURIComponent(id)}`)
+    if (alive) queried.value=result
+  })
 }
 onMounted(async () => {
   await run(async () => {
+    history.value=receiptHistory(storageKey)
     const saved = localStorage.getItem(storageKey)
     if (saved) receipt.value = JSON.parse(saved)
     const capability = await request('/async/parse/scheduler')

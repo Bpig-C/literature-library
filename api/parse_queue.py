@@ -115,6 +115,7 @@ class Queue:
 
     def enqueue(self,pid,max_tasks=None):
         with self.tx() as conn:
+            parse_plans.require_open(conn,pid)
             initialize(conn,self.initial_limits)
             if conn.execute('SELECT maintenance FROM parse_queue_control').fetchone()[0]:
                 raise StorageError('busy','parse maintenance is draining; retry after maintenance')
@@ -223,6 +224,7 @@ class Queue:
                 'active_leases':conn.execute('SELECT count(*) FROM parse_queue_jobs WHERE lease_token IS NOT NULL AND lease_until>?',(self.clock(),)).fetchone()[0]}
 
     def _assert_current(self,conn,row):
+        parse_plans.require_open(conn,row['plan_id'])
         other=conn.execute("SELECT id FROM parse_queue_jobs WHERE source_file_id=? AND id!=? AND state NOT IN ('succeeded','failed','cancelled','blocked_budget') LIMIT 1",(row['source_file_id'],row['id'])).fetchone()
         if other:raise StorageError('revision_conflict','source belongs to another active task '+other[0])
         if row['producer_id']:
@@ -339,6 +341,7 @@ class Queue:
             self.control_mutable(conn)
             row=conn.execute('SELECT * FROM parse_queue_jobs WHERE id=?',(qid,)).fetchone()
             if not row:raise StorageError('not_found','async task not found')
+            parse_plans.require_open(conn,row['plan_id'])
             if row['state']=='succeeded':raise StorageError('revision_conflict','completed task cannot be paused, cancelled or restarted')
             if action=='resume':
                 if row['lease_token']:raise StorageError('busy','task still has an execution lease')

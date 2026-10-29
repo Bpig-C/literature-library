@@ -447,27 +447,48 @@ class CloudClient(PdfParseClient):
         if resp.status_code != 200:
             raise RuntimeError(f"下载结果 zip 返回 HTTP {resp.status_code}")
         package_zip = output_dir / "package.zip"
-        if max_bytes is None:package_zip.write_bytes(resp.content)
-        else:
-            temporary=output_dir/'package.zip.part';size=0
-            try:
+        temporary = output_dir / 'package.zip.part'
+        try:
+            if max_bytes is None:
+                temporary.write_bytes(resp.content)
+            else:
+                size = 0
                 with temporary.open('wb') as target:
                     for chunk in resp.iter_content(1024*1024):
                         size+=len(chunk)
                         if size>max_bytes:raise CloudStageError('download_budget_exceeded')
                         target.write(chunk)
-                temporary.replace(package_zip)
-            finally:
-                resp.close();temporary.unlink(missing_ok=True)
+            # Preserve a changed earlier result package before replacing it.
+            # Extracted files are disposable; the original bytes are evidence.
+            if package_zip.exists():
+                def digest(path):
+                    with path.open('rb') as source:
+                        return hashlib.file_digest(source, 'sha256').hexdigest()
+                old_digest = digest(package_zip)
+                if old_digest != digest(temporary):
+                    previous = output_dir / ('package.previous.' + old_digest + '.zip')
+                    if previous.exists():
+                        if digest(previous) != old_digest:
+                            raise CloudStageError('previous_package_mismatch')
+                    else:
+                        shutil.copyfile(package_zip, previous)
+            temporary.replace(package_zip)
+        finally:
+            resp.close()
+            temporary.unlink(missing_ok=True)
 
         raw_dir = output_dir / "_raw"
-        raw_dir.mkdir(parents=True, exist_ok=True)
+        self._reset_derived_directory(raw_dir, output_dir)
+        raw_dir.mkdir()
         with zipfile.ZipFile(package_zip, "r") as zf:
             if max_bytes is not None and (len(zf.infolist())>10000 or sum(i.file_size for i in zf.infolist())>max_bytes):
                 raise CloudStageError('extraction_budget_exceeded')
             self._safe_extract_zip(zf, raw_dir)
 
-        full_md = self._find(raw_dir, "full.md")
+        markdowns = sorted(path for path in raw_dir.rglob('full.md') if path.is_file())
+        if len(markdowns) > 1:
+            raise CloudStageError('ambiguous_full_md')
+        full_md = markdowns[0] if markdowns else None
         # Current MinerU archives prefix content-list names with the document
         # identity. Never replace an existing structured result with a stub,
         # and never guess between different documents in an unexpected bundle.
@@ -495,13 +516,28 @@ class CloudClient(PdfParseClient):
 
         # 拷贝 images/ 到 output_dir，保证 content.md 内图片引用可解析
         images_src = self._find_dir(raw_dir, "images")
+        images_dst = output_dir / "images"
+        self._reset_derived_directory(images_dst, output_dir)
         if images_src:
-            images_dst = output_dir / "images"
-            if images_dst.exists():
-                shutil.rmtree(images_dst)
             shutil.copytree(images_src, images_dst)
 
     # ---- 解压安全与查找 ----
+    @staticmethod
+    def _reset_derived_directory(directory: Path, output_dir: Path) -> None:
+        """Rebuild only parser-owned derived directories, never linked paths."""
+        root = output_dir.resolve()
+        expected = root / directory.name
+        if directory.name not in {'_raw', 'images'} or directory.resolve() != expected:
+            raise CloudStageError('unsafe_materialization_path')
+        if not directory.exists() and not directory.is_symlink():
+            return
+        paths = [directory, *directory.rglob('*')]
+        if (not directory.is_dir() or any(p.is_symlink() or
+                (hasattr(p, 'is_junction') and p.is_junction()) for p in paths)):
+            raise CloudStageError('unsafe_materialization_path')
+        # Resolved target is exactly one named child of this owned output root.
+        shutil.rmtree(directory)
+
     @staticmethod
     def _safe_extract_zip(zf: zipfile.ZipFile, extract_dir: Path) -> None:
         """逐文件解压，防 ZIP Slip 路径穿越。"""

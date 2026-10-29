@@ -114,6 +114,31 @@ def parse_status(work_id: str | None = None):
         conn.close()
 
 
+@router.get('/parse/candidates')
+def parse_candidates():
+    """Read-only Source inventory for Pipeline; IDs are exact Source identities.
+
+    Counts describe latest runs per active PDF, not historical run totals.
+    The frozen-plan preview remains the authority for execution eligibility.
+    """
+    from ..db import get_read_conn
+    conn=get_read_conn()
+    try:
+        conn.execute('BEGIN')
+        rows=conn.execute('''SELECT sf.id,sf.id source_file_id,sf.work_id,w.title,
+            sf.import_time created_at,COALESCE(pr.status,'pending') status
+            FROM source_files sf JOIN works w ON w.id=sf.work_id
+            LEFT JOIN literature_parse_runs pr ON pr.id=(
+                SELECT r.id FROM literature_parse_runs r WHERE r.source_file_id=sf.id
+                ORDER BY COALESCE(r.started_at,r.finished_at,'') DESC,r.rowid DESC LIMIT 1)
+            WHERE sf.status='active' AND lower(sf.file_ext)='.pdf'
+              AND COALESCE(w.read_status,'') NOT IN ('quarantined','archived')
+            ORDER BY sf.id''').fetchall()
+        items=[dict(r) for r in rows]
+        return {'items':items,'total':len(items),'counts':{s:sum(i['status']==s for i in items) for s in ('pending','running','failed','succeeded')}}
+    finally:conn.close()
+
+
 class TriggerBody(BaseModel):
     work_ids: list[str] | None = None  # select all sources of these works
     source_file_ids: list[str] | None = None  # S2: select exact source files (SF-… IDs)

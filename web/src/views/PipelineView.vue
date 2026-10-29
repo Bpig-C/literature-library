@@ -251,7 +251,7 @@
         </div>
       </div>
     </div>
-    <ParseQueuePanel v-if="parsePanel" :key="JSON.stringify(parsePanel)" :work-ids="parsePanel" @close="parsePanel = null" @complete="loadAll" />
+    <ParseQueuePanel v-if="parsePanel" :key="JSON.stringify(parsePanel)" :work-ids="parsePanel.workIds" :source-ids="parsePanel.sourceIds" @close="parsePanel = null" @complete="loadAll" />
   </div>
 </template>
 
@@ -266,7 +266,7 @@ import { ref, computed, onMounted, defineAsyncComponent } from 'vue'
 import {
   getIngestPlan,
   executeIngest,
-  parseStatus,
+  request,
   getPipelineStats,
   getUnstagedWorks,
   stageWorkToResearch,
@@ -420,10 +420,11 @@ async function loadIngest() {
 
 async function loadParse() {
   try {
-    const res = await parseStatus()
-    stages.value.parse.count = res.pending || 0
-    stages.value.parse.running = res.running || 0
-    stages.value.parse.files = res.pending_files || []
+    const res = await request('/parse/candidates')
+    stages.value.parse.count = res.counts.pending || 0
+    stages.value.parse.running = res.counts.running || 0
+    stages.value.parse.files = res.items
+    stages.value.parse.selectedIds = new Set([...stages.value.parse.selectedIds].filter(id => res.items.some(item => item.id === id && item.status === 'pending')))
   } catch (e) {
     console.error('Failed to load parse:', e)
     showError(new Error(`解析状态加载失败: ${e.message}`))
@@ -486,8 +487,9 @@ async function batchIngest() {
 }
 
 function batchParse() {
-  const ids = Array.from(stages.value.parse.selectedIds)
-  if (ids.length) parsePanel.value = ids
+  if (readOnly.value) return
+  const rows = stages.value.parse.files.filter(item => stages.value.parse.selectedIds.has(item.id) && item.status === 'pending')
+  if (rows.length) parsePanel.value = { workIds: [...new Set(rows.map(item => item.work_id))], sourceIds: rows.map(item => item.source_file_id) }
 }
 
 async function batchStageResearch() {

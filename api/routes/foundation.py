@@ -51,6 +51,12 @@ def plan_status(plan_id: str):
     return parse_plans.status(configured_registry(), plan_id)
 
 
+@router.post('/parse/plans/{plan_id}/archive')
+def archive_plan(plan_id: str):
+    if not enabled():raise StorageError('configuration_error','immutable storage required')
+    return parse_plans.archive(configured_registry(),plan_id)
+
+
 @router.post('/parse/plans/{plan_id}/step')
 def plan_step(plan_id: str):
     from .parse import _run_parse

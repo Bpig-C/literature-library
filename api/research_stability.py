@@ -114,6 +114,15 @@ def catalog_abstract_statement(payload: dict) -> tuple[str | None, str]:
     if not entries:
         return None, "explicit_missing"
     arxiv = clean_identifier(payload.get("arxiv"), kind="arxiv") or ""
+    if arxiv:
+        paper = re.sub(r"v\d+$", "", arxiv.lower())
+        # Paper identity is evidence even when the citation omits its version.
+        # A single labelled abstract from another paper is not a valid fallback.
+        entries = [item for item in entries
+                   if not (bound := clean_identifier(_entry_bound_version(item), kind="arxiv"))
+                   or re.sub(r"v\d+$", "", bound.lower()) == paper]
+        if not entries:
+            return None, "version_ambiguous"
     current = re.search(r"v(\d+)$", arxiv, re.I)
     if current:
         entries = [item for item in entries

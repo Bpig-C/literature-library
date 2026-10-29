@@ -83,6 +83,51 @@ def test_materialize_refuses_ambiguous_document_lists(monkeypatch, tmp_path):
     assert not (tmp_path/'content.json').exists()
 
 
+def test_materialize_refuses_multiple_markdowns_with_one_content_list(monkeypatch, tmp_path):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as archive:
+        archive.writestr('a/full.md', 'Document A')
+        archive.writestr('b/full.md', 'Document B')
+        archive.writestr('b/b_content_list.json', '[{"text":"Document B"}]')
+    original = buf.getvalue()
+    monkeypatch.setattr(cc.requests, 'get', lambda *a, **k: _FakeResp(content=original))
+    with pytest.raises(cc.CloudStageError, match='ambiguous_full_md'):
+        cc.CloudClient()._materialize('https://example.invalid/result', tmp_path, 'doc')
+    assert (tmp_path/'package.zip').read_bytes() == original
+    assert not (tmp_path/'content.md').exists()
+    assert not (tmp_path/'content.json').exists()
+
+
+@pytest.mark.parametrize('initial_complete', [True, False])
+def test_materialize_retry_uses_only_current_archive_and_retains_previous_package(monkeypatch, tmp_path, initial_complete):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as archive:
+        if initial_complete:
+            archive.writestr('full.md', 'Old markdown')
+        archive.writestr('old_content_list.json', '[{"text":"OLD"}]')
+        archive.writestr('images/old.png', b'old-image')
+    old_package = buf.getvalue()
+    new = io.BytesIO()
+    with zipfile.ZipFile(new, 'w') as archive:
+        archive.writestr('full.md', 'New markdown')
+    packages = iter([old_package, new.getvalue()])
+    monkeypatch.setattr(cc.requests, 'get', lambda *a, **k: _FakeResp(content=next(packages)))
+    client = cc.CloudClient()
+    if initial_complete:
+        client._materialize('https://example.invalid/old', tmp_path, 'doc')
+    else:
+        with pytest.raises(cc.MissingMarkdown):
+            client._materialize('https://example.invalid/old', tmp_path, 'doc')
+    client._materialize('https://example.invalid/new', tmp_path, 'doc')
+    assert (tmp_path/'content.md').read_text() == 'New markdown'
+    assert json.loads((tmp_path/'content.json').read_text())['content_list_available'] is False
+    assert not (tmp_path/'images').exists()
+    assert sorted(p.name for p in (tmp_path/'_raw').iterdir()) == ['full.md']
+    assert (tmp_path/'package.zip').read_bytes() == new.getvalue()
+    previous, = tmp_path.glob('package.previous.*.zip')
+    assert previous.read_bytes() == old_package
+
+
 def test_async_submit_returns_before_polling_and_persists_id_before_upload(monkeypatch,tmp_path):
     pdf=tmp_path/'pinned.asset';pdf.write_bytes(b'%PDF synthetic');events=[];calls=[]
     def request(method,url,**kwargs):

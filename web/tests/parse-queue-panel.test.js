@@ -3,7 +3,8 @@ import { createApp, h, nextTick, ref } from 'vue'
 import ParseQueuePanel from '../src/components/ParseQueuePanel.vue'
 import { request } from '../src/api'
 vi.mock('../src/api', () => ({ request: vi.fn() }))
-vi.mock('../src/composables/useRuntimeMode', () => ({ useRuntimeMode: () => ({ readOnly: ref(false) }) }))
+const runtime = vi.hoisted(() => ({ readOnly: false }))
+vi.mock('../src/composables/useRuntimeMode', () => ({ useRuntimeMode: () => ({ readOnly: ref(runtime.readOnly) }) }))
 let app, host
 const plan = { items: [{ work_id: 'W-a', source_file_id: 'SF-a' }], excluded: [], sha256: 'frozen', selection: { backend: 'vlm' } }
 const queued = { plan_id: 'PP-a', action: 'queued', tasks: [{ id: 'PQ-a', state: 'waiting', phase: 'poll', source_file_id: 'SF-a' }], budget: {}, remaining: [] }
@@ -13,11 +14,16 @@ async function mount() { host = document.createElement('div'); document.body.app
 const button = text => [...host.querySelectorAll('button')].find(b => b.textContent.includes(text))
 async function click(text) { button(text).click(); await settle() }
 beforeEach(() => {
-  localStorage.clear(); vi.resetAllMocks()
+  localStorage.clear(); vi.resetAllMocks(); runtime.readOnly=false
+  let tail=Promise.resolve()
+  Object.defineProperty(navigator,'locks',{ configurable:true,value:{request:(_key,fn)=>{const next=tail.then(fn);tail=next.catch(()=>{});return next}} })
+  let enqueued=false
   request.mockImplementation(async path => {
     if (path.endsWith('/scheduler')) return { configured: true }
     if (path === '/parse/plan') return structuredClone(plan)
     if (path === '/parse/plans') return { plan_id: 'PP-a' }
+    if (path.endsWith('/enqueue')) enqueued=true
+    if (path === '/async/parse/plans/PP-a' && !enqueued) return { ...queued,tasks:[],action:'no_queued_items' }
     return structuredClone(queued)
   })
 })
@@ -84,4 +90,39 @@ it('cannot submit when durable browser storage fails', async () => {
   expect(request.mock.calls.some(([path]) => path === '/parse/plans')).toBe(false)
   expect(host.textContent).toContain('storage unavailable')
   storage.mockRestore()
+})
+
+
+it('read-only mode permits preview and queries but never accept, enqueue or archive', async () => {
+  runtime.readOnly=true
+  await mount(); await click('预览解析范围')
+  expect(button('确认预算并入队').disabled).toBe(true)
+  await click('确认预算并入队')
+  expect(request.mock.calls.filter(([,o])=>o?.method==='POST').map(([p])=>p)).toEqual(['/parse/plan'])
+})
+
+it('archives an exhausted plan on the server, preserves queryable history and enables a new preview', async () => {
+  const initial=request.getMockImplementation()
+  request.mockImplementation((path,options)=>path.endsWith('/enqueue') ? Promise.resolve({...queued,action:'budget_exhausted',tasks:[{id:'PQ-a',state:'blocked_budget',submissions:0}]}) : initial(path,options))
+  await mount(); await click('预览解析范围'); await click('确认预算并入队')
+  await click('归档本轮并重新预览')
+  expect(request.mock.calls.some(([p])=>p==='/parse/plans/PP-a/archive')).toBe(true)
+  expect(localStorage.getItem('litlib.parse.pending:["W-a"]')).toBeNull()
+  expect(host.textContent).toContain('PP-a（已归档）')
+  expect(button('预览解析范围')).toBeTruthy()
+})
+
+it('does not offer archive for active or unknown upstream tasks', async () => {
+  const initial=request.getMockImplementation()
+  request.mockImplementation((path,options)=>path.endsWith('/enqueue') ? Promise.resolve({...queued,action:'inspect_or_resume',tasks:[{state:'inspection_required',submissions:1,upstream_state:'unknown'}]}) : initial(path,options))
+  await mount(); await click('预览解析范围'); await click('确认预算并入队')
+  expect(button('归档本轮')).toBeUndefined()
+})
+
+it('a known plan can be queried without a local receipt, including read-only mode', async () => {
+  runtime.readOnly=true;await mount()
+  const input=host.querySelector('input[placeholder="PP-…"]');input.value='PP-known';input.dispatchEvent(new Event('input'));await settle()
+  await click('查询已有计划')
+  expect(request.mock.calls.some(([p])=>p==='/async/parse/plans/PP-known')).toBe(true)
+  expect(request.mock.calls.every(([,o])=>!o?.method)).toBe(true)
 })

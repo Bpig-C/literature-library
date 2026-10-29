@@ -555,6 +555,33 @@ def test_explicit_arxiv_version_selects_only_matching_abstract(entries, expected
     assert merged.get("abstract") == expected
 
 
+@pytest.mark.parametrize('reference,bound,expected', [
+    ('2601.00001', 'arXiv:2601.00002v2 fixed PDF', None),
+    ('2601.00001', 'arXiv:2601.00001v2 fixed PDF', 'current'),
+    ('hep-th/9901001', 'arXiv:hep-th/9901002v1', None),
+    ('hep-th/9901001', 'arXiv:hep-th/9901001v1', 'current'),
+])
+def test_versionless_reference_checks_complete_paper_identity(stores, reference, bound, expected):
+    catalog_path, ctx = stores
+    _insert_work(catalog_path, abstract='previous abstract')
+    payload = {'arxiv': reference, 'language': 'en',
+               'original_title': {'text': 'Regression Work', 'language': 'en'},
+               'authors': [{'display_name': 'Alice'}],
+               'original_abstracts': [{'text': 'current', 'language': 'en', 'bound_version': bound}]}
+    original = json.dumps(payload, sort_keys=True)
+    assert select_catalog_abstract(payload) == expected
+    assert merge_v5_payload({'abstract': 'previous abstract'}, payload).get('abstract') == expected
+    _insert_metadata(ctx, 'W-reg', payload, record_id='RM-paper-scope')
+    propagate_metadata(ctx, 'W-reg', payload, record_id='RM-paper-scope')
+    with closing(sqlite3.connect(catalog_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        assert conn.execute("SELECT abstract FROM works WHERE id='W-reg'").fetchone()[0] == expected
+        assert get_active_projection(conn, 'W-reg')['payload'].get('abstract') == expected
+    with closing(ctx.connect(read_only=True)) as conn:
+        stored = json.loads(conn.execute('SELECT payload_json FROM research_metadata_records WHERE id=?', ('RM-paper-scope',)).fetchone()[0])
+    assert json.dumps(stored, sort_keys=True) == original
+
+
 @pytest.mark.parametrize("abstracts", [None, [{"text": "old", "bound_version": "v1"}]])
 def test_version_change_without_matching_abstract_clears_catalog_and_projection(stores, abstracts):
     catalog_path, ctx = stores
