@@ -19,7 +19,7 @@ import pytest
 from api.bibliographic_projection import get_active_projection, merge_v5_payload, payload_from_works_row
 from api.research_context import ResearchContext
 from api.research_schema import apply_schema
-from api.research_stability import select_catalog_abstract
+from api.research_stability import catalog_abstract_statement, select_catalog_abstract
 from api.research_catalog import propagate_metadata
 from scripts.literature_ingest import ensure_core_schema
 
@@ -602,3 +602,32 @@ def test_version_change_without_matching_abstract_clears_catalog_and_projection(
         assert not get_active_projection(conn, "W-reg")["payload"].get("abstract")
         assert any(json.loads(r[0]).get("abstract") == "old" for r in conn.execute(
             "SELECT payload_json FROM bibliographic_projections WHERE status='superseded'"))
+
+
+# 2026-10-31 跟进：已审核 A 的 bound_version 带来源注释后缀（"official arXiv
+# metadata"等）。前缀完整标识符钉住版本；注释不是另一身份，仍不得跨论文/跨版本猜选。
+@pytest.mark.parametrize("bound,expected", [
+    ("arXiv:2601.00001v2 official arXiv metadata", "current"),
+    ("arXiv:2601.00001v2 official arXiv abstract", "current"),
+    ("2601.00001v2 selected fixed PDF page1; layout line breaks merged", "current"),
+    ("arXiv:2601.00001v2 (fixed PDF with NeurIPS 2025 publication footer)", "current"),
+    ("arXiv:2601.00002v2 official arXiv metadata", None),
+    ("snapshot", None),
+    ("published 2018-02-28 (Front. Robot. AI 5:15)", None),
+])
+def test_issue17_commentary_suffixed_label_still_pins_cited_version(bound, expected):
+    payload = {"arxiv": "2601.00001v2", "original_abstracts": [
+        {"text": "current", "language": "en", "bound_version": bound}]}
+    assert select_catalog_abstract(payload) == expected
+    assert merge_v5_payload({"abstract": "stale"}, payload).get("abstract") == expected
+
+
+def test_issue17_same_version_two_commentary_sources_still_not_guessed():
+    payload = {"arxiv": "2601.00001v2", "language": "en", "original_abstracts": [
+        {"text": "official metadata text", "language": "en",
+         "bound_version": "arXiv:2601.00001v2 official arXiv metadata"},
+        {"text": "fixed pdf page text", "language": "en",
+         "bound_version": "2601.00001v2 selected fixed PDF page1"}]}
+    assert catalog_abstract_statement(payload) == (None, "selection_ambiguous")
+    assert merge_v5_payload({"abstract": "stale"}, payload).get("abstract") is None
+

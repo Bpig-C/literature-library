@@ -65,9 +65,19 @@ def _entry_bound_version(item: dict) -> str:
     # Existing reviewed records use arXiv:<id>vN and the explicit "fixed PDF"
     # qualifier. Normalize only recognized identifier syntax, not arbitrary
     # prose containing a version number; keep the complete paper identity.
-    identifier = clean_identifier(re.sub(r"\s+fixed pdf$", "", text), kind="arxiv")
+    stripped = re.sub(r"\s+fixed pdf$", "", text)
+    identifier = clean_identifier(stripped, kind="arxiv")
     if identifier:
         return identifier.lower()
+    # Reviewed records also prefix a complete identifier with source
+    # commentary ("arxiv:<id>vN official arxiv metadata", "<id>vN selected
+    # fixed pdf page1; ..."). The leading identifier still pins that version;
+    # the trailing words qualify the source and never name another paper or
+    # version. Prose that merely mentions a version elsewhere stays raw.
+    lead = re.match(
+        r"^(?:arxiv:\s*)?((?:\d{4}\.\d{4,5}|[a-z-]+/\d{7})(?:v\d+)?)(?=\s|$)", stripped)
+    if lead:
+        return lead.group(1).lower()
     return text[1:] if re.fullmatch(r"v\d+", text) else text
 
 
