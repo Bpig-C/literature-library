@@ -78,8 +78,12 @@
       </header>
 
       <main class="content">
-        <div v-if="readOnly" class="readonly-banner" role="status">
+        <div v-if="mode === 'readonly'" class="readonly-banner" role="status">
           只读模式：当前为远程只读部署，上传 / 重新解析 / 隔离 / 删除 / 提交等写操作已被服务端禁用（403）。读取、检索与导出不受影响；正式写入须先完成权威交接。
+        </div>
+        <div v-else-if="mode === 'error'" class="readonly-banner mode-banner" role="alert">
+          <span>暂时无法确认部署的运行模式（读取失败{{ checking ? '，正在重试…' : '' }}）。为保护数据，写操作暂不可用；读取、检索与导出不受影响。</span>
+          <button type="button" class="mode-retry" :disabled="checking" @click="retry">重试</button>
         </div>
         <slot />
       </main>
@@ -93,7 +97,7 @@ import { useRoute } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import { useRuntimeMode } from '../composables/useRuntimeMode'
 
-const { readOnly } = useRuntimeMode()
+const { mode, checking, retry } = useRuntimeMode()
 const route = useRoute()
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(window.localStorage.getItem('scholar-sidebar-collapsed') === '1')
@@ -351,6 +355,20 @@ a:hover { text-decoration: none; }
   font-size: 13px;
   line-height: 1.6;
 }
+.mode-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mode-banner span { flex: 1; }
+.mode-retry {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  color: #7a4b0e;
+  border: 1px solid #e8c88a;
+  border-radius: 7px;
+  background: #fffdf8;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mode-retry:hover:not(:disabled) { background: #fdf6e9; }
+.mode-retry:disabled { opacity: .55; cursor: default; }
 .mobile-menu, .sidebar-scrim { display: none; }
 
 @media (max-width: 900px) {

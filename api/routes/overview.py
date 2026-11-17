@@ -138,4 +138,15 @@ def overview():
                                   'consumption_rule': '可用基线=两层内容稳定（结构验证+独立审查）；人工采纳是叠加判断，不阻断使用' if v5 else None}
     except sqlite3.Error:
         result['research']['error'] = '研究库暂不可读取，请检查研究库配置或结构。'
-    return result
+        return result
+
+
+@router.get('/mode')
+def runtime_mode():
+    # Same deployment flags as /overview, but without the collection scan so
+    # the app shell can confirm the runtime mode even when the aggregated
+    # statistics are slow or the research store is unreadable (#22).
+    return {
+        'read_only': os.environ.get('LITLIB_RESEARCH_READ_ONLY') == '1',
+        'remote_writes_enabled': os.environ.get('LITLIB_REMOTE_WRITE_ENABLED') == '1',
+    }
